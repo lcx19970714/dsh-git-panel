@@ -253,6 +253,10 @@ async function collectModules() {
     } catch {
       throw new BuildError(`找不到模块: ${rel(absPath)}（由 ${rel(requestedBy)} 引入）`)
     }
+    // 换行符统一成 LF，再进入 transform/indent。
+    // 否则 CRLF 源里的「空行」是 "\r" 而非空串，indent() 会给它补缩进，
+    // 产物里就出现行尾空白 + CRLF，CI 用 LF checkout 构建时结果会不一致。
+    source = source.replace(/\r\n/g, '\n')
     const id = rel(absPath)
     // 说明符 → 模块 id：'react' 原样保留，其余按「相对当前文件」解析成 SRC 相对 id
     const resolveId = (spec) => (
@@ -335,6 +339,11 @@ function indent(text, spaces) {
   return text.split('\n').map((line) => (line === '' ? '' : pad + line)).join('\n')
 }
 
+/** 产物统一成 LF（含末尾换行），保证任何平台构建结果逐字节一致。 */
+function normalizeOutput(text) {
+  return text.replace(/\r\n/g, '\n').replace(/\n*$/, '\n')
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -361,7 +370,7 @@ async function main() {
   }
 
   if (!checkOnly) {
-    await writeFile(OUTPUT, bundle, 'utf8')
+    await writeFile(OUTPUT, normalizeOutput(bundle), 'utf8')
   }
 
   const bytes = Buffer.byteLength(bundle, 'utf8')

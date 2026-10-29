@@ -154,7 +154,17 @@ try {
     assert(typeof bundle === 'string' && bundle.length > 0, '产物为空')
   })
 
-  test('检测循环依赖并报错', async () => {
+  test('产物换行规范化：只有 LF、无行尾空白（跨平台逐字节可复现）', () => {
+  // 这条守的是「同一份源码在任何平台上构建结果一致」：
+  // CRLF 源里的空行是 "\r"，若不先归一，indent() 会给它补缩进，产物就带上行尾空白 + CRLF，
+  // CI（LF checkout）与本地（CRLF 工作区）构建结果就会不一致。
+  assert(!bundle.includes('\r'), '产物不应含 CR')
+  const dirtyLines = bundle.split('\n').filter((line) => /[ \t]+$/.test(line))
+  assert(dirtyLines.length === 0, '产物不应有行尾空白，实际 ' + dirtyLines.length + ' 行')
+  assert(bundle.endsWith('\n'), '产物应以单个换行结尾')
+})
+
+test('检测循环依赖并报错', async () => {
     const cycleDir = path.join(tmpDir, 'cycle')
     const { mkdir, writeFile } = await import('node:fs/promises')
     await mkdir(cycleDir, { recursive: true })

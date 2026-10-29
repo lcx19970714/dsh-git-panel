@@ -4,6 +4,8 @@
 [![CI](https://github.com/lcx19970714/dsh-git-panel/actions/workflows/ci.yml/badge.svg)](https://github.com/lcx19970714/dsh-git-panel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+> 这里是**深入文档**（平台约束、接线细节、反兜底约定、排错）。面向使用者的完整介绍与安装说明见仓库首页 [README.md](../README.md)。
+
 给 DSH Web/桌面端加一个 **VSCode 风格**的 Git 面板：左侧看改动（或直接浏览文件树），
 右侧看 diff（或直接编辑文件并保存）。装在**右侧栏**里，按会话的项目目录工作。
 
@@ -109,7 +111,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 plugin/
 ├─ index.js                 宿主入口：ctx.inject(['connection']) + rpc.handle('/dsh-git')
 ├─ host/
-│  ├─ git.js                零依赖只读 git 引擎（spawn git，porcelain=v2 -z 解析、diff、目录、仓库发现）
+│  ├─ git.js                零依赖 git 引擎（spawn git；porcelain=v2 -z 解析、unified diff、目录、仓库发现、文件读写）
 │  ├─ roots.js              三种根的解析（primary / discovered / extra）
 │  └─ config.js             外部根持久化（原子写、损坏自动备份）
 ├─ src/                     ← 客户端源码（ESM，构建成 client.js）
@@ -117,13 +119,13 @@ plugin/
 │  ├─ platform.js           唯一接触 react 与宿主桥的文件
 │  ├─ api.js                宿主 RPC 封装（超时、abort、错误归一）
 │  ├─ store.js              显示偏好持久化 + 小 hook
-│  ├─ i18n.js               内联 zh/en 字典 + makeT 降级
+│  ├─ i18n.js               内联 zh/en 字典（文案一律由框架注入的 t 取）
 │  ├─ styles.js             全部样式（令牌取色，注入 <style>）
-│  ├─ util/{paths,diff,highlight,changes}.js   纯函数（有单测）
+│  ├─ util/{paths,diff,changes,remote,time}.js  纯函数（有单测）
 │  ├─ ui/{Icon,Menu}.js     内联 SVG 图标 + 轻量浮层菜单
-│  └─ components/           Panel / RootPicker / ChangesList / FileTree / DiffView / FileView / States
+│  └─ components/           Panel / RootPicker / ChangesList / FileTree / DiffView / FileEditor / States
 ├─ build/build-client.mjs   零依赖微型打包器（ESM → 经典脚本 __ModuleLoader__）
-├─ test/                    7 套测试（见下）
+├─ test/                    10 套测试（见下）
 └─ scripts/install-profile.mjs  装进 DSH profile（junction + package.json）
 ```
 
@@ -168,11 +170,13 @@ node scripts/install-profile.mjs --dry-run
 | `paths` | 路径/树构建/折叠/过滤/排序 |
 | `diff` | hunk 解析、并排配对、词级高亮、行预算 |
 | `tree` | 分组规则（`MM` 双组、冲突只进冲突组）、单文件组、树展开 |
-| `highlight` | 分词无损性（`join(tokens) === line`）、跨行块注释、未知语言降级 |
+| `remote` | 远端地址 → 网页地址（scp/ssh/https/git 形式）、凭据不入地址栏、本地路径 → null |
 | `build` | 打包器：产物无残留 import/export、能真跑、循环依赖报错 |
 | `git` | git 引擎（需要 `_sandbox/repo` 夹具：`node test/make-fixture.mjs`） |
-| `host` | 7 个端点的信封契约、错误码、配置持久化、损坏恢复 |
+| `host` | 9 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、远端 fetch、配置持久化与损坏恢复 |
 | `client` | 产物装载 + `apply()` 契约 + 用假 react 真渲染 tab body（不需要浏览器） |
+| `components` | 组件渲染契约：编辑器脏/冲突态、不可编辑占位、换行开关下的行号隐藏 |
+| `flow` | 面板端到端数据流：选根→status→diff→文件读→编辑保存→冲突→检测更新（假 fetch，不起服务） |
 
 ### 热更新循环
 
@@ -185,13 +189,17 @@ node scripts/install-profile.mjs --dry-run
 但宿主半体要等 profile 真正重新组合才会注册 RPC 通道。装完跑一遍：
 
 ```bash
-node scripts/verify-live.mjs
+node scripts/verify-live.mjs --port <DSH 的实际端口>
 ```
 
-它读公开的 SSE 图 + 探一次 `/dsh-git/project/resolve`，直接给出状态：
+它通过公开的 `/plugins/events` SSE 图确认三件事：
 
-- `✓ 通道已注册（HTTP 401/403）` → 插件完整可用；
-- `✗ 通道不存在（HTTP 405）` → 宿主还没加载，需要重启桌面端（只改客户端时不会出现这种情况）。
+1. `✓ SSE 可读`：能连上，并报出当前图里的客户端 bundle 总数
+2. `✓ 客户端 bundle 已在表里`：`dsh-git-panel` 的 bundle 已被登记（`immediately=true`）
+3. `✓ 运行中的 bundle 与磁盘一致`：热更新已生效（改完 `src/` 重新 build 后应为绿）
+
+第 2 步红 = 客户端半体没被扫到（检查 profile 的 `dsh.profile.bundles` 与 junction）；
+第 3 步红 = 热更新没跟上，刷新页面；两者都绿但面板仍无数据 → 宿主半体没加载，**重启桌面端**。
 
 ## 4.4 平台约束（踩过的坑，务必遵守）
 
@@ -224,7 +232,7 @@ export function apply(ctx) {
 | 约定 | 做法 | 反例（已删除） |
 |---|---|---|
 | 服务依赖 | 模块级 `export const inject = [...]`，缺服务就不激活 | `apply` 里等 15s 重试、同步兜底、`try { ctx.x } catch` |
-| 文案 | `t` 由 `register({ locale: NS })` 注入，直接用 | 插件内自带 `makeT()` 回落到本地字典 |
+| 文案 | `t` 由 `register({ locale: NS })` 注入，直接用 | 插件内自带本地字典回落 |
 | 会话来源 | 两个外壳都是 session 作用域，框架直接给 `sessionId` | 从全局 `sessions` 里猜"主会话"、支持 `cwd` 入参 |
 | 面板外壳 | 一个 `GitPanelSurface` 同时服务两处 | 两套外壳组件 + `layout` 装饰属性 |
 | 宿主路径口径 | `diff` 的 path 相对 **repoRoot**；`file/read`、`tree/list` 的 path 相对 **rootPath** | `outside-root` 时回退到 repoRoot 再解析一次 |

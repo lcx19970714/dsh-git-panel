@@ -14,7 +14,9 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync
 } from 'node:fs'
 import os from 'node:os'
@@ -125,8 +127,36 @@ const handler = (endpoint, payload) => callRoute(endpoint, payload)
 /* -------------------------------------------------------------- 工具函数 */
 
 const toPosix = (value) => String(value).replace(/\\/g, '/')
-const eqPath = (actual, expected) =>
-  toPosix(path.resolve(actual)).toLowerCase() === toPosix(path.resolve(expected)).toLowerCase()
+
+/**
+ * 把路径规范成可比较的键。
+ *
+ * 必须做 realpath：CI 的 %TEMP% 常常是 8.3 短名（例如 C:\Users\RUNNER~1\AppData\Local\Temp），
+ * 而宿主会把路径规范化成真实长路径再回传/落盘 —— 这是**正确**行为（路径身份要稳定）。
+ * 若测试只做 path.resolve，短名与长名永远对不上，会误报 6 条失败。
+ */
+function canonicalPath(value) {
+  const resolved = path.resolve(value)
+  let real
+  try {
+    real = realpathSync.native(resolved)
+  } catch {
+    real = resolved
+  }
+  const posix = toPosix(real)
+  return process.platform === 'win32' ? posix.toLowerCase() : posix
+}
+
+const eqPath = (actual, expected) => canonicalPath(actual) === canonicalPath(expected)
+
+/** 产品返回/落盘的仓库路径来自 git（8.3 短名会被解析成长路径），比较时也要 realpath。 */
+const repoPath = (value) => {
+  try {
+    return toPosix(realpathSync.native(path.resolve(value)))
+  } catch {
+    return toPosix(path.resolve(value))
+  }
+}
 
 function tempDir(prefix) {
   const dir = mkdtempSync(path.join(os.tmpdir(), prefix))
@@ -733,7 +763,7 @@ test('roots/add：添加外部仓库 → 立即出现在结果 + 落盘 + 去重
   const onDisk = JSON.parse(readFileSync(configFile, 'utf8'))
   assert.equal(onDisk.version, 1)
   const key = config.projectKey(FIXTURE)
-  assert.deepEqual(onDisk.projects[key], [toPosix(secondRepo)])
+  assert.deepEqual(onDisk.projects[key], [repoPath(secondRepo)])
   // 原子写不留临时文件
   const leftovers = readdirSync(path.dirname(configFile)).filter((name) => name.includes('.tmp-'))
   assert.deepEqual(leftovers, [])
@@ -742,11 +772,11 @@ test('roots/add：添加外部仓库 → 立即出现在结果 + 落盘 + 去重
   const again = await callOk('roots/add', { projectRoot: FIXTURE, path: secondRepo })
   const extras = again.roots.filter((root) => root.kind === 'extra')
   assert.equal(extras.length, 1)
-  assert.deepEqual(await config.listExtras(FIXTURE), [toPosix(secondRepo)])
+  assert.deepEqual(await config.listExtras(FIXTURE), [repoPath(secondRepo)])
 
   // 新进程/新模块实例仍能读回（DSH_HOME 在调用时解析）
   const reloaded = await import('../host/config.js?fresh=' + Date.now())
-  assert.deepEqual(await reloaded.listExtras(FIXTURE), [toPosix(secondRepo)])
+  assert.deepEqual(await reloaded.listExtras(FIXTURE), [repoPath(secondRepo)])
 
   // 收尾：不给后续用例留状态
   await callOk('roots/remove', { projectRoot: FIXTURE, path: secondRepo })
@@ -797,6 +827,8 @@ test('roots/remove：移除后消失 + 配置落盘 + 幂等', async () => {
 
 test('失效的外部根：仍在结果里（isGit:false + error）且可移除', async () => {
   const doomed = makeRepo(path.join(tempDir('dgp-doomed-'), 'doomed-repo'))
+  // realpath 必须在删除前取（删掉之后就解析不出长路径了），否则短/长名比较会误报
+  const doomedReal = realpathSync.native(doomed)
   await callOk('roots/add', { projectRoot: FIXTURE, path: doomed })
   rmSync(doomed, { recursive: true, force: true })
 
@@ -806,7 +838,7 @@ test('失效的外部根：仍在结果里（isGit:false + error）且可移除'
   assert.equal(stale.isGit, false)
   assert.equal(stale.repoRoot, null)
   assert.equal(stale.error, '目录不存在')
-  assert.ok(eqPath(stale.path, doomed))
+  assert.ok(eqPath(stale.path, doomedReal))
   assert.ok(
     resolved.warnings.some((warning) => warning.includes('外部仓库目录不存在')),
     '应有中文告警：' + JSON.stringify(resolved.warnings)
@@ -834,8 +866,8 @@ test('配置文件损坏 → 备份为 roots.json.broken-* 并从空配置继续
   // 之后仍可正常写入
   const revived = makeRepo(path.join(tempDir('dgp-revived-'), 'revived-repo'))
   await callOk('roots/add', { projectRoot: FIXTURE, path: revived })
-  assert.deepEqual(await config.listExtras(FIXTURE), [toPosix(revived)])
-  await config.removeExtra(FIXTURE, revived)
+  assert.deepEqual(await config.listExtras(FIXTURE), [repoPath(revived)])
+  await config.removeExtra(FIXTURE, repoPath(revived))
 })
 
 /* ------------------------------------------------------------------ */
@@ -1015,6 +1047,31 @@ test('remote/fetch：非仓库目录 → not-a-repository', async () => {
   assert.equal(result.error.code, 'not-a-repository')
 })
 
+
+test('外部根：经目录联接添加后，按联接写法移除与去重都必须命中同一条记录', async () => {
+  // 不变量：外部根的键一律是**规范化后的真实路径**。
+  // 于是「用联接写法添加 / 再用联接写法移除」必须命中同一条记录，
+  // 否则面板里会留下一条永远删不掉的僵尸根（曾经就是这样）。
+  const realRepo = makeRepo(path.join(tempDir('dgp-link-'), 'real-repo'))
+  const linkPath = path.join(tempDir('dgp-link-home-'), 'linked-repo')
+  symlinkSync(realRepo, linkPath, process.platform === 'win32' ? 'junction' : 'dir')
+
+  await callOk('roots/add', { projectRoot: FIXTURE, path: linkPath })
+
+  const stored = await config.listExtras(FIXTURE)
+  assert.equal(stored.length, 1, '应只有一条外部根记录')
+  assert.equal(stored[0], repoPath(realRepo), '入库键应是 realpath 后的真实路径，实际 ' + stored[0])
+
+  // 再用真实路径添加同一个仓库：去重（不能出现两条指向同一目录的根）
+  const deduped = await callOk('roots/add', { projectRoot: FIXTURE, path: realRepo })
+  assert.equal(deduped.roots.filter((root) => root.kind === 'extra').length, 1, '同一仓库不应出现两条外部根')
+  assert.equal((await config.listExtras(FIXTURE)).length, 1, '配置里也只应有一条')
+
+  // 用联接写法移除：必须命中
+  const after = await callOk('roots/remove', { projectRoot: FIXTURE, path: linkPath })
+  assert.deepEqual(after.roots.filter((root) => root.kind === 'extra'), [], '移除后不应再有外部根')
+  assert.deepEqual(await config.listExtras(FIXTURE), [], '配置里也必须清干净')
+})
 test('未知端点没有路由；畸形 payload 返回错误信封，绝不抛出', async () => {
   // 路由是精确注册的：不存在的 endpoint 压根没有路由（由连接服务回 404）
   assert.equal(routes.get(plugin.routePathOf('nope/nope')), undefined, '未知端点不应有路由')

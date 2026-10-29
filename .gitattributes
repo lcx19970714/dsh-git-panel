@@ -1,0 +1,3 @@
+# 统一用 LF：仓库在 Windows / macOS / Linux 之间往返时不产生换行符噪声，
+# 也让「重新构建产物后 git diff 应为空」这类校验在各平台都成立。
+* text=auto eol=lf

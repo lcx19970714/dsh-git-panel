@@ -3,8 +3,9 @@
  * 用法：node test/git.test.mjs [fixtureDir]
  */
 import assert from 'node:assert/strict'
+import os from 'node:os'
 import path from 'node:path'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import {
   discoverRepos,
   languageForPath,
@@ -32,8 +33,8 @@ test('resolveRepo 能定位仓库根', async () => {
 })
 
 test('resolveRepo 对非 git 目录返回 null', async () => {
-  const outside = path.resolve(fixture, '../notrepo')
-  mkdirSync(outside, { recursive: true })
+  // 必须落在「任何仓库之外」：用系统临时目录，避免被外层仓库（例如本仓库）兜住
+  const outside = mkdtempSync(path.join(os.tmpdir(), 'dgp-notrepo-'))
   const repo = await resolveRepo(outside)
   assert.equal(repo, null)
 })
@@ -250,8 +251,8 @@ test('languageForPath 常见类型', async () => {
 })
 
 test('git 不存在/非仓库时给出结构化错误', async () => {
-  const outside = path.resolve(fixture, '../notrepo')
-  mkdirSync(outside, { recursive: true })
+  // 同上：临时目录保证不在任何仓库内部
+  const outside = mkdtempSync(path.join(os.tmpdir(), 'dgp-notrepo-'))
   await assert.rejects(
     () => runGit(outside, ['status']),
     (error) => error.code === 'not-a-repository'

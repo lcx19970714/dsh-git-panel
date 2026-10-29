@@ -1,0 +1,7 @@
+# dsh-git-panel 作为 DSH profile 的一个 bundle 被选中时，由这一层把插件行插入 loader 树。
+# 行的 `name` 必须是包名原样：Host 半按 package.json 的 main 加载 index.js，
+# Client 半按 exports["./client"] 加载 client.js。
+# `id` 是稳定身份，profile 用户层可以用 - id: dsh-git-panel 定向覆盖 config。
+- insert:
+    - id: dsh-git-panel
+      name: dsh-git-panel

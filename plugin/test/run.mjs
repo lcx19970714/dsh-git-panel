@@ -45,7 +45,16 @@ for (const suite of SUITES) {
   } catch (error) {
     failed += 1
     const output = String(error.stdout ?? '') + String(error.stderr ?? '')
-    results.push({ name: suite.name, status: 'fail', detail: output.trim().split('\n').slice(-14).join('\n'), ms: Date.now() - started })
+    const lines = output.trim().split('\n')
+    // 失败时先把「失败的用例名」捞出来：套件的尾部 14 行往往全是通过项，
+    // 真正有用的信息（哪条挂了）会被截掉，导致只能靠猜或重跑。
+    const failures = lines.filter((line) => /\u2717|FAIL |not ok/.test(line)).map((line) => line.trim())
+    const tail = lines.slice(-14)
+    const detail = [
+      ...(failures.length > 0 ? ['失败用例：', ...failures.map((line) => '  ' + line), ''] : []),
+      ...tail
+    ].join('\n')
+    results.push({ name: suite.name, status: 'fail', detail, ms: Date.now() - started })
   }
 }
 

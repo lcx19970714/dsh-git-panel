@@ -17,7 +17,7 @@
  *  - 索引顺序固定：浏览/primary → discovered（自然序）→ extra（自然序）。
  *  - 失效的外部根不丢弃：仍在结果里，带 isGit:false 与 error，让 UI 能提示并移除。
  */
-import { stat } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 
 import {
@@ -369,6 +369,33 @@ export async function addExtraRoot(projectRoot, dir, options = {}) {
 }
 
 /**
+ * 目录路径的规范化键。
+ *
+ * 为什么要它：外部根的**键**存的是规范化路径（join/8.3 短名都会被 realpath 展开成长路径），
+ * 而移除时调用方只能给出它知道的原始写法。若目录已被删除，realpath 直接失败，
+ * 两侧就一个是短名一个是长名 —— 记录永远删不掉。
+ *
+ * 做法：能 realpath 就 realpath；失败了就往上找最深的已存在祖先，realpath 它再拼回剩余部分。
+ * 这样「已删除的目录」也能算出与当初入库时一致的键。
+ */
+async function canonicalDirKey(absPath) {
+  const rest = []
+  let current = absPath
+  for (;;) {
+    try {
+      const real = await realpath(current)
+      return toPosix(path.join(real, ...rest.slice().reverse()))
+    } catch {
+      const parent = path.dirname(current)
+      if (parent === current) return toPosix(absPath)
+      rest.push(path.basename(current))
+      current = parent
+    }
+  }
+}
+
+
+/**
  * 移除外部仓库根。不校验存在性：目录被删掉之后用户仍然要能移除记录。
  * 同时尝试「传入路径」与「该路径所属仓库根」两种写法，兼容手工编辑过的配置。
  */
@@ -376,11 +403,14 @@ export async function removeExtraRoot(projectRoot, dir, options = {}) {
   const projectDir = requireAbsolute(projectRoot, 'projectRoot')
   const target = requireAbsolute(dir, 'path')
 
-  await removeExtra(projectDir, target, { logger: options.logger })
+  // 先按规范化键移除（覆盖「目录已删除」的情况），再按仓库根移除（覆盖「传的是仓库子目录」）
+  const targetKey = await canonicalDirKey(target)
+  await removeExtra(projectDir, targetKey, { logger: options.logger })
+
   const repo = await resolveRepo(target)
   if (repo?.repoRoot) {
     const repoRoot = toPosix(repo.repoRoot)
-    if (keyOf(repoRoot) !== keyOf(target)) {
+    if (keyOf(repoRoot) !== keyOf(targetKey)) {
       await removeExtra(projectDir, repoRoot, { logger: options.logger })
     }
   }

@@ -1,0 +1,15 @@
+# ── 调研产物：从 Electron 应用里解出的第三方代码（约 34MB，不入库） ──
+_recon/
+
+# ── 测试运行期生成的沙盒仓库（test/make-fixture.mjs 可重建） ──
+_sandbox/
+
+# ── 常规忽略 ──
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# 本地偏好/临时文件
+*.tmp
+*.bak

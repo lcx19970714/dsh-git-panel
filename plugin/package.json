@@ -1,0 +1,47 @@
+{
+  "name": "dsh-git-panel",
+  "version": "0.1.0",
+  "private": false,
+  "description": "DSH Web 客户端插件：VSCode 风格 Git 变更 / 文件浏览面板（右侧栏），支持项目单仓库、项目内多仓库、以及手动追加的外部 Git 目录。",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "host",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "git",
+    "diff",
+    "sidebar"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "immediately": true
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "node build/build-client.mjs",
+    "check": "node --check index.js && node build/build-client.mjs --check",
+    "test": "node test/run.mjs"
+  }
+}

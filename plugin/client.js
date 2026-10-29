@@ -191,7 +191,7 @@ window.__ModuleLoader__.load({
        *  · 样式必须在 factory 执行期间同步注入，平台才会打上 data-plugin 并在卸载时回收。
        */
       const STYLE_ID = 'dsh-git-panel-css'
-      
+
       const CSS = `
       /* ===================== 1. 容器 ===================== */
       .dgp-root {
@@ -213,7 +213,7 @@ window.__ModuleLoader__.load({
       .dgp-mono { font-family: var(--ds-font-family-code); }
       .dgp-oneline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dgp-ico { display: block; flex: none; }
-      
+
       /* ===================== 2. 顶栏（38px + .5px 发丝线） ===================== */
       .dgp-toolbar {
         display: flex;
@@ -226,7 +226,7 @@ window.__ModuleLoader__.load({
       }
       .dgp-tbar-row { display: flex; align-items: center; gap: 6px; min-width: 0; width: 100%; }
       .dgp-spacer { flex: 1 1 auto; min-width: 0; }
-      
+
       /* 仓库选择 pill */
       .dgp-pill {
         display: inline-flex;
@@ -290,7 +290,7 @@ window.__ModuleLoader__.load({
         line-height: 14px;
         text-align: center;
       }
-      
+
       /* 分段控件（变更 | 文件） */
       .dgp-seg { display: inline-flex; flex: none; align-items: center; gap: 2px; }
       .dgp-seg-btn {
@@ -310,7 +310,7 @@ window.__ModuleLoader__.load({
         color: var(--dsw-alias-label-primary);
         background: var(--dsw-alias-bg-module-platform);
       }
-      
+
       /* 工具按钮（28×28 / 图标 15×15） */
       .dgp-iconbtn, .dgp-tool {
         display: inline-flex;
@@ -346,7 +346,7 @@ window.__ModuleLoader__.load({
         outline-offset: -1px;
       }
       @keyframes dgp-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
-      
+
       /* 通用按钮 */
       .dgp-btn {
         display: inline-flex;
@@ -376,7 +376,7 @@ window.__ModuleLoader__.load({
       .dgp-btn[data-variant="ghost"] { border-color: transparent; }
       .dgp-btn[data-variant="danger"] { color: var(--dsw-alias-state-error-primary); }
       .dgp-btn[data-size="sm"] { height: 24px; padding: 0 8px; font-size: 11px; }
-      
+
       /* 搜索框 */
       .dgp-filter { display: flex; flex: none; align-items: center; gap: 6px; padding: 6px 8px 4px; }
       .dgp-search { position: relative; display: flex; align-items: center; flex: 1 1 auto; min-width: 0; }
@@ -421,7 +421,7 @@ window.__ModuleLoader__.load({
       }
       .dgp-hint { padding: 4px 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
       .dgp-num { font-family: var(--ds-font-family-code); font-size: 12px; }
-      
+
       /* ===================== 3. 主区：左列 + 分裂条 + 右栏 ===================== */
       .dgp-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
       .dgp-pane-left { display: flex; flex: none; flex-direction: column; width: var(--dgp-left-width, 264px); min-width: 180px; min-height: 0; }
@@ -462,7 +462,7 @@ window.__ModuleLoader__.load({
       .dgp-divider:hover::after, .dgp-divider[data-dragging="true"]::after,
       .dgp-splitter:hover::after, .dgp-splitter:active::after, .dgp-splitter:focus-visible::after { opacity: 1; }
       .dgp-divider:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -2px; }
-      
+
       /* ===================== 4. 左列：分组与行 ===================== */
       .dgp-level { margin: 0; padding: 0; list-style: none; }
       .dgp-item { margin: 0; padding: 0; }
@@ -532,7 +532,7 @@ window.__ModuleLoader__.load({
       }
       .dgp-add { color: var(--dsw-alias-state-success-primary); }
       .dgp-del { color: var(--dsw-alias-state-error-primary); }
-      
+
       /* 状态字母 M/A/D/R/C/T/U/? */
       .dgp-status-letter {
         display: inline-flex;
@@ -574,7 +574,7 @@ window.__ModuleLoader__.load({
         color: var(--dsw-alias-state-success-secondary);
         background: color-mix(in srgb, var(--dsw-alias-state-success-secondary) 12%, transparent);
       }
-      
+
       /* 分组头 */
       .dgp-group { display: flex; flex-direction: column; }
       .dgp-group-head {
@@ -610,11 +610,11 @@ window.__ModuleLoader__.load({
         line-height: 15px;
         text-align: center;
       }
-      
+
       .dgp-note { margin: 0; padding: 4px 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
       .dgp-note[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
       .dgp-empty { padding: 6px 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
-      
+
       /* ===================== 5. 右栏查看器 ===================== */
       .dgp-viewer { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
       .dgp-viewer-head {
@@ -656,7 +656,7 @@ window.__ModuleLoader__.load({
         overscroll-behavior: contain;
         scrollbar-gutter: stable;
       }
-      
+
       /* ===================== 6. diff ===================== */
       .dgp-diff {
         --dgp-empty-fill: var(--dsw-alias-bg-skeleton);
@@ -688,7 +688,7 @@ window.__ModuleLoader__.load({
         background: var(--dsw-alias-border-l1);
       }
       .dgp-hunk-head > * { flex: none; }
-      
+
       .dgp-diff-row {
         display: grid;
         grid-template-columns: var(--dgp-gutter-w) var(--dgp-gutter-w) 1.4em minmax(0, 1fr);
@@ -746,7 +746,7 @@ window.__ModuleLoader__.load({
         font-family: var(--dsw-font-family);
         font-size: 12px;
       }
-      
+
       /* split：左右两列，滚动位置由组件同步 */
       .dgp-diff-columns {
         display: grid;
@@ -758,7 +758,7 @@ window.__ModuleLoader__.load({
       /* 换行开启后不再需要按内容撑宽，两列等分 */
       .dgp-diff[data-wrap="true"] .dgp-diff-columns,
       .dgp-diff-columns[data-wrap="true"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-      
+
       /* 配对行缺失的一侧（另一半是新增或删除）：用极淡的空槽表示「这里没有对应内容」 */
       .dgp-diff-row[data-kind="empty"] { background: 0 0; box-shadow: none; }
       .dgp-diff-cell[data-empty="true"] {
@@ -779,14 +779,14 @@ window.__ModuleLoader__.load({
       .dgp-diff-cell[data-kind="empty"] { background: var(--dsw-alias-bg-skeleton); }
       .dgp-diff-cell[data-kind="add"] .dgp-marker::before { content: "+"; }
       .dgp-diff-cell[data-kind="del"] .dgp-marker::before { content: "−"; }
-      
+
       /* 换行开关 */
       .dgp-diff[data-wrap="true"] .dgp-diff-row,
       .dgp-diff[data-wrap="true"] .dgp-diff-cell { white-space: pre-wrap; overflow-wrap: anywhere; }
       /* ===================== 7. 文件编辑器 ===================== */
       # 见文件末「文件编辑器」区块（textarea + 行号列）
-      
-      
+
+
       /* ===================== 8. 状态位 ===================== */
       .dgp-state {
         display: flex;
@@ -845,7 +845,7 @@ window.__ModuleLoader__.load({
       .dgp-errorbar { display: flex; align-items: center; gap: 6px; padding-right: 8px; }
       .dgp-errorbar > .dgp-inline-note { flex: 1 1 auto; min-width: 0; margin: 8px 0 8px 10px; }
       .dgp-inline-note[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
-      
+
       /* ===================== 9. 菜单 ===================== */
       .dgp-menu-scrim { position: fixed; inset: 0; z-index: 2147483000; }
       .dgp-menu {
@@ -887,7 +887,7 @@ window.__ModuleLoader__.load({
       .dgp-menu-sep { height: .5px; margin: 4px 6px; background: var(--dsw-alias-border-l2); }
       .dgp-menu-form { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px 8px; }
       .dgp-menu-form-actions { display: flex; justify-content: flex-end; gap: 6px; }
-      
+
       /* ===================== 10. 自适应 ===================== */
       .dgp-root[data-narrow="true"] .dgp-meta,
       .dgp-root[data-narrow="true"] .dgp-pill-branch { display: none; }
@@ -901,12 +901,12 @@ window.__ModuleLoader__.load({
         .dgp-iconbtn, .dgp-tool { width: 32px; height: 32px; }
         .dgp-divider::after { inset: 0 -10px; }
       }
-      
+
       /* ==================================================================
          会话标题栏按钮（conversation.session.header.actions）
          一颗紧凑的图标+文字按钮，尺寸/圆角跟随标题栏控件，深浅色都用令牌取色
          ================================================================== */
-      
+
       .dgp-headerbtn {
         display: inline-flex;
         align-items: center;
@@ -924,34 +924,34 @@ window.__ModuleLoader__.load({
         white-space: nowrap;
         transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
       }
-      
+
       .dgp-headerbtn:hover {
         background: var(--dsw-alias-bg-layer-3, rgba(127, 127, 127, 0.12));
         color: var(--dsw-alias-label-primary, inherit);
       }
-      
+
       .dgp-headerbtn:active {
         background: var(--dsw-alias-bg-layer-2, rgba(127, 127, 127, 0.18));
       }
-      
+
       .dgp-headerbtn:focus-visible {
         outline: 2px solid currentColor;
         outline-offset: 1px;
       }
-      
+
       .dgp-headerbtn[data-busy='true'] { opacity: 0.6; pointer-events: none; }
-      
+
       .dgp-headerbtn svg { flex: none; }
-      
+
       .dgp-headerbtn-label { font-size: 12px; }
-      
+
       /* 标题栏很窄时只留图标，避免挤掉会话标题 */
       @media (max-width: 720px) {
         .dgp-headerbtn-label { display: none; }
         .dgp-headerbtn { padding: 0 6px; }
       }
-      
-      
+
+
       /* 版本号 chip：显示当前提交短 SHA，点击 = 检测更新 */
       .dgp-version {
         display: inline-flex;
@@ -969,26 +969,26 @@ window.__ModuleLoader__.load({
         cursor: pointer;
         white-space: nowrap;
       }
-      
+
       .dgp-version:hover {
         background: var(--dsw-alias-interactive-bg-hover, transparent);
         color: var(--dsw-alias-label-primary, inherit);
       }
-      
+
       .dgp-version[data-busy='true'] { opacity: .6; pointer-events: none; }
       .dgp-version:disabled { opacity: .45; cursor: default; }
       .dgp-version-text { letter-spacing: .2px; }
-      
+
       /* 检测更新的一句话结果（在工具条下方） */
       .dgp-notebar { padding: 0 10px 6px; }
-      
-      
+
+
       /* ==================================================================
          文件编辑器（文件模式右栏）：textarea + 行号列 + 脏标记
          ================================================================== */
-      
+
       .dgp-viewer-editor { display: flex; flex-direction: column; min-height: 0; }
-      
+
       .dgp-editor {
         display: flex;
         flex: 1 1 auto;
@@ -998,7 +998,7 @@ window.__ModuleLoader__.load({
         font-size: var(--dsh-code-font-size, 12px);
         line-height: 1.55;
       }
-      
+
       .dgp-editor-gutter {
         flex: none;
         overflow: hidden;
@@ -1008,9 +1008,9 @@ window.__ModuleLoader__.load({
         user-select: none;
         border-right: .5px solid var(--dsw-alias-border-l3, transparent);
       }
-      
+
       .dgp-editor-ln { height: 1.55em; }
-      
+
       .dgp-editor-input {
         flex: 1 1 auto;
         min-width: 0;
@@ -1028,9 +1028,9 @@ window.__ModuleLoader__.load({
         overflow: auto;
         caret-color: var(--dsw-alias-label-primary, currentColor);
       }
-      
+
       .dgp-editor[data-wrap='true'] .dgp-editor-input { white-space: pre-wrap; word-break: break-word; }
-      
+
       .dgp-dirty {
         display: inline-flex;
         align-items: center;
@@ -1038,7 +1038,7 @@ window.__ModuleLoader__.load({
         color: var(--dsw-alias-label-warning, currentColor);
         font-size: 11px;
       }
-      
+
       .dgp-dirty-dot {
         display: inline-block;
         flex: none;
@@ -1048,13 +1048,13 @@ window.__ModuleLoader__.load({
         border-radius: 50%;
         background: currentColor;
       }
-      
+
       .dgp-editor-saved {
         color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.9));
         font-size: 11px;
       }
       `
-      
+
       /** 幂等注入样式表（必须在 factory 执行期间同步调用）。 */
       function ensureStyles() {
         if (document.getElementById(STYLE_ID) !== null) return
@@ -1074,9 +1074,9 @@ window.__ModuleLoader__.load({
        * DSH 的运行时文案必须内联注册（`ctx.locale.register(NS, { zh, en })`）；
        * 包内 `locale/*.json` 只用于插件管理页的 meta 标题，不参与 UI。
        */
-      
+
       const NS = 'dshGitPanel'
-      
+
       const zh = {
         'toolbar.checkUpdates': '检测更新',
         'toolbar.openRemote': '打开 Git 仓库',
@@ -1096,12 +1096,12 @@ window.__ModuleLoader__.load({
         'tab.titleWithCount': '变更 {count}',
         'guide.title': 'Git 变更与文件浏览',
         'guide.description': '查看项目改动、逐文件 diff，或直接浏览文件树',
-      
+
         'mode.changes': '变更',
         'mode.files': '文件',
         'mode.changesHint': '查看工作区改动',
         'mode.filesHint': '浏览项目文件',
-      
+
         'toolbar.refresh': '刷新',
         'editor.save': '保存',
         'editor.saved': '已保存 {time}',
@@ -1125,11 +1125,11 @@ window.__ModuleLoader__.load({
         'toolbar.removeRoot': '从列表移除「{name}」',
         'toolbar.openExternal': '在系统文件管理器中打开',
         'toolbar.collapseAll': '全部折叠',
-      
+
         'filter.placeholder': '筛选文件…',
         'filter.clear': '清除筛选',
         'filter.loadedOnly': '只搜索已展开的目录',
-      
+
         'root.primary': '项目',
         'root.discovered': '发现',
         'root.extra': '外部',
@@ -1145,13 +1145,13 @@ window.__ModuleLoader__.load({
         'root.removeConfirm': '从本项目的仓库列表中移除「{name}」？磁盘上的文件不会被删除。',
         'root.remove': '移除',
         'root.invalid': '这个目录不是一个 Git 仓库',
-      
+
         'group.conflicted': '冲突',
         'group.staged': '已暂存',
         'group.unstaged': '未暂存',
         'group.untracked': '未跟踪',
         'group.count': '{count}',
-      
+
         'status.clean': '工作区干净',
         'status.cleanHint': '当前仓库没有未提交的改动',
         'status.loading': '正在读取…',
@@ -1167,7 +1167,7 @@ window.__ModuleLoader__.load({
         'status.lastRefresh': '上次刷新 {time}',
         'status.emptyFilter': '没有匹配「{filter}」的文件',
         'status.emptyDir': '这个目录是空的',
-      
+
         'viewer.placeholder': '选择左侧的文件查看内容',
         'viewer.placeholderDiff': '选择左侧的改动查看 diff',
         'viewer.binary': '二进制文件，无法以文本显示',
@@ -1187,17 +1187,17 @@ window.__ModuleLoader__.load({
         'viewer.expandAll': '展开全部',
         'action.retry': '重试',
         'action.close': '关闭',
-      
+
         'error.rpc': '与宿主通信失败：{message}',
         'error.gitMissing': '系统里找不到 git，可执行文件缺失',
         'error.notRepository': '这个目录不是 Git 仓库',
         'error.timeout': '操作超时',
         'error.outsideRoot': '路径超出仓库范围',
         'error.generic': '出错了：{message}',
-      
+
         'kbd.hint': '↑↓ 选择 · Enter 打开 · ←→ 折叠展开 · / 筛选 · R 刷新'
       }
-      
+
       const en = {
         'toolbar.checkUpdates': 'Check for updates',
         'toolbar.openRemote': 'Open Git repository',
@@ -1217,12 +1217,12 @@ window.__ModuleLoader__.load({
         'tab.titleWithCount': 'Changes {count}',
         'guide.title': 'Git changes & file browser',
         'guide.description': 'Review changes with per-file diffs, or browse the project tree',
-      
+
         'mode.changes': 'Changes',
         'mode.files': 'Files',
         'mode.changesHint': 'Review working tree changes',
         'mode.filesHint': 'Browse project files',
-      
+
         'toolbar.refresh': 'Refresh',
         'editor.save': 'Save',
         'editor.saved': 'Saved {time}',
@@ -1246,11 +1246,11 @@ window.__ModuleLoader__.load({
         'toolbar.removeRoot': 'Remove "{name}" from list',
         'toolbar.openExternal': 'Reveal in file manager',
         'toolbar.collapseAll': 'Collapse all',
-      
+
         'filter.placeholder': 'Filter files…',
         'filter.clear': 'Clear filter',
         'filter.loadedOnly': 'Only loaded folders are searched',
-      
+
         'root.primary': 'Project',
         'root.discovered': 'Found',
         'root.extra': 'External',
@@ -1266,13 +1266,13 @@ window.__ModuleLoader__.load({
         'root.removeConfirm': 'Remove "{name}" from this project list? Files on disk are untouched.',
         'root.remove': 'Remove',
         'root.invalid': 'That folder is not a Git repository',
-      
+
         'group.conflicted': 'Conflicts',
         'group.staged': 'Staged',
         'group.unstaged': 'Changes',
         'group.untracked': 'Untracked',
         'group.count': '{count}',
-      
+
         'status.clean': 'Working tree clean',
         'status.cleanHint': 'No uncommitted changes in this repository',
         'status.loading': 'Loading…',
@@ -1288,7 +1288,7 @@ window.__ModuleLoader__.load({
         'status.lastRefresh': 'Refreshed {time}',
         'status.emptyFilter': 'No file matches "{filter}"',
         'status.emptyDir': 'This folder is empty',
-      
+
         'viewer.placeholder': 'Pick a file on the left',
         'viewer.placeholderDiff': 'Pick a changed file on the left',
         'viewer.binary': 'Binary file — no text preview',
@@ -1308,14 +1308,14 @@ window.__ModuleLoader__.load({
         'viewer.expandAll': 'Show all',
         'action.retry': 'Retry',
         'action.close': 'Close',
-      
+
         'error.rpc': 'Host communication failed: {message}',
         'error.gitMissing': 'git executable not found',
         'error.notRepository': 'Not a Git repository',
         'error.timeout': 'Operation timed out',
         'error.outsideRoot': 'Path outside the repository',
         'error.generic': 'Something went wrong: {message}',
-      
+
         'kbd.hint': '↑↓ select · Enter open · ←→ fold · / filter · R refresh'
       }
 

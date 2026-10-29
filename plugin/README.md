@@ -1,6 +1,7 @@
 # dsh-git-panel —— DSH 里的「Git 变更 / 文件浏览」面板
 
 [![GitHub](https://img.shields.io/badge/GitHub-lcx19970714%2Fdsh-git-panel-181717?logo=github)](https://github.com/lcx19970714/dsh-git-panel)
+[![CI](https://github.com/lcx19970714/dsh-git-panel/actions/workflows/ci.yml/badge.svg)](https://github.com/lcx19970714/dsh-git-panel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 给 DSH Web/桌面端加一个 **VSCode 风格**的 Git 面板：左侧看改动（或直接浏览文件树），

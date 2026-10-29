@@ -267,9 +267,13 @@ test('路由注册是进程内单例：重复 apply 只注册一次，最后一�
 })
 
 
-test('config.projectKey 规范化为正斜杠（Windows 小写）', async () => {
+test('config.projectKey 规范化为正斜杠（Windows 下额外小写）', async () => {
   const key = config.projectKey(FIXTURE)
-  assert.equal(key, toPosix(path.resolve(FIXTURE)).toLowerCase())
+  // projectKey 只在 win32 上小写（大小写不敏感的文件系统），其他平台保留原样
+  const expected = process.platform === 'win32'
+    ? toPosix(path.resolve(FIXTURE)).toLowerCase()
+    : toPosix(path.resolve(FIXTURE))
+  assert.equal(key, expected)
   assert.ok(!key.includes('\\'))
   // 尾斜杠不影响键
   assert.equal(config.projectKey(FIXTURE + path.sep), key)

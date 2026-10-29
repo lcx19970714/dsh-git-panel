@@ -1,0 +1,41 @@
+name: CI
+
+# 触发：推送到 main、以及所有 PR
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: git 版本（host 套件依赖真实 git）
+        run: git --version
+
+      # git 套件跑在一个真实的沙盒仓库上，由脚本生成（该目录不入库）
+      - name: 生成测试用沙盒仓库
+        run: node plugin/test/make-fixture.mjs _sandbox/repo
+
+      # 重新构建客户端产物，并校验「产物 == 源码构建结果」：
+      # 忘了 build 就提交会在这一步红，避免仓库里躺着过期的 client.js
+      - name: 构建产物并校验与源码一致
+        run: |
+          node plugin/build/build-client.mjs
+          git diff --exit-code -- plugin/client.js
+
+      - name: 运行全部测试（10 套）
+        run: node plugin/test/run.mjs

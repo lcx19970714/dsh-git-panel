@@ -1,7 +1,32 @@
 # dsh-git-panel —— DSH 里的「Git 变更 / 文件浏览」面板
 
+[![GitHub](https://img.shields.io/badge/GitHub-lcx19970714%2Fdsh-git-panel-181717?logo=github)](https://github.com/lcx19970714/dsh-git-panel)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 给 DSH Web/桌面端加一个 **VSCode 风格**的 Git 面板：左侧看改动（或直接浏览文件树），
-右侧看 diff（或文件内容）。装在**右侧栏**里，按会话的项目目录工作。
+右侧看 diff（或直接编辑文件并保存）。装在**右侧栏**里，按会话的项目目录工作。
+
+## 安装（从 GitHub）
+
+```bash
+git clone https://github.com/lcx19970714/dsh-git-panel.git
+cd dsh-git-panel
+node plugin/scripts/install-profile.mjs          # 加 --dry-run 可先看它会改什么
+```
+
+它会做三件事（幂等，可重复执行）：
+
+1. 在 profile 的 `node_modules` 下建目录联接 → 指到 `plugin/`（Windows 用 junction，免管理员权限）
+2. 把 `dsh-git-panel` 写进 profile 的 `dependencies`（`link:` 形式）
+3. 把 `dsh-git-panel` 追加进 `dsh.profile.bundles`
+
+**然后重启一次 DSH**（宿主半体是 ESM，只在启动时加载）。之后在任意会话里：
+
+- 点**标题栏最右侧的「变更」按钮**，或右侧栏「+」→「Git 变更」
+- 卸载：`node plugin/scripts/install-profile.mjs --uninstall`
+
+> 需要 Node ≥ 22。安装脚本按自身位置定位插件目录，克隆到哪个盘都行。
+
 
 - 目标插件 ID（tab 类型 id）：`dsh-git-panel`
 - tab kind：`git`（`openTab("git")` 的寻址名）

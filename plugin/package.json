@@ -27,6 +27,14 @@
     "sidebar"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lcx19970714/dsh-git-panel.git"
+  },
+  "homepage": "https://github.com/lcx19970714/dsh-git-panel#readme",
+  "bugs": {
+    "url": "https://github.com/lcx19970714/dsh-git-panel/issues"
+  },
   "engines": {
     "node": ">=22"
   },

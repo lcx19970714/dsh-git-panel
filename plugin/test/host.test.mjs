@@ -320,9 +320,10 @@ test('config.addExtra 规范化、去重、并发写串行化', async () => {
   const c = path.join(tempDir('dgp-config-c-'), 'repo-c')
 
   // 并发写：串行化后三条都应落盘，不互相覆盖
+  // 用 path.sep 造「带尾分隔符」的写法，别写死反斜杠 —— 在 Linux 上 '\' 是合法文件名字符，不是分隔符
   await Promise.all([
     config.addExtra(projectRoot, a),
-    config.addExtra(projectRoot, b + '\\'),
+    config.addExtra(projectRoot, b + path.sep),
     config.addExtra(projectRoot, c)
   ])
   const listed = await config.listExtras(projectRoot)
@@ -331,9 +332,14 @@ test('config.addExtra 规范化、去重、并发写串行化', async () => {
   assert.ok(listed.some((item) => eqPath(item, a)))
   assert.ok(listed.some((item) => eqPath(item, b)))
 
-  // 重复添加（大小写不同也算同一个）不产生第二条
-  await config.addExtra(projectRoot, a.toUpperCase())
-  assert.equal((await config.listExtras(projectRoot)).length, 3)
+  // 重复添加不产生第二条
+  await config.addExtra(projectRoot, a)
+  assert.equal((await config.listExtras(projectRoot)).length, 3, '同一路径重复添加不应产生第二条')
+  // Windows 文件系统大小写不敏感，另一种大小写也必须被当成同一条；Linux 上是两个不同路径，不做此断言
+  if (process.platform === 'win32') {
+    await config.addExtra(projectRoot, a.toUpperCase())
+    assert.equal((await config.listExtras(projectRoot)).length, 3, 'Windows 下大小写不同的写法算同一条')
+  }
 
   // 移除幂等
   await config.removeExtra(projectRoot, a)

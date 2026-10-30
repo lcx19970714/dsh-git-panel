@@ -1,10 +1,10 @@
 /**
- * host/git.js —— 只读 Git 引擎
+ * host/git.js —— Git 引擎
  *
  * 设计原则：
  *  1. 只用 node 内置模块，不依赖任何 DSH 包，因此可以脱离 DSH 单独跑测试。
- *  2. 只读：白名单命令（status/diff/rev-parse/ls-tree/show/check-ignore/log），
- *     绝不执行 add/commit/checkout/stash/reset/push 等写操作。
+ *  2. 写操作只有两处，且都是显式的：保存文件内容、暂存/取消暂存单个路径。
+ *     不做 commit / checkout / reset / push / stash。
  *  3. 所有子进程都有超时、输出上限、可取消；错误一律抛 GitError（带 code）。
  *  4. 路径解析统一走 resolveInside()，拒绝逃逸出仓库根。
  */
@@ -937,6 +937,118 @@ export async function discoverRepos(projectRoot, options = {}) {
 // ---------------------------------------------------------------------------
 // 工具
 // ---------------------------------------------------------------------------
+
+/**
+ * 校验一条仓库内相对路径，作为 git pathspec 使用。
+ *
+ * 只接受「正斜杠、无前导斜杠、不逃出仓库」的相对路径。绝对路径、`..`、
+ * 以 `-` 开头（会被 git 当成选项）以及 `.git` 内部一律拒绝 ——
+ * 暂存/取消暂存把这条路径原样放进参数数组，校验必须在拼命令之前完成。
+ */
+export function assertRepoPath(relPath) {
+  if (typeof relPath !== 'string' || relPath.trim() === '') {
+    throw new GitError('bad-request', '缺少文件路径')
+  }
+  const normalized = relPath.replace(/\\/g, '/')
+  if (normalized !== relPath) {
+    throw new GitError('bad-path', '路径必须使用正斜杠：' + relPath)
+  }
+  if (path.isAbsolute(normalized) || /^[A-Za-z]:/.test(normalized)) {
+    throw new GitError('bad-path', '路径必须是仓库内相对路径：' + relPath)
+  }
+  if (normalized.startsWith('/') || normalized.startsWith('-')) {
+    throw new GitError('bad-path', '非法的文件路径：' + relPath)
+  }
+  const parts = normalized.split('/')
+  if (parts.some((part) => part === '' || part === '.' || part === '..')) {
+    throw new GitError('outside-root', '路径不在仓库根目录内：' + relPath)
+  }
+  if (parts.includes('.git')) {
+    throw new GitError('forbidden-path', '不允许操作 .git 内部路径')
+  }
+  return normalized
+}
+
+/**
+ * 暂存或取消暂存单个文件（VS Code 变更列表行尾的 + / −）。
+ *
+ * action 决定 git 子命令，调用方必须显式给出，不从当前状态猜测：
+ *   stage    未暂存 / 未跟踪 → `git add -- <path>`
+ *   unstage  已暂存         → `git restore --staged -- <path>`（只动索引，不动工作区）
+ */
+export async function stageFile(repoRoot, relPath, action, options = {}) {
+  const pathspec = assertRepoPath(relPath)
+  const { signal } = options
+  if (action === 'stage') {
+    await runGit(repoRoot, ['add', '--', pathspec], { signal })
+  } else if (action === 'unstage') {
+    await runGit(repoRoot, ['restore', '--staged', '--source=HEAD', '--', pathspec], { signal })
+  } else {
+    throw new GitError('bad-request', 'action 必须是 stage 或 unstage')
+  }
+  return { path: pathspec, action }
+}
+
+/**
+ * 整组暂存 / 取消暂存（分组头右侧的 + / −）。
+ *
+ * scope 由客户端按所点的分组显式给出，宿主不看当前 status 自行决定：
+ *   stage-unstaged  未暂存的已跟踪改动 → `git add -u`
+ *   stage-untracked 未跟踪文件         → `git add -A`
+ *   unstage         全部已暂存         → `git restore --staged --source=HEAD -- .`（只动索引）
+ */
+export async function stageGroup(repoRoot, scope, options = {}) {
+  const { signal } = options
+  if (scope === 'stage-unstaged') {
+    await runGit(repoRoot, ['add', '-u', '--', '.'], { signal })
+  } else if (scope === 'stage-untracked') {
+    await runGit(repoRoot, ['add', '-A', '--', '.'], { signal })
+  } else if (scope === 'unstage') {
+    await runGit(repoRoot, ['restore', '--staged', '--source=HEAD', '--', '.'], { signal })
+  } else {
+    throw new GitError('bad-request', 'scope 必须是 stage-unstaged、stage-untracked 或 unstage')
+  }
+  return { scope }
+}
+
+/** 提交说明的长度上限：超过就不是一条提交说明了。 */
+export const COMMIT_MESSAGE_MAX = 5000
+
+/**
+ * 提交当前索引。
+ *
+ * 只提交已经暂存的内容（`git commit`，不带 -a）：未暂存的改动留在工作区。
+ * 索引里什么都没有时 git 以非 0 退出，原样报错，不自动把工作区改动加进来。
+ */
+export async function commitIndex(repoRoot, message, options = {}) {
+  if (typeof message !== 'string' || message.trim() === '') {
+    throw new GitError('bad-request', '提交说明不能为空')
+  }
+  if (message.length > COMMIT_MESSAGE_MAX) {
+    throw new GitError('bad-request', '提交说明超过 ' + COMMIT_MESSAGE_MAX + ' 个字符')
+  }
+  const { signal } = options
+  const result = await runGit(repoRoot, ['commit', '--file=-'], { signal, input: message })
+  const head = await readHead(repoRoot)
+  return { head: head.head, subject: message.split('\n')[0], output: result.stderr }
+}
+
+/**
+ * 生成提交说明用的差异文本。
+ *
+ * 有已暂存的改动就只看索引（`git diff --cached`）；索引是干净的才看工作区
+ * （`git diff HEAD`，包含未跟踪文件）。两边都没有差异时返回 null。
+ */
+export async function commitDiffText(repoRoot, options = {}) {
+  const { signal } = options
+  const staged = await runGit(repoRoot, ['diff', '--cached', '--stat', '--patch'], { signal })
+  const stagedText = staged.stdout.toString('utf8')
+  if (stagedText.trim() !== '') return { source: 'staged', text: stagedText }
+  const working = await runGit(repoRoot, ['diff', 'HEAD', '--stat', '--patch'], { signal, allowFailure: true })
+  const workingText = working.code === 0 ? working.stdout.toString('utf8') : ''
+  if (workingText.trim() !== '') return { source: 'unstaged', text: workingText }
+  return null
+}
 
 /** 把相对路径解析进 root，并拒绝逃逸。 */
 export function resolveInside(root, relPath) {

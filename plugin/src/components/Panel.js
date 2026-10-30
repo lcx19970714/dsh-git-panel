@@ -23,6 +23,8 @@ import { FileTree } from './FileTree.js'
 import { DiffView } from './DiffView.js'
 import { FileEditor } from './FileEditor.js'
 import { EmptyState, LoadingState, InlineNote } from './States.js'
+import { CommitBox } from './CommitBox.js'
+import { SettingsView } from './SettingsView.js'
 import { MODE, usePref, useLatestGuard } from '../store.js'
 import * as api from '../api.js'
 import { reconcileSelection } from '../util/changes.js'
@@ -84,6 +86,9 @@ export function Panel(props) {
   const [status, setStatus] = useState(null)
   const [statusLoading, setStatusLoading] = useState(false)
   const [statusError, setStatusError] = useState(null)
+  /** 正在暂存/取消暂存的文件路径；同时只允许一个，避免连点打乱索引。 */
+  const [stagePending, setStagePending] = useState(null)
+  const stagePendingRef = useRef(null)
   const statusSeq = useLatestGuard()
   const statusAbortRef = useRef(null)
 
@@ -130,6 +135,14 @@ export function Panel(props) {
   const updateNote = buildUpdateNote(updateState, t)
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
+
+  /* --------------------------- 提交 / 设置 --------------------------- */
+  const [commitMessage, setCommitMessage] = useState('')
+  const [commitBusy, setCommitBusy] = useState(false)
+  const [commitGenerating, setCommitGenerating] = useState(false)
+  const [commitNote, setCommitNote] = useState(null)
+  const [showSettings, setShowSettings] = useState(false)
+  const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, error: null, saved: false })
 
   const [moreOpen, setMoreOpen] = useState(false)
   const moreAnchorRef = useRef(null)
@@ -523,6 +536,114 @@ export function Panel(props) {
     setSelection((previous) => (previous === null ? previous : { ...previous, side }))
   }, [])
 
+  /**
+   * 行尾 + / −：未暂存与未跟踪暂存（git add），已暂存取消暂存（git restore --staged）。
+   * 操作只作用于那一个文件；完成后重读 status，分组归属由新状态决定，
+   * 所以文件会从下面的未暂存移到上面的已暂存（或反过来）。
+   */
+  const stageEntry = useCallback(async (relPath, action) => {
+    if (activeRoot === null || activeRoot.isGit === false) return
+    if (typeof relPath !== 'string' || relPath === '') return
+    if (action !== 'stage' && action !== 'unstage') return
+    if (stagePendingRef.current !== null) return
+    stagePendingRef.current = relPath
+    setStagePending(relPath)
+    setStatusError(null)
+    try {
+      await api.stageFile({ rootPath: activeRoot.path, path: relPath, action })
+      await refreshStatus()
+      setDiffNonce((previous) => previous + 1)
+    } catch (error) {
+      if (error === null || error === undefined || error.code !== 'aborted') {
+        setStatusError(api.describeError(error, tRef.current))
+      }
+    } finally {
+      stagePendingRef.current = null
+      setStagePending(null)
+    }
+  }, [activeRoot, refreshStatus])
+
+  /** 分组头的批量按钮：一次暂存或取消暂存整组。 */
+  const stageGroup = useCallback(async (scope) => {
+    if (activeRoot === null || activeRoot.isGit === false) return
+    if (scope !== 'stage-unstaged' && scope !== 'stage-untracked' && scope !== 'unstage') return
+    if (stagePendingRef.current !== null) return
+    stagePendingRef.current = scope
+    setStagePending(scope)
+    setStatusError(null)
+    try {
+      await api.stageGroup({ rootPath: activeRoot.path, scope })
+      await refreshStatus()
+      setDiffNonce((previous) => previous + 1)
+    } catch (error) {
+      if (error === null || error === undefined || error.code !== 'aborted') {
+        setStatusError(api.describeError(error, tRef.current))
+      }
+    } finally {
+      stagePendingRef.current = null
+      setStagePending(null)
+    }
+  }, [activeRoot, refreshStatus])
+
+  /** 提交已暂存内容。未暂存的改动不参与。 */
+  const commitStaged = useCallback(async () => {
+    if (activeRoot === null || activeRoot.isGit === false) return
+    const message = commitMessage.trim()
+    if (message === '' || commitBusy) return
+    setCommitBusy(true)
+    setCommitNote(null)
+    try {
+      const result = await api.commitChanges({ rootPath: activeRoot.path, message })
+      setCommitMessage('')
+      setCommitNote({ tone: 'info', text: tRef.current('commit.done', { head: result.head }) })
+      await refreshStatus()
+      setDiffNonce((previous) => previous + 1)
+    } catch (error) {
+      setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current) })
+    } finally {
+      setCommitBusy(false)
+    }
+  }, [activeRoot, commitMessage, commitBusy, refreshStatus])
+
+  /** 生成提交说明：有暂存看暂存，否则看未暂存，由宿主决定。 */
+  const generateMessage = useCallback(async () => {
+    if (activeRoot === null || activeRoot.isGit === false || commitGenerating) return
+    setCommitGenerating(true)
+    setCommitNote(null)
+    try {
+      const result = await api.commitMessage({ rootPath: activeRoot.path })
+      setCommitMessage(result.message)
+    } catch (error) {
+      setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current) })
+    } finally {
+      setCommitGenerating(false)
+    }
+  }, [activeRoot, commitGenerating])
+
+  /** 打开设置页：同时拉模型目录和当前设置。 */
+  const openSettings = useCallback(async () => {
+    setShowSettings(true)
+    setSettingsState({ loading: true, models: [], commitModel: null, error: null, saved: false })
+    try {
+      const [catalog, settings] = await Promise.all([api.listModels({}), api.readSettings({})])
+      setSettingsState({ loading: false, models: catalog.models, commitModel: settings.commitModel, error: null, saved: false })
+    } catch (error) {
+      setSettingsState({ loading: false, models: [], commitModel: null, error: api.describeError(error, tRef.current), saved: false })
+    }
+  }, [])
+
+  /** 选择模型即保存。空值表示清除。 */
+  const changeCommitModel = useCallback(async (ref) => {
+    const commitModel = ref === '' ? null : ref
+    setSettingsState((previous) => ({ ...previous, commitModel, saved: false, error: null }))
+    try {
+      const saved = await api.writeSettings({ commitModel })
+      setSettingsState((previous) => ({ ...previous, commitModel: saved.commitModel, saved: true }))
+    } catch (error) {
+      setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
+    }
+  }, [])
+
   const toggleGroup = useCallback((groupKey) => {
     setCollapsedGroups((previous) => {
       const next = { ...(previous && typeof previous === 'object' ? previous : {}) }
@@ -753,6 +874,14 @@ function buildUpdateNote(updateState, t) {
       h('button', {
         type: 'button',
         className: 'dgp-iconbtn',
+        title: t('settings.open'),
+        'aria-label': t('settings.open'),
+        'data-action': 'open-settings',
+        onClick: openSettings
+      }, h(Icon, { name: 'settings', size: 15 })),
+      h('button', {
+        type: 'button',
+        className: 'dgp-iconbtn',
         title: t('toolbar.more'),
         'aria-expanded': moreOpen ? 'true' : 'false',
         onClick: () => {
@@ -808,6 +937,22 @@ function buildUpdateNote(updateState, t) {
         }, t('group.staged')))
       : null)
 
+  const stagedCount = status !== null && status.counts !== null && status.counts !== undefined
+    ? status.counts.staged
+    : 0
+  const commitBox = mode === MODE.changes && activeRoot !== null && activeRoot.isGit !== false
+    ? h(CommitBox, {
+      message: commitMessage,
+      stagedCount,
+      busy: commitBusy,
+      generating: commitGenerating,
+      onChange: setCommitMessage,
+      onCommit: commitStaged,
+      onGenerate: generateMessage,
+      t
+    })
+    : null
+
   let leftPane
   if (mode === MODE.changes) {
     if (activeRoot !== null && activeRoot.isGit === false) {
@@ -836,6 +981,10 @@ function buildUpdateNote(updateState, t) {
         onFilterChange: setFilter,
         collapsedGroups,
         onToggleGroup: toggleGroup,
+        onStage: stageEntry,
+        pendingPath: stagePending,
+        onStageGroup: stageGroup,
+        pendingGroup: stagePending,
         t
       })
     }
@@ -990,7 +1139,10 @@ function buildUpdateNote(updateState, t) {
     ref: bodyRef,
     style: { '--dgp-left-width': String(leftWidth) + 'px' }
   },
-  h('div', { className: 'dgp-pane-left' }, leftPane),
+  h('div', { className: 'dgp-pane-left' }, commitBox, commitNote === null
+    ? null
+    : h('div', { className: 'dgp-notebar', 'data-commit-note': commitNote.tone },
+      h(InlineNote, { tone: commitNote.tone }, commitNote.text)), leftPane),
   h('div', {
     className: 'dgp-divider',
     role: 'separator',
@@ -1045,6 +1197,19 @@ function buildUpdateNote(updateState, t) {
     })
   } else {
     content = body
+  }
+
+  if (showSettings) {
+    content = h(SettingsView, {
+      models: settingsState.models,
+      commitModel: settingsState.commitModel,
+      loading: settingsState.loading,
+      error: settingsState.error,
+      saved: settingsState.saved,
+      onChangeModel: changeCommitModel,
+      onBack: () => setShowSettings(false),
+      t
+    })
   }
 
   return h('div', {

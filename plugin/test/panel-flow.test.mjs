@@ -1297,6 +1297,139 @@ test('用例 1：挂载 → 解析根 → status → 分组与行', async () => 
 })
 
 /* ================================================================== */
+/* 用例 1s：行尾 + / − 暂存与取消暂存                                   */
+/* ================================================================== */
+
+test('用例 1s：未暂存行点加号暂存，已暂存行点减号取消暂存', async () => {
+  const stagedCalls = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'index/stage': (payload) => {
+        stagedCalls.push(payload)
+        return sayOk({ path: payload.path, action: payload.action })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    // 操作按钮和文件行包在同一个 dgp-row-wrap 里，按这个容器配对，不靠全局顺序。
+    const buttonFor = (groupKey, relPath) => {
+      const group = byAttr(panel.tree, 'data-dgp-group', groupKey)[0]
+      assert(group !== undefined, '缺少分组 ' + groupKey)
+      const wrap = findOne(group, (node) => (
+        isHost(node)
+        && hasClass(node, 'dgp-row-wrap')
+        && findOne(node, (child) => (
+          isHost(child) && attr(child, 'data-dgp-path') === relPath && attr(child, 'data-dgp-row') === 'file'
+        )) !== null
+      ))
+      assert(wrap !== null, groupKey + ' 里缺少 ' + relPath + ' 的行')
+      const button = findOne(wrap, (node) => (
+        isHost(node) && node.type === 'button' && typeof attr(node, 'data-dgp-action') === 'string'
+      ))
+      assert(button !== null, relPath + ' 缺少行尾按钮')
+      return button
+    }
+
+    const stageButton = buttonFor('unstaged', 'app.js')
+    eq(attr(stageButton, 'data-dgp-action'), 'stage', '未暂存行应是加号（暂存）')
+    const unstageButton = buttonFor('staged', 'util.ts')
+    eq(attr(unstageButton, 'data-dgp-action'), 'unstage', '已暂存行应是减号（取消暂存）')
+    const untrackedButton = buttonFor('untracked', 'notes.txt')
+    eq(attr(untrackedButton, 'data-dgp-action'), 'stage', '未跟踪行也应能暂存')
+
+    const mark = panel.router.mark()
+    click(stageButton)
+    await panel.flush()
+    eq(stagedCalls.length, 1, '点一次只暂存一次')
+    eq(stagedCalls[0], { rootPath: PROJECT, path: 'app.js', action: 'stage' }, '暂存载荷')
+    assert(panel.router.all('status', mark).length >= 1, '暂存后应重读 status，文件才会换组')
+
+    click(unstageButton)
+    await panel.flush()
+    eq(stagedCalls[1], { rootPath: PROJECT, path: 'util.ts', action: 'unstage' }, '取消暂存载荷')
+  })
+})
+
+test('用例 1t：提交框在有暂存且有说明时可提交，生成按钮走 commit/message', async () => {
+  const commits = []
+  const generated = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      commit: (payload) => {
+        commits.push(payload)
+        return sayOk({ head: 'def5678', subject: payload.message })
+      },
+      'commit/message': (payload) => {
+        generated.push(payload)
+        return sayOk({ message: 'feat: generated', model: 'kedaya-grok/grok-4.7', source: 'staged' })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const submit = panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit')
+    assert(submit !== null, '应有提交按钮')
+    eq(attr(submit, 'disabled'), true, '没有说明时提交按钮禁用')
+
+    const input = panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input')
+    input.props.onChange({ target: { value: 'feat: add panel' } })
+    await panel.flush()
+    const submitReady = panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit')
+    eq(attr(submitReady, 'disabled'), false, '有暂存且有说明时可以提交')
+
+    click(submitReady)
+    await panel.flush()
+    eq(commits.length, 1, '应提交一次')
+    eq(commits[0].message, 'feat: add panel', '提交说明')
+    eq(commits[0].rootPath, PROJECT, '提交的仓库')
+
+    const generate = panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'generate')
+    click(generate)
+    await panel.flush()
+    eq(generated.length, 1, '应请求一次生成')
+    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input'), 'value'),
+      'feat: generated', '生成结果应填进输入框')
+  })
+})
+
+test('用例 1u：设置按钮打开设置页，选择模型即保存', async () => {
+  const saved = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'models/list': () => sayOk({ models: [
+        { ref: 'kedaya-grok/grok-4.7', providerId: 'kedaya-grok', providerName: 'Kedaya Grok', modelId: 'grok-4.7', modelName: 'Grok 4.7' }
+      ] }),
+      'settings/get': () => sayOk({ commitModel: null }),
+      'settings/set': (payload) => {
+        saved.push(payload)
+        return sayOk({ commitModel: payload.commitModel })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-action') === 'open-settings'))
+    await panel.flush()
+    const view = panel.one((node) => isHost(node) && attr(node, 'data-dgp-view') === 'settings')
+    assert(view !== null, '应进入设置页')
+    const select = panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'model')
+    assert(select !== null, '应有模型下拉')
+    select.props.onChange({ target: { value: 'kedaya-grok/grok-4.7' } })
+    await panel.flush()
+    eq(saved.length, 1, '选择即保存')
+    eq(saved[0].commitModel, 'kedaya-grok/grok-4.7', '保存的模型')
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'back'))
+    await panel.flush()
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-view') === 'settings'), null, '返回后离开设置页')
+  })
+})
+
+/* ================================================================== */
 /* 用例 2：点选 → diff 载荷 → diff 行                                  */
 /* ================================================================== */
 

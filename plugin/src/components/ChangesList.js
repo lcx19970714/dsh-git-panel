@@ -20,7 +20,7 @@
 import { h, useEffect, useMemo, useRef, useState } from '../platform.js'
 import { Icon, StatusLetter } from '../ui/Icon.js'
 import { basename, dirname, formatCount } from '../util/paths.js'
-import { ancestorsFor, buildGroupRows, countFilesUnder, filterEntries, groupChanges } from '../util/changes.js'
+import { ancestorsFor, buildGroupRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } from '../util/changes.js'
 import { EmptyState, InlineNote, SkeletonRows } from './States.js'
 
 /** props.t 缺失时的兜底（本地字典，永不返回 undefined）。 */
@@ -46,6 +46,14 @@ export function ChangesList(props) {
     : null
   const onSelect = typeof source.onSelect === 'function' ? source.onSelect : null
   const onToggleGroup = typeof source.onToggleGroup === 'function' ? source.onToggleGroup : null
+  const onStage = typeof source.onStage === 'function' ? source.onStage : null
+  const onStageGroup = typeof source.onStageGroup === 'function' ? source.onStageGroup : null
+  const pendingPath = typeof source.pendingPath === 'string' && source.pendingPath !== ''
+    ? source.pendingPath
+    : null
+  const pendingGroup = typeof source.pendingGroup === 'string' && source.pendingGroup !== ''
+    ? source.pendingGroup
+    : null
   const translate = source.t
   // 注意：`onFilterChange` 归 Panel 管（它渲染筛选输入框），这里只消费 `filter`。
 
@@ -294,6 +302,28 @@ export function ChangesList(props) {
       counts.push(h('span', { key: 'del', className: 'dgp-del' }, translate('viewer.dels', { count: formatCount(dels) })))
     }
 
+    // 行尾操作只由所在分组决定：已暂存 = 取消暂存，未暂存/未跟踪 = 暂存，冲突不给按钮。
+    const action = rowActionOf(group.key)
+    const busy = pendingPath !== null && pendingPath === row.path
+    const actionButton = action === null || onStage === null
+      ? null
+      : h('button', {
+        type: 'button',
+        className: 'dgp-row-action',
+        'data-dgp-action': action,
+        'data-busy': busy ? 'true' : undefined,
+        disabled: busy,
+        title: translate(action === 'stage' ? 'row.stage' : 'row.unstage'),
+        'aria-label': translate(action === 'stage' ? 'row.stage' : 'row.unstage'),
+        onClick: (event) => {
+          if (event !== null && event !== undefined) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+          onStage(row.path, action)
+        }
+      }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 13 }))
+
     return h('li', {
       key: index,
       className: 'dgp-item',
@@ -301,45 +331,71 @@ export function ChangesList(props) {
       'aria-level': depth + 1,
       'aria-selected': isActive ? 'true' : 'false'
     },
-    h('button', {
-      ...common,
-      'data-kind': 'file',
-      'data-dgp-entry': 'file',
-      onClick: () => {
-        setCursor(index)
-        selectRow(row, group.key)
-      }
-    },
-    entry !== null && entry !== undefined
-      ? h(StatusLetter, { status: entry.status })
-      : null,
-    h('span', { className: 'dgp-name dgp-oneline' }, displayName),
-    parent === '' ? null : h('span', { className: 'dgp-sub dgp-oneline' }, parent),
-    counts.length === 0 ? null : h('span', { className: 'dgp-meta' }, counts)))
+    h('div', { className: 'dgp-row-wrap' },
+      h('button', {
+        ...common,
+        'data-kind': 'file',
+        'data-dgp-entry': 'file',
+        onClick: () => {
+          setCursor(index)
+          selectRow(row, group.key)
+        }
+      },
+      entry !== null && entry !== undefined
+        ? h(StatusLetter, { status: entry.status })
+        : null,
+      h('span', { className: 'dgp-name dgp-oneline' }, displayName),
+      parent === '' ? null : h('span', { className: 'dgp-sub dgp-oneline' }, parent),
+      counts.length === 0 ? null : h('span', { className: 'dgp-meta' }, counts)),
+      actionButton))
   }
 
-  const renderGroup = (group) => h('div', {
-    key: group.key,
-    className: 'dgp-group',
-    'data-dgp-group': group.key
-  },
-  h('button', {
-    type: 'button',
-    className: 'dgp-group-head',
-    'data-open': group.open ? 'true' : 'false',
-    'aria-expanded': group.open,
-    onClick: () => {
-      if (onToggleGroup !== null) onToggleGroup(group.key)
-    }
-  },
-  h('span', { className: 'dgp-group-caret', 'data-open': group.open ? 'true' : 'false' },
-    h(Icon, { name: 'chevron-right', size: 12 })),
-  h('span', { className: 'dgp-group-title' }, translate('group.' + group.key)),
-  h('span', { className: 'dgp-group-count' }, formatCount(group.entries.length))),
-  group.open
-    ? h('ul', { className: 'dgp-level', role: 'none' },
-      group.rows.map((row, index) => renderRow(group, row, group.offset + index)))
-    : null)
+  const renderGroup = (group) => {
+    const action = groupActionOf(group.key)
+    const busy = pendingGroup !== null && pendingGroup === action
+    const actionButton = action === null || onStageGroup === null
+      ? null
+      : h('button', {
+        type: 'button',
+        className: 'dgp-group-action',
+        'data-dgp-group-action': action,
+        'data-busy': busy ? 'true' : undefined,
+        disabled: busy,
+        title: translate(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
+        'aria-label': translate(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
+        onClick: (event) => {
+          if (event !== null && event !== undefined) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+          onStageGroup(action)
+        }
+      }, h(Icon, { name: action === 'unstage' ? 'minus' : 'plus', size: 13 }))
+    return h('div', {
+      key: group.key,
+      className: 'dgp-group',
+      'data-dgp-group': group.key
+    },
+    h('div', { className: 'dgp-group-head-wrap' },
+      h('button', {
+        type: 'button',
+        className: 'dgp-group-head',
+        'data-open': group.open ? 'true' : 'false',
+        'aria-expanded': group.open,
+        onClick: () => {
+          if (onToggleGroup !== null) onToggleGroup(group.key)
+        }
+      },
+      h('span', { className: 'dgp-group-caret', 'data-open': group.open ? 'true' : 'false' },
+        h(Icon, { name: 'chevron-right', size: 12 })),
+      h('span', { className: 'dgp-group-title' }, translate('group.' + group.key)),
+      h('span', { className: 'dgp-group-count' }, formatCount(group.entries.length))),
+      actionButton),
+    group.open
+      ? h('ul', { className: 'dgp-level', role: 'none' },
+        group.rows.map((row, index) => renderRow(group, row, group.offset + index)))
+      : null)
+  }
 
   const container = (children) => h('div', {
     className: 'dgp-list',

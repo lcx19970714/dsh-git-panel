@@ -136,7 +136,7 @@ plugin/
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 9 个 RPC 端点通信。写能力只有一个端点（`file/write`），且必须带内容哈希；远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 16 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）和 `commit`（只提交已暂存内容）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -148,6 +148,12 @@ plugin/
 | `remote/fetch` | `{rootPath}` | `{url, branch, head, upstream, ahead, behind, fetchedAt}`（执行 git fetch --prune） |
 | `file/read` | `{rootPath, path}` | `{kind, text, size, language, eol, bom, hash, lines}`（文本一律 LF 归一） |
 | `file/write` | `{rootPath, path, text, expectedHash, eol, bom}` 或 `{…, force:true}` | `{size, mtimeMs, hash}`；哈希不匹配 → `conflict` |
+| `index/stage` | `{rootPath, path, action}` | `{path, action}`；`stage` = `git add --`，`unstage` = `git restore --staged --` |
+| `index/stage-group` | `{rootPath, scope}` | `{scope}`；整组暂存 / 取消暂存 |
+| `commit` | `{rootPath, message}` | `{head, subject}`；只提交已暂存内容 |
+| `commit/message` | `{rootPath}` | `{message, model, source}`；有暂存看暂存，否则看未暂存 |
+| `models/list` | `{}` | `{models[]}`；模型目录来自 profile 的 `llm-pi-ai` 配置 |
+| `settings/get` / `settings/set` | `{commitModel?}` | `{commitModel}`；生成提交说明所用的模型 |
 | `tree/list` | `{rootPath, path}` | `{entries[], truncated}` |
 
 所有失败都返回 `{ok:false, error:{code, message, details}}`，宿主 handler 绝不抛错（避免裸 500）。
@@ -173,7 +179,7 @@ node scripts/install-profile.mjs --dry-run
 | `remote` | 远端地址 → 网页地址（scp/ssh/https/git 形式）、凭据不入地址栏、本地路径 → null |
 | `build` | 打包器：产物无残留 import/export、能真跑、循环依赖报错 |
 | `git` | git 引擎（需要 `_sandbox/repo` 夹具：`node test/make-fixture.mjs`） |
-| `host` | 9 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、远端 fetch、配置持久化与损坏恢复 |
+| `host` | 10 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存、远端 fetch、配置持久化与损坏恢复 |
 | `client` | 产物装载 + `apply()` 契约 + 用假 react 真渲染 tab body（不需要浏览器） |
 | `components` | 组件渲染契约：编辑器脏/冲突态、不可编辑占位、换行开关下的行号隐藏 |
 | `flow` | 面板端到端数据流：选根→status→diff→文件读→编辑保存→冲突→检测更新（假 fetch，不起服务） |
@@ -244,7 +250,7 @@ export function apply(ctx) {
 ——之前那个"面板一直闪、diff 永远加载不出来"的 bug 就是一路静默降级掩盖出来的。
 ## 5. 已知边界（v1 明确不做）
 
-- **版本控制操作只读**：不提供 stage / unstage / commit / discard / 分支操作（保存只写工作区文件）。
+- **提交只提交已暂存内容**：未暂存的改动不会被自动带上；不做 discard / 分支操作。
 - 项目根是仓库子目录时，变更列表展示的是**整个仓库**的变更（VSCode 行为），不做「只看项目目录以内」的过滤。
 - 文件模式的筛选只搜索**已展开**的目录，不做仓库级全文搜索。
 - 单个文件 diff 超过 5000 行会截断并给出「展开全部」。

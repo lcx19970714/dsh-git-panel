@@ -284,6 +284,13 @@ export const CSS = `
 /* ===================== 4. 左列：分组与行 ===================== */
 .dgp-level { margin: 0; padding: 0; list-style: none; }
 .dgp-item { margin: 0; padding: 0; }
+.dgp-row-wrap {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.dgp-row-wrap > .dgp-row { flex: 1 1 auto; min-width: 0; width: auto; }
+.dgp-row-wrap > .dgp-row-action { margin-right: 6px; }
 .dgp-row {
   display: flex;
   align-items: center;
@@ -351,6 +358,30 @@ export const CSS = `
 .dgp-add { color: var(--dsw-alias-state-success-primary); }
 .dgp-del { color: var(--dsw-alias-state-error-primary); }
 
+/* 行尾暂存 / 取消暂存：默认收起，悬停或键盘聚焦所在行时出现（VS Code 的行为） */
+.dgp-row-action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  opacity: 0;
+}
+.dgp-row-wrap:hover .dgp-row-action,
+.dgp-row-wrap:focus-within .dgp-row-action,
+.dgp-row-action:focus-visible { opacity: 1; }
+.dgp-row-action:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dgp-row-action[data-busy='true'] { opacity: .5; cursor: default; }
+.dgp-row-action:disabled { cursor: default; }
+
 /* 状态字母 M/A/D/R/C/T/U/? */
 .dgp-status-letter {
   display: inline-flex;
@@ -415,6 +446,29 @@ export const CSS = `
   cursor: pointer;
 }
 .dgp-group-head:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dgp-group-head-wrap { display: flex; align-items: center; }
+.dgp-group-head-wrap > .dgp-group-head { flex: 1 1 auto; min-width: 0; width: auto; }
+.dgp-group-action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  opacity: 0;
+}
+.dgp-group-head-wrap:hover .dgp-group-action,
+.dgp-group-head-wrap:focus-within .dgp-group-action,
+.dgp-group-action:focus-visible { opacity: 1; }
+.dgp-group-action:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dgp-group-action[data-busy='true'] { opacity: .5; cursor: default; }
 .dgp-group-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dgp-group-count {
   flex: none;
@@ -427,6 +481,70 @@ export const CSS = `
   font-weight: 500;
   line-height: 15px;
   text-align: center;
+}
+
+/* 提交框：位于变更列表最上方，输入框右侧内嵌生成按钮 */
+.dgp-commit {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 4px;
+  border-bottom: .5px solid var(--dsw-alias-border-l3);
+}
+.dgp-commit-input-wrap { position: relative; }
+.dgp-commit-input {
+  width: 100%;
+  min-height: 52px;
+  max-height: 160px;
+  padding: 6px 30px 6px 8px;
+  border: .5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.dgp-commit-input:focus { outline: none; border-color: var(--dsw-alias-state-business-primary); }
+.dgp-commit-generate {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.dgp-commit-generate:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dgp-commit-generate[data-busy='true'] { opacity: .5; cursor: default; }
+.dgp-commit-submit { align-self: flex-start; }
+.dgp-commit-submit:disabled { opacity: .45; cursor: default; }
+
+/* 设置页 */
+.dgp-settings { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+.dgp-settings-head { display: flex; align-items: center; gap: 8px; }
+.dgp-settings-title { margin: 0; font-size: 13px; font-weight: 600; }
+.dgp-settings-field { display: flex; flex-direction: column; gap: 4px; }
+.dgp-settings-label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.dgp-settings-hint { margin: 0; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dgp-select {
+  height: 30px;
+  padding: 0 8px;
+  border: .5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
 }
 
 .dgp-note { margin: 0; padding: 4px 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
@@ -718,6 +836,8 @@ export const CSS = `
   .dgp-row, .dgp-group-head { min-height: 40px; }
   .dgp-iconbtn, .dgp-tool { width: 32px; height: 32px; }
   .dgp-divider::after { inset: 0 -10px; }
+  /* 触屏没有悬停，行尾与分组头的按钮必须一直在 */
+  .dgp-row-action, .dgp-group-action { opacity: 1; }
 }
 
 /* ==================================================================

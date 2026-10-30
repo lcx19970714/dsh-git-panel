@@ -17,6 +17,13 @@
  *   remote/fetch    { rootPath }               -> {url, branch, head, upstream, ahead, behind, fetchedAt}（git fetch，只读）
  *   file/read       { rootPath, path }          -> FileResult（含 hash/bom/eol，保存时要用）
  *   file/write      { rootPath, path, text, expectedHash|force, eol, bom } -> WriteResult
+ *   index/stage     { rootPath, path, action }  -> { path, action }（stage = git add，unstage = git restore --staged）
+ *   index/stage-group { rootPath, scope }       -> { scope }（stage-unstaged / stage-untracked / unstage）
+ *   commit          { rootPath, message }       -> { head, subject }（只提交已暂存内容）
+ *   commit/message  { rootPath }                -> { message, model, source }（按设置里的模型生成）
+ *   models/list     {}                          -> { models: [{ref, providerName, modelName}] }
+ *   settings/get    {}                          -> { commitModel }
+ *   settings/set    { commitModel }             -> { commitModel }
  *   tree/list       { rootPath, path }          -> TreeResult
  *
  * v1 没有 Config（不需要 schemastery），也没有 AI-facing tool。
@@ -36,8 +43,13 @@ import {
   readTextFile,
   resolveInside,
   resolveRepo,
+  stageFile,
+  stageGroup,
+  commitIndex,
+  commitDiffText,
   writeTextFile
 } from './host/git.js'
+import { listModels, readSettings, writeCommitModel, generateCommitMessage } from './host/models.js'
 import { resolveRoots, addExtraRoot, removeExtraRoot } from './host/roots.js'
 
 export const name = 'dsh-git-panel'
@@ -74,6 +86,13 @@ export const ENDPOINTS = Object.freeze([
   'diff',
   'file/read',
   'file/write',
+  'index/stage',
+  'index/stage-group',
+  'commit',
+  'commit/message',
+  'models/list',
+  'settings/get',
+  'settings/set',
   'tree/list'
 ])
 
@@ -359,6 +378,86 @@ function createDispatcher(ctx) {
     })
   }
 
+  /* index/stage ------------------------------------------------------- */
+  /**
+   * 暂存 / 取消暂存单个文件。
+   * action 由客户端按所在分组显式给出（未暂存/未跟踪 = stage，已暂存 = unstage），
+   * 宿主不根据当前状态自行推断 —— 避免点的是哪一行和实际执行的命令对不上。
+   */
+  async function indexStage(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const rawPath = requireString(request.path, 'path')
+    if (request.action !== 'stage' && request.action !== 'unstage') {
+      throw new GitError('bad-request', 'action 必须是 stage 或 unstage')
+    }
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
+    const result = await stageFile(normalizeSlashes(repo.repoRoot), rawPath, request.action, { signal })
+    clearStatusCache()
+    return result
+  }
+
+  /* index/stage-group ------------------------------------------------- */
+  /** 分组头的批量操作。scope 由客户端按分组显式给出。 */
+  async function indexStageGroup(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
+    const result = await stageGroup(normalizeSlashes(repo.repoRoot), request.scope, { signal })
+    clearStatusCache()
+    return result
+  }
+
+  /* commit ------------------------------------------------------------ */
+  /** 提交已暂存内容。没有暂存时 git 自己会失败，宿主不把未暂存的改动自动加进来。 */
+  async function commit(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    if (typeof request.message !== 'string') throw new GitError('bad-request', 'message 必须是字符串')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
+    const result = await commitIndex(normalizeSlashes(repo.repoRoot), request.message, { signal })
+    clearStatusCache()
+    return result
+  }
+
+  /* commit/message ---------------------------------------------------- */
+  /**
+   * 生成提交说明。差异来源按 VS Code 的习惯：有暂存看暂存，没有才看未暂存。
+   * 用哪一个模型只认设置里保存的 commitModel。
+   */
+  async function commitMessage(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    const diff = await commitDiffText(normalizeSlashes(repo.repoRoot), { signal })
+    if (diff === null) throw new GitError('nothing-to-commit', '没有可生成提交说明的改动')
+    const settings = await readSettings()
+    if (settings.commitModel === null) {
+      throw new GitError('no-commit-model', '还没有配置生成提交说明的模型')
+    }
+    const generated = await generateCommitMessage(settings.commitModel, diff.text, { signal })
+    return { ...generated, source: diff.source }
+  }
+
+  /* models / settings ------------------------------------------------- */
+  async function modelsList() {
+    return { models: await listModels() }
+  }
+
+  async function settingsGet() {
+    return readSettings()
+  }
+
+  async function settingsSet(request) {
+    if (request.commitModel !== null && typeof request.commitModel !== 'string') {
+      throw new GitError('bad-request', 'commitModel 必须是字符串或 null')
+    }
+    return writeCommitModel(request.commitModel ?? '')
+  }
+
   /* file/read --------------------------------------------------------- */
   async function fileRead(request, signal) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
@@ -422,6 +521,20 @@ function createDispatcher(ctx) {
         return fileRead(request, signal)
       case 'file/write':
         return fileWrite(request, signal)
+      case 'index/stage':
+        return indexStage(request, signal)
+      case 'index/stage-group':
+        return indexStageGroup(request, signal)
+      case 'commit':
+        return commit(request, signal)
+      case 'commit/message':
+        return commitMessage(request, signal)
+      case 'models/list':
+        return modelsList()
+      case 'settings/get':
+        return settingsGet()
+      case 'settings/set':
+        return settingsSet(request)
       case 'tree/list':
         return treeList(request, signal)
       default:

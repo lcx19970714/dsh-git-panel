@@ -35,7 +35,13 @@ const MESSAGE_KEYS = {
   'outside-root': 'error.outsideRoot',
   'forbidden-path': 'error.outsideRoot',
   'no-session': 'status.noSession',
-  'no-cwd': 'status.noCwd'
+  'no-cwd': 'status.noCwd',
+  'no-commit-model': 'commit.noModel',
+  'nothing-to-commit': 'commit.nothing',
+  'no-models': 'settings.noModels',
+  'no-credential': 'settings.noCredential',
+  'unknown-model': 'settings.unknownModel',
+  'model-failed': 'commit.generateFailed'
 }
 
 /**
@@ -103,6 +109,41 @@ export function fetchRemote(payload, options) {
 /** 保存文件内容（path 相对 rootPath；expectedHash 是乐观并发凭据，force 只在确认覆盖后用）。 */
 export function writeFile(payload, options) {
   return call('file/write', payload, options)
+}
+
+/** 暂存 / 取消暂存单个文件（path 相对仓库根；action 为 stage 或 unstage）。 */
+export function stageFile(payload, options) {
+  return call('index/stage', payload, options)
+}
+
+/** 整组暂存 / 取消暂存（scope 为 stage-unstaged / stage-untracked / unstage）。 */
+export function stageGroup(payload, options) {
+  return call('index/stage-group', payload, options)
+}
+
+/** 提交已暂存内容。 */
+export function commitChanges(payload, options) {
+  return call('commit', payload, options)
+}
+
+/** 按设置里的模型生成提交说明。 */
+export function commitMessage(payload, options) {
+  return call('commit/message', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 70_000 })
+}
+
+/** 模型目录（来自 profile 的 llm-pi-ai 配置）。 */
+export function listModels(payload, options) {
+  return call('models/list', payload, options)
+}
+
+/** 读插件设置。 */
+export function readSettings(payload, options) {
+  return call('settings/get', payload, options)
+}
+
+/** 保存插件设置。 */
+export function writeSettings(payload, options) {
+  return call('settings/set', payload, options)
 }
 
 /** 列目录（path 相对 rootPath）。 */

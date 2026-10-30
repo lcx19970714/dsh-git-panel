@@ -52,6 +52,35 @@ export function groupChanges(files) {
   return out
 }
 
+/**
+ * 一行该放哪个索引操作按钮。
+ *
+ * 规则跟 VS Code 的 SCM 行一致，并且**只由所在分组决定**（同一文件可以同时出现在两组）：
+ *   staged             → unstage（减号，取消暂存，文件回到未暂存）
+ *   unstaged/untracked → stage（加号，暂存，文件进入已暂存）
+ *   conflicted         → null（冲突要先解决再暂存，行上不给一键操作）
+ * 其它分组一律 null，调用方据此不渲染按钮。
+ */
+export function rowActionOf(groupKey) {
+  if (groupKey === 'staged') return 'unstage'
+  if (groupKey === 'unstaged' || groupKey === 'untracked') return 'stage'
+  return null
+}
+
+/**
+ * 分组头右侧的批量操作。与行尾按钮同一套规则，作用范围是整组：
+ *   staged    → unstage（取消暂存全部已暂存）
+ *   unstaged  → stage-unstaged（暂存全部已跟踪的未暂存改动）
+ *   untracked → stage-untracked（暂存全部未跟踪文件）
+ *   conflicted → null
+ */
+export function groupActionOf(groupKey) {
+  if (groupKey === 'staged') return 'unstage'
+  if (groupKey === 'unstaged') return 'stage-unstaged'
+  if (groupKey === 'untracked') return 'stage-untracked'
+  return null
+}
+
 /** 分组里只有一个文件时，直接渲染成文件行（不造目录行）：返回那个条目，否则 null。 */
 export function singleFileShortcut(entries) {
   const list = Array.isArray(entries) ? entries : []

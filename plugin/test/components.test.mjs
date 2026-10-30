@@ -344,6 +344,62 @@ test('ChangesList：空工作区 / 加载中 / 报错', () => {
   assert(renderComponent(ChangesList, { ...base, status: null, loading: false, error: 'boom', selectedPath: null }) !== null, '错误态渲染为 null')
 })
 
+test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行没有', () => {
+  const { ChangesList } = loadModule('./components/ChangesList.js')
+  const staged = []
+  // 每个分组一个根级文件：目录默认折叠，放进子目录就看不到行尾按钮
+  const flat = {
+    ...statusFixture,
+    files: [
+      { path: 'staged.js', status: 'M', staged: true, unstaged: false, untracked: false, conflicted: false, adds: 1, dels: 0 },
+      { path: 'work.js', status: 'M', staged: false, unstaged: true, untracked: false, conflicted: false, adds: 1, dels: 0 },
+      { path: 'new.js', status: '?', staged: false, unstaged: false, untracked: true, conflicted: false, adds: 0, dels: 0 },
+      { path: 'both.js', status: 'U', staged: false, unstaged: false, untracked: false, conflicted: true, adds: 0, dels: 0 }
+    ]
+  }
+  const tree = renderComponent(ChangesList, {
+    status: flat, loading: false, error: null, selectedPath: null,
+    onSelect: () => {}, filter: '', onFilterChange: () => {}, collapsedGroups: {}, onToggleGroup: () => {},
+    pendingPath: 'work.js',
+    onStage: (path, action) => staged.push({ path, action }),
+    onStageGroup: () => {},
+    t: tKey
+  })
+  const actions = collect(tree, (node) => node.$$host === true && node.type === 'button' && node.props['data-dgp-action'] !== undefined)
+  const byGroup = (key) => {
+    const group = collect(tree, (node) => node.$$host === true && node.props['data-dgp-group'] === key)[0]
+    return collect(group, (node) => node.$$host === true && node.type === 'button' && node.props['data-dgp-action'] !== undefined)
+  }
+  const stagedButtons = byGroup('staged')
+  const unstagedButtons = byGroup('unstaged')
+  const untrackedButtons = byGroup('untracked')
+  assert(stagedButtons.length > 0, '已暂存组应有行尾按钮')
+  assert(unstagedButtons.length > 0, '未暂存组应有行尾按钮')
+  assert(untrackedButtons.length > 0, '未跟踪组应有行尾按钮')
+  eq(stagedButtons.every((node) => node.props['data-dgp-action'] === 'unstage'), true, '已暂存行应是取消暂存')
+  eq(unstagedButtons.every((node) => node.props['data-dgp-action'] === 'stage'), true, '未暂存行应是暂存')
+  eq(untrackedButtons.every((node) => node.props['data-dgp-action'] === 'stage'), true, '未跟踪行应是暂存')
+  eq(byGroup('conflicted').length, 0, '冲突行不应有暂存按钮')
+  eq(actions.length, stagedButtons.length + unstagedButtons.length + untrackedButtons.length, '按钮数应等于三个可操作分组之和')
+  const groupAction = (key) => {
+    const group = collect(tree, (node) => node.$$host === true && node.props['data-dgp-group'] === key)[0]
+    return collect(group, (node) => node.$$host === true && node.props['data-dgp-group-action'] !== undefined)
+  }
+  eq(groupAction('staged')[0].props['data-dgp-group-action'], 'unstage', '已暂存组头是全部取消暂存')
+  eq(groupAction('unstaged')[0].props['data-dgp-group-action'], 'stage-unstaged', '未暂存组头是全部暂存')
+  eq(groupAction('untracked')[0].props['data-dgp-group-action'], 'stage-untracked', '未跟踪组头是全部暂存')
+  eq(groupAction('conflicted').length, 0, '冲突组头没有批量按钮')
+
+  // 点按钮只触发暂存，不冒泡成选中
+  stagedButtons[0].props.onClick({ preventDefault() {}, stopPropagation() {} })
+  eq(staged.length, 1, '应回调一次')
+  eq(staged[0].action, 'unstage', '已暂存行的动作')
+
+  const busy = actions.find((node) => node.props.disabled === true)
+  assert(busy !== undefined, 'pendingPath 对应的按钮应禁用')
+  eq(busy.props['data-busy'], 'true', '忙状态钩子')
+})
+
 test('ChangesList：筛选无结果给出提示', () => {
   const { ChangesList } = loadModule('./components/ChangesList.js')
   const tree = renderComponent(ChangesList, {

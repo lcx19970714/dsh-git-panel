@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 22 个 */
+/* 模块: 24 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -466,6 +466,13 @@ window.__ModuleLoader__.load({
       /* ===================== 4. 左列：分组与行 ===================== */
       .dgp-level { margin: 0; padding: 0; list-style: none; }
       .dgp-item { margin: 0; padding: 0; }
+      .dgp-row-wrap {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+      }
+      .dgp-row-wrap > .dgp-row { flex: 1 1 auto; min-width: 0; width: auto; }
+      .dgp-row-wrap > .dgp-row-action { margin-right: 6px; }
       .dgp-row {
         display: flex;
         align-items: center;
@@ -533,6 +540,30 @@ window.__ModuleLoader__.load({
       .dgp-add { color: var(--dsw-alias-state-success-primary); }
       .dgp-del { color: var(--dsw-alias-state-error-primary); }
 
+      /* 行尾暂存 / 取消暂存：默认收起，悬停或键盘聚焦所在行时出现（VS Code 的行为） */
+      .dgp-row-action {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        margin-left: 2px;
+        padding: 0;
+        border: 0;
+        border-radius: var(--dsw-radius-sm);
+        background: transparent;
+        color: var(--dsw-alias-label-secondary);
+        cursor: pointer;
+        opacity: 0;
+      }
+      .dgp-row-wrap:hover .dgp-row-action,
+      .dgp-row-wrap:focus-within .dgp-row-action,
+      .dgp-row-action:focus-visible { opacity: 1; }
+      .dgp-row-action:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+      .dgp-row-action[data-busy='true'] { opacity: .5; cursor: default; }
+      .dgp-row-action:disabled { cursor: default; }
+
       /* 状态字母 M/A/D/R/C/T/U/? */
       .dgp-status-letter {
         display: inline-flex;
@@ -597,6 +628,29 @@ window.__ModuleLoader__.load({
         cursor: pointer;
       }
       .dgp-group-head:hover { background: var(--dsw-alias-interactive-bg-hover); }
+      .dgp-group-head-wrap { display: flex; align-items: center; }
+      .dgp-group-head-wrap > .dgp-group-head { flex: 1 1 auto; min-width: 0; width: auto; }
+      .dgp-group-action {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        margin-right: 6px;
+        padding: 0;
+        border: 0;
+        border-radius: var(--dsw-radius-sm);
+        background: transparent;
+        color: var(--dsw-alias-label-secondary);
+        cursor: pointer;
+        opacity: 0;
+      }
+      .dgp-group-head-wrap:hover .dgp-group-action,
+      .dgp-group-head-wrap:focus-within .dgp-group-action,
+      .dgp-group-action:focus-visible { opacity: 1; }
+      .dgp-group-action:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+      .dgp-group-action[data-busy='true'] { opacity: .5; cursor: default; }
       .dgp-group-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dgp-group-count {
         flex: none;
@@ -609,6 +663,70 @@ window.__ModuleLoader__.load({
         font-weight: 500;
         line-height: 15px;
         text-align: center;
+      }
+
+      /* 提交框：位于变更列表最上方，输入框右侧内嵌生成按钮 */
+      .dgp-commit {
+        display: flex;
+        flex: none;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px 8px 4px;
+        border-bottom: .5px solid var(--dsw-alias-border-l3);
+      }
+      .dgp-commit-input-wrap { position: relative; }
+      .dgp-commit-input {
+        width: 100%;
+        min-height: 52px;
+        max-height: 160px;
+        padding: 6px 30px 6px 8px;
+        border: .5px solid var(--dsw-alias-border-l2);
+        border-radius: var(--dsw-radius-md);
+        background: var(--dsw-alias-bg-module-platform);
+        color: var(--dsw-alias-label-primary);
+        font: inherit;
+        font-size: 12px;
+        line-height: 1.5;
+        resize: vertical;
+      }
+      .dgp-commit-input:focus { outline: none; border-color: var(--dsw-alias-state-business-primary); }
+      .dgp-commit-generate {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 0;
+        border-radius: var(--dsw-radius-sm);
+        background: transparent;
+        color: var(--dsw-alias-label-tertiary);
+        cursor: pointer;
+      }
+      .dgp-commit-generate:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+      .dgp-commit-generate[data-busy='true'] { opacity: .5; cursor: default; }
+      .dgp-commit-submit { align-self: flex-start; }
+      .dgp-commit-submit:disabled { opacity: .45; cursor: default; }
+
+      /* 设置页 */
+      .dgp-settings { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+      .dgp-settings-head { display: flex; align-items: center; gap: 8px; }
+      .dgp-settings-title { margin: 0; font-size: 13px; font-weight: 600; }
+      .dgp-settings-field { display: flex; flex-direction: column; gap: 4px; }
+      .dgp-settings-label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+      .dgp-settings-hint { margin: 0; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+      .dgp-select {
+        height: 30px;
+        padding: 0 8px;
+        border: .5px solid var(--dsw-alias-border-l2);
+        border-radius: var(--dsw-radius-md);
+        background: var(--dsw-alias-bg-module-platform);
+        color: var(--dsw-alias-label-primary);
+        font: inherit;
+        font-size: 12px;
       }
 
       .dgp-note { margin: 0; padding: 4px 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
@@ -900,6 +1018,8 @@ window.__ModuleLoader__.load({
         .dgp-row, .dgp-group-head { min-height: 40px; }
         .dgp-iconbtn, .dgp-tool { width: 32px; height: 32px; }
         .dgp-divider::after { inset: 0 -10px; }
+        /* 触屏没有悬停，行尾与分组头的按钮必须一直在 */
+        .dgp-row-action, .dgp-group-action { opacity: 1; }
       }
 
       /* ==================================================================
@@ -1151,6 +1271,34 @@ window.__ModuleLoader__.load({
         'group.unstaged': '未暂存',
         'group.untracked': '未跟踪',
         'group.count': '{count}',
+        'row.stage': '暂存',
+        'row.unstage': '取消暂存',
+        'row.staging': '正在暂存…',
+        'row.unstaging': '正在取消暂存…',
+        'group.stageAll': '暂存全部',
+        'group.unstageAll': '取消全部暂存',
+
+        'commit.placeholder': '提交说明',
+        'commit.submit': '提交',
+        'commit.submitting': '正在提交…',
+        'commit.generate': '生成提交说明',
+        'commit.generating': '正在生成提交说明…',
+        'commit.done': '已提交 {head}',
+        'commit.noModel': '还没有配置生成提交说明的模型，先到右上角的设置里选一个',
+        'commit.nothing': '没有可提交的改动',
+        'commit.generateFailed': '生成提交说明失败：{message}',
+
+        'settings.title': '设置',
+        'settings.back': '返回',
+        'settings.open': '设置',
+        'settings.modelLabel': '生成提交说明的模型',
+        'settings.modelHint': '模型来自 DeepSeek Harness 当前配置的模型目录。',
+        'settings.modelNone': '未选择',
+        'settings.saved': '已保存',
+        'settings.noModels': '没有读到可用的模型',
+        'settings.noCredential': '这个模型的密钥没有配置',
+        'settings.unknownModel': '所选模型不在目录里',
+        'settings.loading': '正在读取…',
 
         'status.clean': '工作区干净',
         'status.cleanHint': '当前仓库没有未提交的改动',
@@ -1272,6 +1420,34 @@ window.__ModuleLoader__.load({
         'group.unstaged': 'Changes',
         'group.untracked': 'Untracked',
         'group.count': '{count}',
+        'row.stage': 'Stage',
+        'row.unstage': 'Unstage',
+        'row.staging': 'Staging…',
+        'row.unstaging': 'Unstaging…',
+        'group.stageAll': 'Stage all',
+        'group.unstageAll': 'Unstage all',
+
+        'commit.placeholder': 'Commit message',
+        'commit.submit': 'Commit',
+        'commit.submitting': 'Committing…',
+        'commit.generate': 'Generate commit message',
+        'commit.generating': 'Generating commit message…',
+        'commit.done': 'Committed {head}',
+        'commit.noModel': 'No model is configured for commit messages. Pick one in Settings.',
+        'commit.nothing': 'Nothing to commit',
+        'commit.generateFailed': 'Could not generate a commit message: {message}',
+
+        'settings.title': 'Settings',
+        'settings.back': 'Back',
+        'settings.open': 'Settings',
+        'settings.modelLabel': 'Model for commit messages',
+        'settings.modelHint': 'Models come from the catalog configured in DeepSeek Harness.',
+        'settings.modelNone': 'None selected',
+        'settings.saved': 'Saved',
+        'settings.noModels': 'No models are available',
+        'settings.noCredential': 'This model has no API key configured',
+        'settings.unknownModel': 'The selected model is not in the catalog',
+        'settings.loading': 'Loading…',
 
         'status.clean': 'Working tree clean',
         'status.cleanHint': 'No uncommitted changes in this repository',
@@ -1367,6 +1543,8 @@ window.__ModuleLoader__.load({
       const { DiffView } = __m("./components/DiffView.js");
       const { FileEditor } = __m("./components/FileEditor.js");
       const { EmptyState, LoadingState, InlineNote } = __m("./components/States.js");
+      const { CommitBox } = __m("./components/CommitBox.js");
+      const { SettingsView } = __m("./components/SettingsView.js");
       const { MODE, usePref, useLatestGuard } = __m("./store.js");
       const api = __m("./api.js");
       const { reconcileSelection } = __m("./util/changes.js");
@@ -1428,6 +1606,9 @@ window.__ModuleLoader__.load({
         const [status, setStatus] = useState(null)
         const [statusLoading, setStatusLoading] = useState(false)
         const [statusError, setStatusError] = useState(null)
+        /** 正在暂存/取消暂存的文件路径；同时只允许一个，避免连点打乱索引。 */
+        const [stagePending, setStagePending] = useState(null)
+        const stagePendingRef = useRef(null)
         const statusSeq = useLatestGuard()
         const statusAbortRef = useRef(null)
 
@@ -1474,6 +1655,14 @@ window.__ModuleLoader__.load({
         const updateNote = buildUpdateNote(updateState, t)
         const draftsRef = useRef(drafts)
         draftsRef.current = drafts
+
+        /* --------------------------- 提交 / 设置 --------------------------- */
+        const [commitMessage, setCommitMessage] = useState('')
+        const [commitBusy, setCommitBusy] = useState(false)
+        const [commitGenerating, setCommitGenerating] = useState(false)
+        const [commitNote, setCommitNote] = useState(null)
+        const [showSettings, setShowSettings] = useState(false)
+        const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, error: null, saved: false })
 
         const [moreOpen, setMoreOpen] = useState(false)
         const moreAnchorRef = useRef(null)
@@ -1867,6 +2056,114 @@ window.__ModuleLoader__.load({
           setSelection((previous) => (previous === null ? previous : { ...previous, side }))
         }, [])
 
+        /**
+         * 行尾 + / −：未暂存与未跟踪暂存（git add），已暂存取消暂存（git restore --staged）。
+         * 操作只作用于那一个文件；完成后重读 status，分组归属由新状态决定，
+         * 所以文件会从下面的未暂存移到上面的已暂存（或反过来）。
+         */
+        const stageEntry = useCallback(async (relPath, action) => {
+          if (activeRoot === null || activeRoot.isGit === false) return
+          if (typeof relPath !== 'string' || relPath === '') return
+          if (action !== 'stage' && action !== 'unstage') return
+          if (stagePendingRef.current !== null) return
+          stagePendingRef.current = relPath
+          setStagePending(relPath)
+          setStatusError(null)
+          try {
+            await api.stageFile({ rootPath: activeRoot.path, path: relPath, action })
+            await refreshStatus()
+            setDiffNonce((previous) => previous + 1)
+          } catch (error) {
+            if (error === null || error === undefined || error.code !== 'aborted') {
+              setStatusError(api.describeError(error, tRef.current))
+            }
+          } finally {
+            stagePendingRef.current = null
+            setStagePending(null)
+          }
+        }, [activeRoot, refreshStatus])
+
+        /** 分组头的批量按钮：一次暂存或取消暂存整组。 */
+        const stageGroup = useCallback(async (scope) => {
+          if (activeRoot === null || activeRoot.isGit === false) return
+          if (scope !== 'stage-unstaged' && scope !== 'stage-untracked' && scope !== 'unstage') return
+          if (stagePendingRef.current !== null) return
+          stagePendingRef.current = scope
+          setStagePending(scope)
+          setStatusError(null)
+          try {
+            await api.stageGroup({ rootPath: activeRoot.path, scope })
+            await refreshStatus()
+            setDiffNonce((previous) => previous + 1)
+          } catch (error) {
+            if (error === null || error === undefined || error.code !== 'aborted') {
+              setStatusError(api.describeError(error, tRef.current))
+            }
+          } finally {
+            stagePendingRef.current = null
+            setStagePending(null)
+          }
+        }, [activeRoot, refreshStatus])
+
+        /** 提交已暂存内容。未暂存的改动不参与。 */
+        const commitStaged = useCallback(async () => {
+          if (activeRoot === null || activeRoot.isGit === false) return
+          const message = commitMessage.trim()
+          if (message === '' || commitBusy) return
+          setCommitBusy(true)
+          setCommitNote(null)
+          try {
+            const result = await api.commitChanges({ rootPath: activeRoot.path, message })
+            setCommitMessage('')
+            setCommitNote({ tone: 'info', text: tRef.current('commit.done', { head: result.head }) })
+            await refreshStatus()
+            setDiffNonce((previous) => previous + 1)
+          } catch (error) {
+            setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current) })
+          } finally {
+            setCommitBusy(false)
+          }
+        }, [activeRoot, commitMessage, commitBusy, refreshStatus])
+
+        /** 生成提交说明：有暂存看暂存，否则看未暂存，由宿主决定。 */
+        const generateMessage = useCallback(async () => {
+          if (activeRoot === null || activeRoot.isGit === false || commitGenerating) return
+          setCommitGenerating(true)
+          setCommitNote(null)
+          try {
+            const result = await api.commitMessage({ rootPath: activeRoot.path })
+            setCommitMessage(result.message)
+          } catch (error) {
+            setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current) })
+          } finally {
+            setCommitGenerating(false)
+          }
+        }, [activeRoot, commitGenerating])
+
+        /** 打开设置页：同时拉模型目录和当前设置。 */
+        const openSettings = useCallback(async () => {
+          setShowSettings(true)
+          setSettingsState({ loading: true, models: [], commitModel: null, error: null, saved: false })
+          try {
+            const [catalog, settings] = await Promise.all([api.listModels({}), api.readSettings({})])
+            setSettingsState({ loading: false, models: catalog.models, commitModel: settings.commitModel, error: null, saved: false })
+          } catch (error) {
+            setSettingsState({ loading: false, models: [], commitModel: null, error: api.describeError(error, tRef.current), saved: false })
+          }
+        }, [])
+
+        /** 选择模型即保存。空值表示清除。 */
+        const changeCommitModel = useCallback(async (ref) => {
+          const commitModel = ref === '' ? null : ref
+          setSettingsState((previous) => ({ ...previous, commitModel, saved: false, error: null }))
+          try {
+            const saved = await api.writeSettings({ commitModel })
+            setSettingsState((previous) => ({ ...previous, commitModel: saved.commitModel, saved: true }))
+          } catch (error) {
+            setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
+          }
+        }, [])
+
         const toggleGroup = useCallback((groupKey) => {
           setCollapsedGroups((previous) => {
             const next = { ...(previous && typeof previous === 'object' ? previous : {}) }
@@ -2097,6 +2394,14 @@ window.__ModuleLoader__.load({
             h('button', {
               type: 'button',
               className: 'dgp-iconbtn',
+              title: t('settings.open'),
+              'aria-label': t('settings.open'),
+              'data-action': 'open-settings',
+              onClick: openSettings
+            }, h(Icon, { name: 'settings', size: 15 })),
+            h('button', {
+              type: 'button',
+              className: 'dgp-iconbtn',
               title: t('toolbar.more'),
               'aria-expanded': moreOpen ? 'true' : 'false',
               onClick: () => {
@@ -2152,6 +2457,22 @@ window.__ModuleLoader__.load({
               }, t('group.staged')))
             : null)
 
+        const stagedCount = status !== null && status.counts !== null && status.counts !== undefined
+          ? status.counts.staged
+          : 0
+        const commitBox = mode === MODE.changes && activeRoot !== null && activeRoot.isGit !== false
+          ? h(CommitBox, {
+            message: commitMessage,
+            stagedCount,
+            busy: commitBusy,
+            generating: commitGenerating,
+            onChange: setCommitMessage,
+            onCommit: commitStaged,
+            onGenerate: generateMessage,
+            t
+          })
+          : null
+
         let leftPane
         if (mode === MODE.changes) {
           if (activeRoot !== null && activeRoot.isGit === false) {
@@ -2180,6 +2501,10 @@ window.__ModuleLoader__.load({
               onFilterChange: setFilter,
               collapsedGroups,
               onToggleGroup: toggleGroup,
+              onStage: stageEntry,
+              pendingPath: stagePending,
+              onStageGroup: stageGroup,
+              pendingGroup: stagePending,
               t
             })
           }
@@ -2334,7 +2659,10 @@ window.__ModuleLoader__.load({
           ref: bodyRef,
           style: { '--dgp-left-width': String(leftWidth) + 'px' }
         },
-        h('div', { className: 'dgp-pane-left' }, leftPane),
+        h('div', { className: 'dgp-pane-left' }, commitBox, commitNote === null
+          ? null
+          : h('div', { className: 'dgp-notebar', 'data-commit-note': commitNote.tone },
+            h(InlineNote, { tone: commitNote.tone }, commitNote.text)), leftPane),
         h('div', {
           className: 'dgp-divider',
           role: 'separator',
@@ -2389,6 +2717,19 @@ window.__ModuleLoader__.load({
           })
         } else {
           content = body
+        }
+
+        if (showSettings) {
+          content = h(SettingsView, {
+            models: settingsState.models,
+            commitModel: settingsState.commitModel,
+            loading: settingsState.loading,
+            error: settingsState.error,
+            saved: settingsState.saved,
+            onChangeModel: changeCommitModel,
+            onBack: () => setShowSettings(false),
+            t
+          })
         }
 
         return h('div', {
@@ -2459,7 +2800,9 @@ window.__ModuleLoader__.load({
         clock: ['M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z', 'M8 5v3.5L10.5 10'],
         filter: ['M2 3h12l-4.5 5.5V13L6 11.5V8.5z'],
         sync: ['M13.5 8a5.5 5.5 0 0 1-9.4 3.9', 'M4 12v-3h3', 'M2.5 8a5.5 5.5 0 0 1 9.4-3.9', 'M12 4v3h-3'],
-        external: ['M9.5 3H13v3.5', 'M13 3L7.5 8.5', 'M11.5 9.5V13H3V4.5h3.5']
+        external: ['M9.5 3H13v3.5', 'M13 3L7.5 8.5', 'M11.5 9.5V13H3V4.5h3.5'],
+        sparkle: ['M8 2l1.2 3.3L12.5 6.5 9.2 7.7 8 11 6.8 7.7 3.5 6.5 6.8 5.3z', 'M12.5 10l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z'],
+        settings: ['M8 10.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4z', 'M8 1.8v1.6', 'M8 12.6v1.6', 'M3.2 3.2l1.1 1.1', 'M11.7 11.7l1.1 1.1', 'M1.8 8h1.6', 'M12.6 8h1.6', 'M3.2 12.8l1.1-1.1', 'M11.7 4.3l1.1-1.1']
       }
 
       /** 用实心圆点而不是描边的图标。 */
@@ -2873,7 +3216,7 @@ window.__ModuleLoader__.load({
       const { h, useEffect, useMemo, useRef, useState } = __m("./platform.js");
       const { Icon, StatusLetter } = __m("./ui/Icon.js");
       const { basename, dirname, formatCount } = __m("./util/paths.js");
-      const { ancestorsFor, buildGroupRows, countFilesUnder, filterEntries, groupChanges } = __m("./util/changes.js");
+      const { ancestorsFor, buildGroupRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } = __m("./util/changes.js");
       const { EmptyState, InlineNote, SkeletonRows } = __m("./components/States.js");
 
       /** props.t 缺失时的兜底（本地字典，永不返回 undefined）。 */
@@ -2899,6 +3242,14 @@ window.__ModuleLoader__.load({
           : null
         const onSelect = typeof source.onSelect === 'function' ? source.onSelect : null
         const onToggleGroup = typeof source.onToggleGroup === 'function' ? source.onToggleGroup : null
+        const onStage = typeof source.onStage === 'function' ? source.onStage : null
+        const onStageGroup = typeof source.onStageGroup === 'function' ? source.onStageGroup : null
+        const pendingPath = typeof source.pendingPath === 'string' && source.pendingPath !== ''
+          ? source.pendingPath
+          : null
+        const pendingGroup = typeof source.pendingGroup === 'string' && source.pendingGroup !== ''
+          ? source.pendingGroup
+          : null
         const translate = source.t
         // 注意：`onFilterChange` 归 Panel 管（它渲染筛选输入框），这里只消费 `filter`。
 
@@ -3147,6 +3498,28 @@ window.__ModuleLoader__.load({
             counts.push(h('span', { key: 'del', className: 'dgp-del' }, translate('viewer.dels', { count: formatCount(dels) })))
           }
 
+          // 行尾操作只由所在分组决定：已暂存 = 取消暂存，未暂存/未跟踪 = 暂存，冲突不给按钮。
+          const action = rowActionOf(group.key)
+          const busy = pendingPath !== null && pendingPath === row.path
+          const actionButton = action === null || onStage === null
+            ? null
+            : h('button', {
+              type: 'button',
+              className: 'dgp-row-action',
+              'data-dgp-action': action,
+              'data-busy': busy ? 'true' : undefined,
+              disabled: busy,
+              title: translate(action === 'stage' ? 'row.stage' : 'row.unstage'),
+              'aria-label': translate(action === 'stage' ? 'row.stage' : 'row.unstage'),
+              onClick: (event) => {
+                if (event !== null && event !== undefined) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }
+                onStage(row.path, action)
+              }
+            }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 13 }))
+
           return h('li', {
             key: index,
             className: 'dgp-item',
@@ -3154,45 +3527,71 @@ window.__ModuleLoader__.load({
             'aria-level': depth + 1,
             'aria-selected': isActive ? 'true' : 'false'
           },
-          h('button', {
-            ...common,
-            'data-kind': 'file',
-            'data-dgp-entry': 'file',
-            onClick: () => {
-              setCursor(index)
-              selectRow(row, group.key)
-            }
-          },
-          entry !== null && entry !== undefined
-            ? h(StatusLetter, { status: entry.status })
-            : null,
-          h('span', { className: 'dgp-name dgp-oneline' }, displayName),
-          parent === '' ? null : h('span', { className: 'dgp-sub dgp-oneline' }, parent),
-          counts.length === 0 ? null : h('span', { className: 'dgp-meta' }, counts)))
+          h('div', { className: 'dgp-row-wrap' },
+            h('button', {
+              ...common,
+              'data-kind': 'file',
+              'data-dgp-entry': 'file',
+              onClick: () => {
+                setCursor(index)
+                selectRow(row, group.key)
+              }
+            },
+            entry !== null && entry !== undefined
+              ? h(StatusLetter, { status: entry.status })
+              : null,
+            h('span', { className: 'dgp-name dgp-oneline' }, displayName),
+            parent === '' ? null : h('span', { className: 'dgp-sub dgp-oneline' }, parent),
+            counts.length === 0 ? null : h('span', { className: 'dgp-meta' }, counts)),
+            actionButton))
         }
 
-        const renderGroup = (group) => h('div', {
-          key: group.key,
-          className: 'dgp-group',
-          'data-dgp-group': group.key
-        },
-        h('button', {
-          type: 'button',
-          className: 'dgp-group-head',
-          'data-open': group.open ? 'true' : 'false',
-          'aria-expanded': group.open,
-          onClick: () => {
-            if (onToggleGroup !== null) onToggleGroup(group.key)
-          }
-        },
-        h('span', { className: 'dgp-group-caret', 'data-open': group.open ? 'true' : 'false' },
-          h(Icon, { name: 'chevron-right', size: 12 })),
-        h('span', { className: 'dgp-group-title' }, translate('group.' + group.key)),
-        h('span', { className: 'dgp-group-count' }, formatCount(group.entries.length))),
-        group.open
-          ? h('ul', { className: 'dgp-level', role: 'none' },
-            group.rows.map((row, index) => renderRow(group, row, group.offset + index)))
-          : null)
+        const renderGroup = (group) => {
+          const action = groupActionOf(group.key)
+          const busy = pendingGroup !== null && pendingGroup === action
+          const actionButton = action === null || onStageGroup === null
+            ? null
+            : h('button', {
+              type: 'button',
+              className: 'dgp-group-action',
+              'data-dgp-group-action': action,
+              'data-busy': busy ? 'true' : undefined,
+              disabled: busy,
+              title: translate(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
+              'aria-label': translate(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
+              onClick: (event) => {
+                if (event !== null && event !== undefined) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }
+                onStageGroup(action)
+              }
+            }, h(Icon, { name: action === 'unstage' ? 'minus' : 'plus', size: 13 }))
+          return h('div', {
+            key: group.key,
+            className: 'dgp-group',
+            'data-dgp-group': group.key
+          },
+          h('div', { className: 'dgp-group-head-wrap' },
+            h('button', {
+              type: 'button',
+              className: 'dgp-group-head',
+              'data-open': group.open ? 'true' : 'false',
+              'aria-expanded': group.open,
+              onClick: () => {
+                if (onToggleGroup !== null) onToggleGroup(group.key)
+              }
+            },
+            h('span', { className: 'dgp-group-caret', 'data-open': group.open ? 'true' : 'false' },
+              h(Icon, { name: 'chevron-right', size: 12 })),
+            h('span', { className: 'dgp-group-title' }, translate('group.' + group.key)),
+            h('span', { className: 'dgp-group-count' }, formatCount(group.entries.length))),
+            actionButton),
+          group.open
+            ? h('ul', { className: 'dgp-level', role: 'none' },
+              group.rows.map((row, index) => renderRow(group, row, group.offset + index)))
+            : null)
+        }
 
         const container = (children) => h('div', {
           className: 'dgp-list',
@@ -3465,6 +3864,35 @@ window.__ModuleLoader__.load({
         return out
       }
 
+      /**
+       * 一行该放哪个索引操作按钮。
+       *
+       * 规则跟 VS Code 的 SCM 行一致，并且**只由所在分组决定**（同一文件可以同时出现在两组）：
+       *   staged             → unstage（减号，取消暂存，文件回到未暂存）
+       *   unstaged/untracked → stage（加号，暂存，文件进入已暂存）
+       *   conflicted         → null（冲突要先解决再暂存，行上不给一键操作）
+       * 其它分组一律 null，调用方据此不渲染按钮。
+       */
+      function rowActionOf(groupKey) {
+        if (groupKey === 'staged') return 'unstage'
+        if (groupKey === 'unstaged' || groupKey === 'untracked') return 'stage'
+        return null
+      }
+
+      /**
+       * 分组头右侧的批量操作。与行尾按钮同一套规则，作用范围是整组：
+       *   staged    → unstage（取消暂存全部已暂存）
+       *   unstaged  → stage-unstaged（暂存全部已跟踪的未暂存改动）
+       *   untracked → stage-untracked（暂存全部未跟踪文件）
+       *   conflicted → null
+       */
+      function groupActionOf(groupKey) {
+        if (groupKey === 'staged') return 'unstage'
+        if (groupKey === 'unstaged') return 'stage-unstaged'
+        if (groupKey === 'untracked') return 'stage-untracked'
+        return null
+      }
+
       /** 分组里只有一个文件时，直接渲染成文件行（不造目录行）：返回那个条目，否则 null。 */
       function singleFileShortcut(entries) {
         const list = Array.isArray(entries) ? entries : []
@@ -3624,7 +4052,7 @@ window.__ModuleLoader__.load({
         if (entry === undefined) return null
         return { path: entry.path, entry, side: selection.side }
       }
-      Object.assign(exports, { GROUP_ORDER, groupsOfFile, groupChanges, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection });
+      Object.assign(exports, { GROUP_ORDER, groupsOfFile, groupChanges, rowActionOf, groupActionOf, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection });
 
     });
     __define("./components/States.js", (exports, module) => {
@@ -4320,7 +4748,13 @@ window.__ModuleLoader__.load({
         'outside-root': 'error.outsideRoot',
         'forbidden-path': 'error.outsideRoot',
         'no-session': 'status.noSession',
-        'no-cwd': 'status.noCwd'
+        'no-cwd': 'status.noCwd',
+        'no-commit-model': 'commit.noModel',
+        'nothing-to-commit': 'commit.nothing',
+        'no-models': 'settings.noModels',
+        'no-credential': 'settings.noCredential',
+        'unknown-model': 'settings.unknownModel',
+        'model-failed': 'commit.generateFailed'
       }
 
       /**
@@ -4390,6 +4824,41 @@ window.__ModuleLoader__.load({
         return call('file/write', payload, options)
       }
 
+      /** 暂存 / 取消暂存单个文件（path 相对仓库根；action 为 stage 或 unstage）。 */
+      function stageFile(payload, options) {
+        return call('index/stage', payload, options)
+      }
+
+      /** 整组暂存 / 取消暂存（scope 为 stage-unstaged / stage-untracked / unstage）。 */
+      function stageGroup(payload, options) {
+        return call('index/stage-group', payload, options)
+      }
+
+      /** 提交已暂存内容。 */
+      function commitChanges(payload, options) {
+        return call('commit', payload, options)
+      }
+
+      /** 按设置里的模型生成提交说明。 */
+      function commitMessage(payload, options) {
+        return call('commit/message', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 70_000 })
+      }
+
+      /** 模型目录（来自 profile 的 llm-pi-ai 配置）。 */
+      function listModels(payload, options) {
+        return call('models/list', payload, options)
+      }
+
+      /** 读插件设置。 */
+      function readSettings(payload, options) {
+        return call('settings/get', payload, options)
+      }
+
+      /** 保存插件设置。 */
+      function writeSettings(payload, options) {
+        return call('settings/set', payload, options)
+      }
+
       /** 列目录（path 相对 rootPath）。 */
       function listDirectory(payload, options) {
         return call('tree/list', payload, options)
@@ -4413,7 +4882,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -5559,6 +6028,129 @@ window.__ModuleLoader__.load({
       }
 
       Object.assign(exports, { formatClock });
+
+    });
+    __define("./components/CommitBox.js", (exports, module) => {
+      /**
+       * src/components/CommitBox.js —— 变更列表顶部的提交框
+       *
+       * 结构：多行输入框，右上角一颗生成按钮；输入框下方一颗提交按钮。
+       * 提交按钮只在「有说明 + 有已暂存改动」时可用，与 VS Code 的提交框一致。
+       */
+      const { h } = __m("./platform.js");
+      const { Icon } = __m("./ui/Icon.js");
+
+      function CommitBox(props) {
+        const source = props === null || props === undefined ? {} : props
+        const translate = source.t
+        const message = typeof source.message === 'string' ? source.message : ''
+        const stagedCount = typeof source.stagedCount === 'number' ? source.stagedCount : 0
+        const busy = source.busy === true
+        const generating = source.generating === true
+        const canCommit = message.trim() !== '' && stagedCount > 0 && busy !== true
+
+        return h('div', { className: 'dgp-commit' },
+          h('div', { className: 'dgp-commit-input-wrap' },
+            h('textarea', {
+              className: 'dgp-commit-input',
+              'data-dgp-commit': 'input',
+              rows: 2,
+              placeholder: translate('commit.placeholder'),
+              value: message,
+              disabled: busy,
+              onChange: (event) => {
+                if (typeof source.onChange === 'function') source.onChange(event.target.value)
+              },
+              onKeyDown: (event) => {
+                if ((event.ctrlKey === true || event.metaKey === true) && event.key === 'Enter' && canCommit) {
+                  event.preventDefault()
+                  source.onCommit()
+                }
+              }
+            }),
+            h('button', {
+              type: 'button',
+              className: 'dgp-commit-generate',
+              'data-dgp-commit': 'generate',
+              'data-busy': generating ? 'true' : undefined,
+              disabled: generating || busy,
+              title: translate(generating ? 'commit.generating' : 'commit.generate'),
+              'aria-label': translate('commit.generate'),
+              onClick: () => {
+                if (typeof source.onGenerate === 'function') source.onGenerate()
+              }
+            }, h(Icon, { name: 'sparkle', size: 14 }))),
+          h('button', {
+            type: 'button',
+            className: 'dgp-btn dgp-commit-submit',
+            'data-dgp-commit': 'submit',
+            disabled: canCommit !== true,
+            onClick: () => {
+              if (typeof source.onCommit === 'function') source.onCommit()
+            }
+          }, translate(busy ? 'commit.submitting' : 'commit.submit')))
+      }
+
+      Object.assign(exports, { CommitBox });
+
+    });
+    __define("./components/SettingsView.js", (exports, module) => {
+      /**
+       * src/components/SettingsView.js —— 插件设置页
+       *
+       * 目前只有一项：生成提交说明用的模型。选项来自宿主读到的模型目录，
+       * 选中即保存；目录为空或读取失败时只展示错误，不给一个假的默认项。
+       */
+      const { h } = __m("./platform.js");
+      const { Icon } = __m("./ui/Icon.js");
+      const { InlineNote } = __m("./components/States.js");
+
+      function SettingsView(props) {
+        const source = props === null || props === undefined ? {} : props
+        const translate = source.t
+        const models = Array.isArray(source.models) ? source.models : []
+        const loading = source.loading === true
+        const error = typeof source.error === 'string' && source.error !== '' ? source.error : null
+        const saved = source.saved === true
+
+        return h('div', { className: 'dgp-settings', 'data-dgp-view': 'settings' },
+          h('div', { className: 'dgp-settings-head' },
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-dgp-settings': 'back',
+              onClick: () => {
+                if (typeof source.onBack === 'function') source.onBack()
+              }
+            }, translate('settings.back')),
+            h('h2', { className: 'dgp-settings-title' }, translate('settings.title'))),
+          loading
+            ? h(InlineNote, { tone: 'info' }, translate('settings.loading'))
+            : null,
+          error !== null
+            ? h(InlineNote, { tone: 'error' }, error)
+            : null,
+          loading || error !== null
+            ? null
+            : h('div', { className: 'dgp-settings-field' },
+              h('label', { className: 'dgp-settings-label' }, translate('settings.modelLabel')),
+              h('select', {
+                className: 'dgp-select',
+                'data-dgp-settings': 'model',
+                value: typeof source.commitModel === 'string' ? source.commitModel : '',
+                onChange: (event) => {
+                  if (typeof source.onChangeModel === 'function') source.onChangeModel(event.target.value)
+                }
+              },
+              h('option', { value: '' }, translate('settings.modelNone')),
+              models.map((model) => h('option', { key: model.ref, value: model.ref },
+                model.providerName + ' · ' + model.modelName))),
+              h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint')),
+              saved ? h(InlineNote, { tone: 'info' }, translate('settings.saved')) : null))
+      }
+
+      Object.assign(exports, { SettingsView });
 
     });
     __define("./store.js", (exports, module) => {

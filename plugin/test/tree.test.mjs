@@ -24,6 +24,8 @@ import {
   normalizeRelPath,
   orderTreeEntries,
   reconcileSelection,
+  groupActionOf,
+  rowActionOf,
   singleFileShortcut
 } from '../src/util/changes.js'
 import {
@@ -328,6 +330,23 @@ test('reconcileSelection：来自变更列表的选中项会被更新/清空', (
   assert.equal(kept.side, 'unstaged', 'side 必须保留')
 
   assert.equal(reconcileSelection(selection, []), null, '文件从 status 里消失时应清空选中')
+})
+
+test('rowActionOf：行尾按钮只由所在分组决定', () => {
+  assert.equal(rowActionOf('unstaged'), 'stage', '未暂存行是暂存')
+  assert.equal(rowActionOf('untracked'), 'stage', '未跟踪行也是暂存（git add）')
+  assert.equal(rowActionOf('staged'), 'unstage', '已暂存行是取消暂存')
+  assert.equal(rowActionOf('conflicted'), null, '冲突行不给一键操作')
+  assert.equal(rowActionOf('whatever'), null, '未知分组不渲染按钮')
+  assert.equal(rowActionOf(undefined), null)
+})
+
+test('groupActionOf：分组头的批量按钮只由分组决定', () => {
+  assert.equal(groupActionOf('staged'), 'unstage', '已暂存组是全部取消暂存')
+  assert.equal(groupActionOf('unstaged'), 'stage-unstaged', '未暂存组是暂存全部已跟踪改动')
+  assert.equal(groupActionOf('untracked'), 'stage-untracked', '未跟踪组是暂存全部新文件')
+  assert.equal(groupActionOf('conflicted'), null, '冲突组没有批量按钮')
+  assert.equal(groupActionOf(undefined), null)
 })
 
 test('reconcileSelection：来自文件浏览树的选中项原样保留（未修改文件不在 status 里）', () => {

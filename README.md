@@ -120,7 +120,7 @@ node plugin/scripts/install-profile.mjs --uninstall
 │  util/           diff（hunk 解析/词级高亮）· changes（分组/选中对账）·             │
 │                  paths · remote（URL → 网页）· time                               │
 └───────────────────────────────┬──────────────────────────────────────────────────┘
-                                │ 9 个 RPC 端点，POST /api/dsh-git/*
+                                │ 10 个 RPC 端点，POST /api/dsh-git/*
 ┌───────────────────────────────┴──────────────────────────────────────────────────┐
 │  宿主（Node 侧，零运行时依赖）                                                    │
 │  index.js        精确 Fetch 路由（connection.fetch.register）+ 信封/错误映射       │
@@ -142,6 +142,12 @@ node plugin/scripts/install-profile.mjs --uninstall
 | `diff` | `{rootPath, path, staged, untracked, contextLines, ignoreWhitespace}` | `{kind, hunks[], stats, language}` |
 | `file/read` | `{rootPath, path}` | `{kind, text, size, language, eol, bom, hash, lines}`（文本一律 LF 归一） |
 | `file/write` | `{rootPath, path, text, expectedHash, eol, bom}` / `{…, force:true}` | `{size, mtimeMs, hash}`；哈希不匹配 → `conflict` |
+| `index/stage` | `{rootPath, path, action}` | `{path, action}`；`stage` = `git add --`，`unstage` = `git restore --staged --` |
+| `index/stage-group` | `{rootPath, scope}` | `{scope}`；整组暂存 / 取消暂存 |
+| `commit` | `{rootPath, message}` | `{head, subject}`；只提交已暂存内容 |
+| `commit/message` | `{rootPath}` | `{message, model, source}`；有暂存看暂存，否则看未暂存 |
+| `models/list` | `{}` | `{models[]}`；模型目录来自 profile 的 `llm-pi-ai` 配置 |
+| `settings/get` / `settings/set` | `{commitModel?}` | `{commitModel}`；生成提交说明所用的模型 |
 | `tree/list` | `{rootPath, path}` | `{entries[], truncated}` |
 
 失败一律返回 `{ok:false, error:{code, message, details}}`，宿主 handler 绝不抛裸异常。
@@ -162,7 +168,7 @@ npm run check    # 语法检查 + 产物可复现性检查
 ```
 
 - **测试覆盖**：路径与远端 URL 转换、diff 解析与词级高亮、目录树、打包器（含换行规范化的可复现性）、
-  git 引擎（真实仓库）、宿主 9 个端点、客户端产物装载、组件渲染、面板端到端数据流
+  git 引擎（真实仓库）、宿主 10 个端点、客户端产物装载、组件渲染、面板端到端数据流
 - **CI**：`windows-latest` + `ubuntu-latest`，Node 22。步骤 = 生成沙盒仓库 → **重建产物并校验与源码一致**
   （`git diff --exit-code -- plugin/client.js`）→ 跑全部测试。忘了 build 就提交会直接红
 - **热更新**：客户端 bundle 会自动热加载；宿主代码改动需要重启 DSH
@@ -173,7 +179,7 @@ npm run check    # 语法检查 + 产物可复现性检查
 .
 ├── .github/workflows/ci.yml     双平台 CI
 ├── plugin/                      ← 插件本体（profile 里的 link: 指向这里）
-│   ├── index.js                 宿主入口：9 个端点 + 精确 Fetch 路由
+│   ├── index.js                 宿主入口：10 个端点 + 精确 Fetch 路由
 │   ├── client.js                构建产物（被 DSH 直接装载，故入库）
 │   ├── host/                    git.js · roots.js · config.js
 │   ├── src/                     客户端 22 个模块（index / components / util / ui）
@@ -191,7 +197,7 @@ npm run check    # 语法检查 + 产物可复现性检查
 
 ## 已知边界
 
-- **版本控制操作只读**：不做 stage / unstage / commit / discard / 分支操作（保存只写工作区文件）
+- **提交只提交已暂存内容**：未暂存的改动不会被自动带上；不做 discard / 分支操作
 - 编辑器不开语法着色：浏览器里要「可编辑 + 高亮」得自己写编辑器内核或做透明层叠加，那套东西脆弱且难维护，
   所以这里明确不做半套。diff 视图的词级高亮不受影响
 - 编辑器行号最多画 5000 行（再多只保留输入框，避免几万个 DOM 节点）

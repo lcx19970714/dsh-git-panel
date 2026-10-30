@@ -1078,6 +1078,97 @@ test('外部根：经目录联接添加后，按联接写法移除与去重都�
   assert.deepEqual(after.roots.filter((root) => root.kind === 'extra'), [], '移除后不应再有外部根')
   assert.deepEqual(await config.listExtras(FIXTURE), [], '配置里也必须清干净')
 })
+test('index/stage：未暂存点加号进入已暂存，已暂存点减号回到未暂存', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-stage-'), 'repo'))
+  // hello.txt 已在初始提交里：改它的内容才是「未暂存」；fresh.txt 是全新文件，走未跟踪
+  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
+  writeFileSync(path.join(dir, 'fresh.txt'), 'new\n')
+
+  const before = await callOk('status', { rootPath: dir })
+  const note = before.files.find((file) => file.path === 'hello.txt')
+  const fresh = before.files.find((file) => file.path === 'fresh.txt')
+  assert.equal(note.unstaged, true, '改动应在未暂存')
+  assert.equal(note.staged, false)
+  assert.equal(fresh.untracked, true, '新文件应是未跟踪')
+
+  const staged = await callOk('index/stage', { rootPath: dir, path: 'hello.txt', action: 'stage' })
+  assert.deepEqual(staged, { path: 'hello.txt', action: 'stage' })
+  await callOk('index/stage', { rootPath: dir, path: 'fresh.txt', action: 'stage' })
+
+  const middle = await callOk('status', { rootPath: dir })
+  const noteStaged = middle.files.find((file) => file.path === 'hello.txt')
+  const freshStaged = middle.files.find((file) => file.path === 'fresh.txt')
+  assert.equal(noteStaged.staged, true, '加号之后应进入已暂存')
+  assert.equal(noteStaged.unstaged, false, '整文件暂存后不应再留在未暂存')
+  assert.equal(freshStaged.staged, true, '未跟踪文件暂存后应进入已暂存')
+  assert.equal(freshStaged.untracked, false)
+
+  const unstaged = await callOk('index/stage', { rootPath: dir, path: 'hello.txt', action: 'unstage' })
+  assert.equal(unstaged.action, 'unstage')
+  const after = await callOk('status', { rootPath: dir })
+  const noteBack = after.files.find((file) => file.path === 'hello.txt')
+  assert.equal(noteBack.staged, false, '减号之后应离开已暂存')
+  assert.equal(noteBack.unstaged, true, '取消暂存应回到未暂存，工作区内容保留')
+})
+
+test('index/stage：非法路径与非法动作直接拒绝，不改索引', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-stage-guard-'), 'repo'))
+  for (const bad of ['../outside.txt', '.git/config', '/abs.txt', '-evil', 'a//b', '']) {
+    const result = await callRoute('index/stage', { rootPath: dir, path: bad, action: 'stage' })
+    assert.equal(result.ok, false, '应拒绝：' + JSON.stringify(bad) + ' → ' + JSON.stringify(result))
+  }
+  const wrong = await callRoute('index/stage', { rootPath: dir, path: 'hello.txt', action: 'commit' })
+  assert.equal(wrong.ok, false)
+  assert.equal(wrong.error.code, 'bad-request')
+
+  const status = await callOk('status', { rootPath: dir })
+  assert.equal(status.files.length, 0, '拒绝的请求不能改动索引')
+})
+
+test('index/stage-group：未暂存整组暂存、已暂存整组取消', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-stage-group-'), 'repo'))
+  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
+  writeFileSync(path.join(dir, 'fresh.txt'), 'new\n')
+
+  await callOk('index/stage-group', { rootPath: dir, scope: 'stage-unstaged' })
+  const afterTracked = await callOk('status', { rootPath: dir })
+  const hello = afterTracked.files.find((file) => file.path === 'hello.txt')
+  const fresh = afterTracked.files.find((file) => file.path === 'fresh.txt')
+  assert.equal(hello.staged, true, '已跟踪改动应整组进入已暂存')
+  assert.equal(fresh.untracked, true, '暂存未暂存组不应连带未跟踪文件')
+
+  await callOk('index/stage-group', { rootPath: dir, scope: 'stage-untracked' })
+  const afterAll = await callOk('status', { rootPath: dir })
+  assert.equal(afterAll.files.every((file) => file.staged === true), true, '未跟踪文件应整组进入已暂存')
+
+  await callOk('index/stage-group', { rootPath: dir, scope: 'unstage' })
+  const cleared = await callOk('status', { rootPath: dir })
+  assert.equal(cleared.files.every((file) => file.staged !== true), true, '取消暂存后不应再有已暂存文件')
+  assert.equal(cleared.files.find((file) => file.path === 'hello.txt').unstaged, true, '工作区改动还在')
+})
+
+test('commit：只提交已暂存内容，空说明与空索引都拒绝', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-commit-'), 'repo'))
+  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
+  writeFileSync(path.join(dir, 'fresh.txt'), 'new\n')
+
+  const empty = await callRoute('commit', { rootPath: dir, message: 'nothing staged yet' })
+  assert.equal(empty.ok, false, '没有暂存内容时提交必须失败')
+
+  const blank = await callRoute('commit', { rootPath: dir, message: '   ' })
+  assert.equal(blank.ok, false)
+  assert.equal(blank.error.code, 'bad-request')
+
+  await callOk('index/stage', { rootPath: dir, path: 'hello.txt', action: 'stage' })
+  const committed = await callOk('commit', { rootPath: dir, message: 'update hello\n\nwhy: test' })
+  assert.equal(typeof committed.head, 'string', '应返回新提交的短 SHA')
+  assert.notEqual(committed.head, '', '短 SHA 不应为空')
+
+  const after = await callOk('status', { rootPath: dir })
+  assert.equal(after.files.find((file) => file.path === 'hello.txt'), undefined, '已提交的文件应离开变更列表')
+  assert.equal(after.files.find((file) => file.path === 'fresh.txt').untracked, true, '未暂存的文件不应被提交带走')
+})
+
 test('未知端点没有路由；畸形 payload 返回错误信封，绝不抛出', async () => {
   // 路由是精确注册的：不存在的 endpoint 压根没有路由（由连接服务回 404）
   assert.equal(routes.get(plugin.routePathOf('nope/nope')), undefined, '未知端点不应有路由')

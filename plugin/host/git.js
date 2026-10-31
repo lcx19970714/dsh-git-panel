@@ -11,7 +11,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
-import { readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 export const DEFAULT_TIMEOUT_MS = 15_000
@@ -886,36 +886,74 @@ export async function listDirectory(absPath, options = {}) {
 // 仓库发现（形态②：项目内多个仓库）
 // ---------------------------------------------------------------------------
 
+/**
+ * 扫描时整棵跳过的目录：依赖树与构建/缓存产物。
+ *
+ * 只放「里面不可能有工作树」的目录。`vendor` / `third_party` 故意不在里面 ——
+ * 依赖以仓库形态检出的情况正需要被找到。
+ */
 const SKIP_DIRS = new Set([
-  '.git', 'node_modules', '.pnpm', '.venv', 'venv', '__pycache__',
-  'dist', 'build', 'out', 'target', 'vendor', '.next', '.nuxt', '.svelte-kit',
-  'coverage', '.cache', '.turbo', '.gradle', '.idea', '.vs', 'obj', 'bin',
-  'third_party', '.terraform', '.tox', 'site-packages'
+  '.git', 'node_modules', '.pnpm', '.venv', 'venv', '__pycache__', 'site-packages',
+  'dist', 'build', 'out', 'target', 'obj', 'bin', 'coverage',
+  '.next', '.nuxt', '.svelte-kit', '.cache', '.turbo', '.gradle', '.idea', '.vs',
+  '.terraform', '.tox'
 ])
 
+async function statOrNull(target) {
+  try {
+    return await stat(target)
+  } catch {
+    return null
+  }
+}
+
+async function realpathOrNull(target) {
+  try {
+    return await realpath(target)
+  } catch {
+    return null
+  }
+}
+
 /**
- * 在项目目录内发现 git 仓库。
+ * 在项目目录内发现 git 工作树。
+ *
+ * 判定规则只有一条：**目录里存在 `.git`（目录或 gitfile）就是一棵工作树**，
+ * 并把它的工作树根作为仓库。找到之后不再深入（里面属于同一个工作树）。
+ *
+ * 三条与 VS Code 对齐的行为：
+ *  - 目录联接 / 符号链接按其指向的真实目录处理（Windows 上 readdir 不会把它报成目录）；
+ *    用 realpath 去重防止环形联接无限展开。
+ *  - 依赖与缓存目录整棵跳过，`vendor` / `third_party` 这类「依赖以仓库检出」的位置照常扫描。
+ *  - 达到仓库数 / 目录数上限时**明确报告** truncated，调用方据此告警，不静默少列。
  *
  * @param {string} projectRoot
  * @param {{maxDepth?:number, maxRepos?:number, maxDirs?:number, includeRoot?:boolean}} options
- *   includeRoot=false 时把根目录视为「已经单独处理过的仓库」，改为深入其中寻找子仓库
- *   （用于项目根本身就是仓库、但里面还嵌套着其它仓库/子模块的情况）。
+ *   includeRoot=false 时把根目录视为「已经单独处理过」，继续深入其中寻找嵌套仓库。
+ * @returns {Promise<{repos: Array<{path:string, depth:number}>, truncated: boolean, scanned: number}>}
  */
 export async function discoverRepos(projectRoot, options = {}) {
-  const { maxDepth = 3, maxRepos = 24, maxDirs = 4000, includeRoot = true } = options
-  const found = []
+  const { maxDepth = 4, maxRepos = 24, maxDirs = 8000, includeRoot = true } = options
+  const repos = []
   const queue = [{ dir: projectRoot, depth: 0 }]
-  let visited = 0
+  /** 已经进入过的链接目标（realpath），用来阻断环形联接。 */
+  const linkedReal = new Set()
+  const rootReal = await realpathOrNull(projectRoot)
+  if (rootReal !== null) linkedReal.add(rootReal)
+  let scanned = 0
 
-  while (queue.length > 0 && found.length < maxRepos && visited < maxDirs) {
+  while (queue.length > 0) {
+    if (repos.length >= maxRepos || scanned >= maxDirs) {
+      return { repos, truncated: true, scanned }
+    }
     const { dir, depth } = queue.shift()
-    visited += 1
+    scanned += 1
     if (hasOwnGitDir(dir)) {
       if (depth > 0 || includeRoot) {
-        found.push({ path: normalizeSlashes(dir), depth })
-        continue // 不再深入已发现的仓库
+        repos.push({ path: normalizeSlashes(dir), depth })
+        continue
       }
-      // depth === 0 && !includeRoot：根仓库本身已单独处理，继续往下找嵌套仓库
+      // depth === 0 && !includeRoot：根已单独处理，继续往下找嵌套仓库
     }
     if (depth >= maxDepth) continue
     let dirents
@@ -925,13 +963,29 @@ export async function discoverRepos(projectRoot, options = {}) {
       continue
     }
     for (const dirent of dirents) {
-      if (!dirent.isDirectory()) continue
       if (SKIP_DIRS.has(dirent.name)) continue
       if (dirent.name.startsWith('.')) continue
-      queue.push({ dir: path.join(dir, dirent.name), depth: depth + 1 })
+      const child = path.join(dir, dirent.name)
+      if (dirent.isDirectory()) {
+        queue.push({ dir: child, depth: depth + 1 })
+        continue
+      }
+      // 目录联接 / 符号链接：readdir 不会把它报成目录，必须自己跟进去
+      if (!dirent.isSymbolicLink()) continue
+      const info = await statOrNull(child)
+      if (info === null || !info.isDirectory()) continue
+      const real = await realpathOrNull(child)
+      if (real === null || linkedReal.has(real)) continue
+      // 链接指向上级目录（例如 C:\ 或项目根的父目录）时一定会绕回来重复扫描，直接跳过
+      if (rootReal !== null) {
+        const back = path.relative(real, rootReal)
+        if (back !== '' && !back.startsWith('..') && !path.isAbsolute(back)) continue
+      }
+      linkedReal.add(real)
+      queue.push({ dir: child, depth: depth + 1 })
     }
   }
-  return found
+  return { repos, truncated: false, scanned }
 }
 
 // ---------------------------------------------------------------------------

@@ -437,6 +437,33 @@ test('样式只注入一次且用令牌取色', () => {
   assert(!css.includes('.dgp-root {\n  background'), '面板根不应自绘背景')
 })
 
+test('样式表是合法 CSS：没有会吞掉下一条规则的裸文本行', () => {
+  // 曾经踩过的坑：样式表里混进一行「# 见文件末…」，浏览器把紧随其后的整条规则
+  // 当作错误恢复吞掉，于是 .dgp-state 的居中样式从来没有生效过（现象：空态贴左上角）。
+  const css = fakeDocument.appended.filter((node) => node.tagName === 'STYLE')[0].textContent
+  // 去掉注释与引号内内容（content: "−" 这类是合法的非 ASCII）
+  const stripped = css
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/"[^"\n]*"/g, '""')
+    .replace(/'[^'\n]*'/g, "''")
+
+  // 1) 不使用 ID 选择器，所以裸的 # 行只可能是混进来的文本
+  const hashLines = stripped.split('\n').filter((line) => line.trim().startsWith('#'))
+  eq(hashLines, [], '样式表里出现了裸 # 行：' + hashLines.join(' | '))
+
+  // 2) 注释和字符串之外全是 ASCII；出现非 ASCII 说明有说明文字漏在规则外面
+  const nonAscii = stripped.split('\n').filter((line) => /[^\x00-\x7F]/.test(line))
+  eq(nonAscii, [], '注释之外出现了非 ASCII 文本：' + nonAscii.slice(0, 3).join(' | '))
+
+  // 3) 每条规则都必须有声明体：`选择器` 后面直接跟 `}` 或文件尾 = 规则被吃掉了
+  const orphan = stripped.split('}').filter((chunk) => {
+    const text = chunk.trim()
+    if (text === '') return false
+    return !text.includes('{')
+  })
+  eq(orphan, [], '有规则丢了声明体：' + orphan.slice(0, 2).join(' | '))
+})
+
 test('渲染 tab body：组件树能出来', () => {
   const body = registrations.slots.find((slot) => slot.registration.name === 'sidebar.right.pane.tab')
   const props = {

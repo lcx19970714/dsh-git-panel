@@ -349,9 +349,9 @@ export const CSS = `
   contain-intrinsic-size: auto 30px;
 }
 .dgp-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+/* 选中态只靠背景色区分：不加左侧色条、不加描边 */
 .dgp-row[data-active="true"], .dgp-row[aria-selected="true"] {
   background: var(--dsw-alias-interactive-bg-hover);
-  box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary);
 }
 .dgp-row[data-kind="dir"] { color: var(--dsw-alias-label-secondary); }
 .dgp-row[data-cursor="true"] { background: var(--dsw-alias-interactive-bg-hover); }

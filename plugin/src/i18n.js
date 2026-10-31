@@ -153,9 +153,7 @@ export const zh = {
   'error.notRepository': '这个目录不是 Git 仓库',
   'error.timeout': '操作超时',
   'error.outsideRoot': '路径超出仓库范围',
-  'error.generic': '出错了：{message}',
-
-  'kbd.hint': '↑↓ 选择 · Enter 打开 · ←→ 折叠展开 · / 筛选 · R 刷新'
+  'error.generic': '出错了：{message}'
 }
 
 export const en = {
@@ -304,7 +302,5 @@ export const en = {
   'error.notRepository': 'Not a Git repository',
   'error.timeout': 'Operation timed out',
   'error.outsideRoot': 'Path outside the repository',
-  'error.generic': 'Something went wrong: {message}',
-
-  'kbd.hint': '↑↓ select · Enter open · ←→ fold · / filter · R refresh'
+  'error.generic': 'Something went wrong: {message}'
 }

@@ -198,6 +198,7 @@ window.__ModuleLoader__.load({
         --dgp-left-width: 264px;
         --dgp-gutter-w: 3.5em;
         display: flex;
+        flex: 1 1 auto;
         flex-direction: column;
         box-sizing: border-box;
         height: 100%;
@@ -214,15 +215,14 @@ window.__ModuleLoader__.load({
       .dgp-oneline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dgp-ico { display: block; flex: none; }
 
-      /* ===================== 2. 顶栏（38px + .5px 发丝线） ===================== */
+      /* ===================== 2. 顶栏（36px，无分隔线） ===================== */
       .dgp-toolbar {
         display: flex;
         flex: none;
         align-items: center;
         gap: 6px;
-        height: 38px;
+        height: 36px;
         padding: 0 6px 0 8px;
-        border-bottom: .5px solid var(--dsw-alias-border-l3);
       }
       .dgp-tbar-row { display: flex; align-items: center; gap: 6px; min-width: 0; width: 100%; }
       .dgp-spacer { flex: 1 1 auto; min-width: 0; }
@@ -347,7 +347,7 @@ window.__ModuleLoader__.load({
       }
       @keyframes dgp-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
-      /* 通用按钮 */
+      /* 通用按钮：无描边，用底色分层（hover 只加深一档） */
       .dgp-btn {
         display: inline-flex;
         align-items: center;
@@ -355,9 +355,9 @@ window.__ModuleLoader__.load({
         gap: 6px;
         height: 28px;
         padding: 0 10px;
-        border: .5px solid var(--dsw-alias-border-l2);
-        border-radius: var(--dsw-radius-sm);
-        background: 0 0;
+        border: 0;
+        border-radius: var(--dsw-radius-md);
+        background: var(--dsw-alias-bg-module-platform);
         color: var(--dsw-alias-label-primary);
         font: inherit;
         font-size: 12px;
@@ -365,34 +365,35 @@ window.__ModuleLoader__.load({
         cursor: pointer;
         white-space: nowrap;
       }
-      .dgp-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+      .dgp-btn:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-3); }
       .dgp-btn:disabled { opacity: .45; cursor: default; }
       .dgp-btn[data-variant="primary"] {
-        border-color: transparent;
         background: var(--dsw-alias-state-business-primary);
         color: var(--dsw-alias-label-primary-inverted);
       }
       .dgp-btn[data-variant="primary"]:hover:not(:disabled) { filter: brightness(1.06); }
-      .dgp-btn[data-variant="ghost"] { border-color: transparent; }
-      .dgp-btn[data-variant="danger"] { color: var(--dsw-alias-state-error-primary); }
-      .dgp-btn[data-size="sm"] { height: 24px; padding: 0 8px; font-size: 11px; }
+      .dgp-btn[data-variant="ghost"] { background: 0 0; }
+      .dgp-btn[data-variant="ghost"]:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+      .dgp-btn[data-variant="danger"] { background: 0 0; color: var(--dsw-alias-state-error-primary); }
+      .dgp-btn[data-size="sm"] { height: 24px; padding: 0 8px; font-size: 11px; border-radius: var(--dsw-radius-sm); }
 
       /* 搜索框 */
-      .dgp-filter { display: flex; flex: none; align-items: center; gap: 6px; padding: 6px 8px 4px; }
+      .dgp-filter { display: flex; flex: none; align-items: center; gap: 6px; padding: 2px 8px 6px; }
       .dgp-search { position: relative; display: flex; align-items: center; flex: 1 1 auto; min-width: 0; }
       .dgp-search > .dgp-ico { position: absolute; left: 7px; color: var(--dsw-alias-label-tertiary); pointer-events: none; }
       .dgp-input {
         width: 100%;
-        height: 28px;
+        height: 26px;
         padding: 0 24px 0 26px;
-        border: .5px solid var(--dsw-alias-border-l2);
-        border-radius: var(--dsw-radius-sm);
+        border: 0;
+        border-radius: var(--dsw-radius-md);
         background: var(--dsw-alias-bg-module-platform);
         color: var(--dsw-alias-label-primary);
         font: inherit;
         font-size: 12px;
         line-height: 18px;
       }
+      .dgp-input:focus { background: var(--dsw-alias-bg-layer-3); }
       .dgp-input::placeholder { color: var(--dsw-alias-label-tertiary); }
       .dgp-search-clear {
         position: absolute;
@@ -410,15 +411,6 @@ window.__ModuleLoader__.load({
         cursor: pointer;
       }
       .dgp-search-clear:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
-      .dgp-kbd {
-        padding: 0 4px;
-        border-radius: var(--dsw-radius-xs);
-        background: var(--dsw-alias-bg-module-platform);
-        color: var(--dsw-alias-label-tertiary);
-        font-family: var(--ds-font-family-code);
-        font-size: 10px;
-        line-height: 15px;
-      }
       .dgp-hint { padding: 4px 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
       .dgp-num { font-family: var(--ds-font-family-code); font-size: 12px; }
 
@@ -430,7 +422,7 @@ window.__ModuleLoader__.load({
       .dgp-changes { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
 
       /* 「储存库」区域 */
-      .dgp-repolist { display: flex; flex: none; flex-direction: column; border-bottom: .5px solid var(--dsw-alias-border-l3); }
+      .dgp-repolist { display: flex; flex: none; flex-direction: column; padding-bottom: 2px; }
       .dgp-repolist-head { display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 2px; }
       .dgp-repolist-toggle {
         display: flex;
@@ -518,8 +510,8 @@ window.__ModuleLoader__.load({
         align-items: center;
         gap: 6px;
         width: 100%;
-        min-height: 30px;
-        padding: 5px 10px 5px calc(4px + var(--dgp-depth, 0) * 14px);
+        min-height: 28px;
+        padding: 4px 10px 4px calc(4px + var(--dgp-depth, 0) * 14px);
         border: 0;
         border-radius: var(--dsw-radius-md);
         background: 0 0;
@@ -528,7 +520,7 @@ window.__ModuleLoader__.load({
         text-align: left;
         cursor: pointer;
         content-visibility: auto;
-        contain-intrinsic-size: auto 30px;
+        contain-intrinsic-size: auto 28px;
       }
       .dgp-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
       /* 选中态只靠背景色区分：不加左侧色条、不加描边 */
@@ -605,46 +597,29 @@ window.__ModuleLoader__.load({
       .dgp-row-action:disabled { cursor: default; }
 
       /* 状态字母 M/A/D/R/C/T/U/? */
+      /* 状态字母：只上色、不铺底（一排彩色小方块太碎） */
       .dgp-status-letter {
         display: inline-flex;
         flex: none;
         align-items: center;
         justify-content: center;
-        width: 16px;
+        width: 13px;
         height: 16px;
-        border-radius: var(--dsw-radius-xs);
         font-family: var(--ds-font-family-code);
         font-size: 10px;
         font-weight: 600;
         line-height: 1;
         color: var(--dsw-alias-label-tertiary);
-        background: var(--dsw-alias-bg-module-platform);
       }
-      .dgp-status-letter[data-status="M"] {
-        color: var(--dsw-alias-state-warn-label);
-        background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 14%, transparent);
-      }
-      .dgp-status-letter[data-status="A"] {
-        color: var(--dsw-alias-state-success-primary);
-        background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent);
-      }
-      .dgp-status-letter[data-status="D"] {
-        color: var(--dsw-alias-state-error-primary);
-        background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
-      }
+      .dgp-status-letter[data-status="M"] { color: var(--dsw-alias-state-warn-label); }
+      .dgp-status-letter[data-status="A"] { color: var(--dsw-alias-state-success-primary); }
+      .dgp-status-letter[data-status="D"] { color: var(--dsw-alias-state-error-primary); }
       .dgp-status-letter[data-status="R"], .dgp-status-letter[data-status="C"] {
         color: var(--dsw-alias-state-business-primary);
-        background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent);
       }
       .dgp-status-letter[data-status="T"] { color: var(--dsw-alias-label-secondary); }
-      .dgp-status-letter[data-status="U"] {
-        color: var(--dsw-alias-state-error-secondary);
-        background: color-mix(in srgb, var(--dsw-alias-state-error-secondary) 16%, transparent);
-      }
-      .dgp-status-letter[data-status="?"] {
-        color: var(--dsw-alias-state-success-secondary);
-        background: color-mix(in srgb, var(--dsw-alias-state-success-secondary) 12%, transparent);
-      }
+      .dgp-status-letter[data-status="U"] { color: var(--dsw-alias-state-error-secondary); }
+      .dgp-status-letter[data-status="?"] { color: var(--dsw-alias-state-success-secondary); }
 
       /* 分组头 */
       .dgp-group { display: flex; flex-direction: column; }
@@ -653,7 +628,7 @@ window.__ModuleLoader__.load({
         align-items: center;
         gap: 4px;
         width: 100%;
-        height: 24px;
+        height: 26px;
         margin-top: 2px;
         padding: 0 8px 0 4px;
         border: 0;
@@ -694,10 +669,9 @@ window.__ModuleLoader__.load({
       .dgp-group-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dgp-group-count {
         flex: none;
-        min-width: 16px;
-        padding: 0 4px;
-        border-radius: 999px;
-        background: var(--dsw-alias-bg-module-platform);
+        min-width: 12px;
+        padding: 0 2px;
+        color: var(--dsw-alias-label-tertiary);
         font-family: var(--ds-font-family-code);
         font-size: 10px;
         font-weight: 500;
@@ -711,8 +685,7 @@ window.__ModuleLoader__.load({
         flex: none;
         flex-direction: column;
         gap: 6px;
-        padding: 8px 8px 4px;
-        border-bottom: .5px solid var(--dsw-alias-border-l3);
+        padding: 8px 8px 6px;
       }
       .dgp-commit-input-wrap { position: relative; }
       .dgp-commit-input {
@@ -720,7 +693,7 @@ window.__ModuleLoader__.load({
         min-height: 52px;
         max-height: 160px;
         padding: 6px 30px 6px 8px;
-        border: .5px solid var(--dsw-alias-border-l2);
+        border: 0;
         border-radius: var(--dsw-radius-md);
         background: var(--dsw-alias-bg-module-platform);
         color: var(--dsw-alias-label-primary);
@@ -729,7 +702,7 @@ window.__ModuleLoader__.load({
         line-height: 1.5;
         resize: vertical;
       }
-      .dgp-commit-input:focus { outline: none; border-color: var(--dsw-alias-state-business-primary); }
+      .dgp-commit-input:focus { outline: none; background: var(--dsw-alias-bg-layer-3); }
       .dgp-commit-generate {
         position: absolute;
         top: 4px;
@@ -748,20 +721,20 @@ window.__ModuleLoader__.load({
       }
       .dgp-commit-generate:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
       .dgp-commit-generate[data-busy='true'] { opacity: .5; cursor: default; }
-      .dgp-commit-submit { align-self: flex-start; }
-      .dgp-commit-submit:disabled { opacity: .45; cursor: default; }
+      .dgp-commit-submit { align-self: flex-end; min-width: 72px; }
 
       /* 设置页 */
-      .dgp-settings { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+      .dgp-settings { display: flex; flex-direction: column; gap: 14px; padding: 14px 12px; max-width: 520px; }
       .dgp-settings-head { display: flex; align-items: center; gap: 8px; }
       .dgp-settings-title { margin: 0; font-size: 13px; font-weight: 600; }
-      .dgp-settings-field { display: flex; flex-direction: column; gap: 4px; }
+      .dgp-settings-field { display: flex; flex-direction: column; gap: 6px; }
       .dgp-settings-label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
       .dgp-settings-hint { margin: 0; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
       .dgp-select {
         height: 30px;
+        max-width: 420px;
         padding: 0 8px;
-        border: .5px solid var(--dsw-alias-border-l2);
+        border: 0;
         border-radius: var(--dsw-radius-md);
         background: var(--dsw-alias-bg-module-platform);
         color: var(--dsw-alias-label-primary);
@@ -780,9 +753,8 @@ window.__ModuleLoader__.load({
         flex: none;
         align-items: center;
         gap: 6px;
-        height: 38px;
+        height: 34px;
         padding: 0 6px 0 10px;
-        border-bottom: .5px solid var(--dsw-alias-border-l3);
       }
       .dgp-viewer-title {
         flex: 0 1 auto;
@@ -946,24 +918,25 @@ window.__ModuleLoader__.load({
 
 
       /* ===================== 8. 状态位 ===================== */
+      /* 空/加载/错误：在容器里垂直水平都居中（不靠 height:100%，避免在滚动容器里错位） */
       .dgp-state {
         display: flex;
         flex: 1 1 auto;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 10px;
-        height: 100%;
-        padding: 24px;
+        gap: 6px;
+        min-height: 0;
+        padding: 20px;
         color: var(--dsw-alias-label-secondary);
         text-align: center;
         line-height: 1.6;
       }
-      .dgp-state-icon { flex: none; color: var(--dsw-alias-label-tertiary); opacity: .85; }
-      .dgp-state-icon svg { width: 28px; height: 28px; }
-      .dgp-state-title { margin: 0; color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 600; }
-      .dgp-state-desc { margin: 0; max-width: 34ch; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
-      .dgp-state-actions { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+      .dgp-state-icon { flex: none; margin-bottom: 2px; color: var(--dsw-alias-label-tertiary); opacity: .5; }
+      .dgp-state-icon svg { width: 22px; height: 22px; }
+      .dgp-state-title { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; font-weight: 500; }
+      .dgp-state-desc { margin: 0; max-width: 32ch; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+      .dgp-state-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
       .dgp-spinner {
         display: inline-block;
         flex: none;
@@ -990,9 +963,9 @@ window.__ModuleLoader__.load({
         display: flex;
         align-items: center;
         gap: 6px;
-        margin: 8px 10px;
-        padding: 6px 10px;
-        border-radius: var(--dsw-radius-sm);
+        margin: 6px 8px;
+        padding: 5px 8px;
+        border-radius: var(--dsw-radius-md);
         background: var(--dsw-alias-bg-layer-1);
         color: var(--dsw-alias-label-secondary);
         font-size: 12px;
@@ -1013,7 +986,7 @@ window.__ModuleLoader__.load({
         max-width: 320px;
         max-height: 60vh;
         padding: 4px;
-        border: .5px solid var(--dsw-alias-border-l2);
+        border: 0;
         border-radius: var(--dsw-radius-md);
         background: var(--dsw-alias-bg-layer-2);
         box-shadow: var(--dsw-shadow-md, 0 8px 24px rgba(0, 0, 0, .18));
@@ -1073,7 +1046,7 @@ window.__ModuleLoader__.load({
         gap: 6px;
         height: 24px;
         padding: 0 8px;
-        border: 1px solid var(--dsw-alias-border-l3, transparent);
+        border: 0;
         border-radius: 6px;
         background: transparent;
         color: var(--dsw-alias-label-secondary, inherit);
@@ -1082,7 +1055,7 @@ window.__ModuleLoader__.load({
         line-height: 1;
         cursor: pointer;
         white-space: nowrap;
-        transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+        transition: background-color 120ms ease, color 120ms ease;
       }
 
       .dgp-headerbtn:hover {
@@ -1118,9 +1091,9 @@ window.__ModuleLoader__.load({
         align-items: center;
         gap: 5px;
         height: 26px;
-        padding: 0 8px;
-        border: 1px solid var(--dsw-alias-border-l3, transparent);
-        border-radius: 6px;
+        padding: 0 7px;
+        border: 0;
+        border-radius: var(--dsw-radius-md);
         background: transparent;
         color: var(--dsw-alias-label-secondary, inherit);
         font-family: var(--dsw-alias-font-mono, ui-monospace, Menlo, Consolas, monospace);
@@ -1166,7 +1139,6 @@ window.__ModuleLoader__.load({
         color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.9));
         text-align: right;
         user-select: none;
-        border-right: .5px solid var(--dsw-alias-border-l3, transparent);
       }
 
       .dgp-editor-ln { height: 1.55em; }
@@ -1383,9 +1355,7 @@ window.__ModuleLoader__.load({
         'error.notRepository': '这个目录不是 Git 仓库',
         'error.timeout': '操作超时',
         'error.outsideRoot': '路径超出仓库范围',
-        'error.generic': '出错了：{message}',
-
-        'kbd.hint': '↑↓ 选择 · Enter 打开 · ←→ 折叠展开 · / 筛选 · R 刷新'
+        'error.generic': '出错了：{message}'
       }
 
       const en = {
@@ -1534,9 +1504,7 @@ window.__ModuleLoader__.load({
         'error.notRepository': 'Not a Git repository',
         'error.timeout': 'Operation timed out',
         'error.outsideRoot': 'Path outside the repository',
-        'error.generic': 'Something went wrong: {message}',
-
-        'kbd.hint': '↑↓ select · Enter open · ←→ fold · / filter · R refresh'
+        'error.generic': 'Something went wrong: {message}'
       }
 
       Object.assign(exports, { NS, zh, en });
@@ -2604,12 +2572,14 @@ window.__ModuleLoader__.load({
         let rightPane
         if (mode === MODE.changes) {
           if (selection === null) {
-            rightPane = h(EmptyState, {
-              icon: 'file-diff',
-              title: t('viewer.placeholderDiff'),
-              description: activeRoot === null ? t('status.noRootsHint') : undefined,
-              t
-            })
+            // 和 DiffView 用同一个容器壳，空态与有内容时的几何完全一致（居中，不贴左上角）
+            rightPane = h('div', { className: 'dgp-viewer' },
+              h(EmptyState, {
+                icon: 'file-diff',
+                title: t('viewer.placeholderDiff'),
+                description: activeRoot === null ? t('status.noRootsHint') : undefined,
+                t
+              }))
           } else {
             rightPane = h(DiffView, {
               diff,
@@ -2624,12 +2594,13 @@ window.__ModuleLoader__.load({
             })
           }
         } else if (selection === null) {
-          rightPane = h(EmptyState, {
-            icon: 'file',
-            title: t('viewer.placeholder'),
-            description: activeRoot === null ? t('status.noRootsHint') : undefined,
-            t
-          })
+          rightPane = h('div', { className: 'dgp-viewer' },
+            h(EmptyState, {
+              icon: 'file',
+              title: t('viewer.placeholder'),
+              description: activeRoot === null ? t('status.noRootsHint') : undefined,
+              t
+            }))
         } else {
           const path = selection.path
           const draft = drafts.get(path)
@@ -6296,6 +6267,7 @@ window.__ModuleLoader__.load({
           h('button', {
             type: 'button',
             className: 'dgp-btn dgp-commit-submit',
+            'data-variant': 'primary',
             'data-dgp-commit': 'submit',
             disabled: canCommit !== true,
             onClick: () => {

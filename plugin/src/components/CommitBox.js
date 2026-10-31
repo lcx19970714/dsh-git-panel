@@ -50,6 +50,7 @@ export function CommitBox(props) {
     h('button', {
       type: 'button',
       className: 'dgp-btn dgp-commit-submit',
+      'data-variant': 'primary',
       'data-dgp-commit': 'submit',
       disabled: canCommit !== true,
       onClick: () => {

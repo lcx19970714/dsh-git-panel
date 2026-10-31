@@ -1040,12 +1040,14 @@ function buildUpdateNote(updateState, t) {
   let rightPane
   if (mode === MODE.changes) {
     if (selection === null) {
-      rightPane = h(EmptyState, {
-        icon: 'file-diff',
-        title: t('viewer.placeholderDiff'),
-        description: activeRoot === null ? t('status.noRootsHint') : undefined,
-        t
-      })
+      // 和 DiffView 用同一个容器壳，空态与有内容时的几何完全一致（居中，不贴左上角）
+      rightPane = h('div', { className: 'dgp-viewer' },
+        h(EmptyState, {
+          icon: 'file-diff',
+          title: t('viewer.placeholderDiff'),
+          description: activeRoot === null ? t('status.noRootsHint') : undefined,
+          t
+        }))
     } else {
       rightPane = h(DiffView, {
         diff,
@@ -1060,12 +1062,13 @@ function buildUpdateNote(updateState, t) {
       })
     }
   } else if (selection === null) {
-    rightPane = h(EmptyState, {
-      icon: 'file',
-      title: t('viewer.placeholder'),
-      description: activeRoot === null ? t('status.noRootsHint') : undefined,
-      t
-    })
+    rightPane = h('div', { className: 'dgp-viewer' },
+      h(EmptyState, {
+        icon: 'file',
+        title: t('viewer.placeholder'),
+        description: activeRoot === null ? t('status.noRootsHint') : undefined,
+        t
+      }))
   } else {
     const path = selection.path
     const draft = drafts.get(path)

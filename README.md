@@ -162,8 +162,8 @@ node plugin/scripts/install-profile.mjs --uninstall
 | `index/stage-group` | `{rootPath, scope}` | `{scope}`；整组暂存 / 取消暂存 |
 | `commit` | `{rootPath, message}` | `{head, subject}`；只提交已暂存内容 |
 | `commit/message` | `{rootPath}` | `{message, model, source}`；有暂存看暂存，否则看未暂存 |
-| `models/list` | `{}` | `{models[]}`；模型目录来自 profile 的 `llm-pi-ai` 配置 |
-| `settings/get` / `settings/set` | `{commitModel?}` | `{commitModel}`；生成提交说明所用的模型 |
+| `models/list` | `{}` | `{models[], failed[]}`；模型来自 DSH 的 `llm` 服务（`listProviders` / `listModels`） |
+| `settings/get` / `settings/set` | `{commitModel?}` | `{commitModel: {provider, model} \| null}`；生成提交说明所用的模型 |
 | `tree/list` | `{rootPath, path}` | `{entries[], truncated}` |
 
 失败一律返回 `{ok:false, error:{code, message, details}}`，宿主 handler 绝不抛裸异常。

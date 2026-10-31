@@ -628,13 +628,25 @@ export function Panel(props) {
     }
   }, [activeRoot, commitGenerating])
 
+  /** 设置里存的是 {provider, model}，下拉框用的是扁平 ref。 */
+  const refOfPair = (pair) => (pair === null || pair === undefined ? null : pair.provider + '/' + pair.model)
+
   /** 打开设置页：同时拉模型目录和当前设置。 */
   const openSettings = useCallback(async () => {
     setShowSettings(true)
     setSettingsState({ loading: true, models: [], commitModel: null, error: null, saved: false })
     try {
       const [catalog, settings] = await Promise.all([api.listModels({}), api.readSettings({})])
-      setSettingsState({ loading: false, models: catalog.models, commitModel: settings.commitModel, error: null, saved: false })
+      const modelError = Array.isArray(catalog.failed) && catalog.failed.length > 0
+        ? tRef.current('settings.partialModels', { list: catalog.failed.map((item) => item.provider ?? '?').join(', ') })
+        : null
+      setSettingsState({
+        loading: false,
+        models: catalog.models,
+        commitModel: refOfPair(settings.commitModel),
+        error: modelError,
+        saved: false
+      })
     } catch (error) {
       setSettingsState({ loading: false, models: [], commitModel: null, error: api.describeError(error, tRef.current), saved: false })
     }
@@ -646,7 +658,7 @@ export function Panel(props) {
     setSettingsState((previous) => ({ ...previous, commitModel, saved: false, error: null }))
     try {
       const saved = await api.writeSettings({ commitModel })
-      setSettingsState((previous) => ({ ...previous, commitModel: saved.commitModel, saved: true }))
+      setSettingsState((previous) => ({ ...previous, commitModel: refOfPair(saved.commitModel), saved: true }))
     } catch (error) {
       setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
     }

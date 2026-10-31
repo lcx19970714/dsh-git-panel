@@ -38,8 +38,7 @@ const MESSAGE_KEYS = {
   'no-cwd': 'status.noCwd',
   'no-commit-model': 'commit.noModel',
   'nothing-to-commit': 'commit.nothing',
-  'no-models': 'settings.noModels',
-  'no-credential': 'settings.noCredential',
+  'no-llm': 'settings.noLlm',
   'unknown-model': 'settings.unknownModel',
   'model-failed': 'commit.generateFailed'
 }

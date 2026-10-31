@@ -49,7 +49,14 @@ import {
   commitDiffText,
   writeTextFile
 } from './host/git.js'
-import { listModels, readSettings, writeCommitModel, generateCommitMessage } from './host/models.js'
+import {
+  listModels,
+  parseRef,
+  readSettings,
+  requireModel,
+  writeCommitModel,
+  generateCommitMessage
+} from './host/models.js'
 import { resolveRoots, addExtraRoot, removeExtraRoot } from './host/roots.js'
 
 export const name = 'dsh-git-panel'
@@ -438,24 +445,30 @@ function createDispatcher(ctx) {
     if (settings.commitModel === null) {
       throw new GitError('no-commit-model', '还没有配置生成提交说明的模型')
     }
-    const generated = await generateCommitMessage(settings.commitModel, diff.text, { signal })
+    const generated = await generateCommitMessage(llmService, settings.commitModel, diff.text, { signal })
     return { ...generated, source: diff.source }
   }
 
   /* models / settings ------------------------------------------------- */
+  /** 列出 DSH 当前可用的模型（来自 llm 服务，不读任何配置文件）。 */
   async function modelsList() {
-    return { models: await listModels() }
+    return listModels(llmService)
   }
 
   async function settingsGet() {
     return readSettings()
   }
 
+  /** 保存「生成提交说明用的模型」。null 表示清空；非空时必须在当前目录里。 */
   async function settingsSet(request) {
-    if (request.commitModel !== null && typeof request.commitModel !== 'string') {
-      throw new GitError('bad-request', 'commitModel 必须是字符串或 null')
+    const raw = request.commitModel
+    if (raw === null || raw === undefined) return writeCommitModel(null)
+    const pair = parseRef(raw)
+    if (pair === null) {
+      throw new GitError('bad-request', 'commitModel 必须是 "provider/model" 或 null')
     }
-    return writeCommitModel(request.commitModel ?? '')
+    await requireModel(llmService, pair)
+    return writeCommitModel(pair)
   }
 
   /* file/read --------------------------------------------------------- */
@@ -579,6 +592,17 @@ export function apply(ctx) {
   hostApplyCount += 1
   appendHostLog('apply #' + hostApplyCount + ' inject=' + typeof ctx.inject)
 
+  // LLM 服务只用于「生成提交说明」：单独注入并留住引用，
+  // 这样 profile 没挂 llm 时面板其余功能照常可用，缺失只会在生成时报明确错误。
+  ctx.inject(['llm'], (scope) => {
+    scope.effect(() => {
+      llmService = scope.llm
+      return () => {
+        llmService = null
+      }
+    }, `${name}: llm service`)
+  })
+
   ctx.inject(['connection'], (scope) => {
     try {
       scope.effect(() => acquireRoutes(scope), `${name}: fetch routes`)
@@ -597,6 +621,8 @@ export function apply(ctx) {
 let hostApplyCount = 0
 let routeRefs = 0
 let routeDisposers = []
+/** 宿主注入的 LLM 服务；未挂载时为 null（生成时报 no-llm）。 */
+let llmService = null
 
 /** endpoint → 精确路由路径。 */
 export function routePathOf(endpoint) {

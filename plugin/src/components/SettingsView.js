@@ -48,7 +48,7 @@ export function SettingsView(props) {
         },
         h('option', { value: '' }, translate('settings.modelNone')),
         models.map((model) => h('option', { key: model.ref, value: model.ref },
-          model.providerName + ' · ' + model.modelName))),
+          model.providerLabel + ' · ' + model.modelLabel))),
         h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint')),
         saved ? h(InlineNote, { tone: 'info' }, translate('settings.saved')) : null))
 }

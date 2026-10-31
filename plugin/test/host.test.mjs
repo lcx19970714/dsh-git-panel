@@ -72,7 +72,10 @@ const fakeCtx = {
   effect(fn) {
     return fn()
   },
-  inject(_deps, callback) {
+  /** 与真实 loader 一致：只有声明的服务都存在时才回调。 */
+  inject(deps, callback) {
+    const provided = { connection: fakeCtx.connection, llm: fakeCtx.llm }
+    if (!deps.every((dep) => provided[dep] !== undefined)) return
     callback(fakeCtx)
   },
   get(serviceName) {
@@ -268,7 +271,10 @@ test('路由注册是进程内单例：重复 apply 只注册一次，最后一�
       collected.push(dispose)
       return dispose
     },
-    inject(_deps, callback) {
+    /** 与真实 loader 一致：只有声明的服务都存在时才回调（这个 ctx 没有 llm）。 */
+    inject(deps, callback) {
+      const provided = { connection: fakeCtx2.connection }
+      if (!deps.every((dep) => provided[dep] !== undefined)) return
       callback(fakeCtx2)
     },
     sessions: { get: () => undefined },
@@ -1211,6 +1217,181 @@ test('commit：只提交已暂存内容，空说明与空索引都拒绝', async
   const after = await callOk('status', { rootPath: dir })
   assert.equal(after.files.find((file) => file.path === 'hello.txt'), undefined, '已提交的文件应离开变更列表')
   assert.equal(after.files.find((file) => file.path === 'fresh.txt').untracked, true, '未暂存的文件不应被提交带走')
+})
+
+/* --------------------------------------------------- 提交说明生成（llm 服务） */
+
+/** 一个最小的 llm 服务替身：只实现本插件用到的那四个方法。 */
+function fakeLlm(overrides = {}) {
+  const seen = { calls: [], options: null }
+  const service = {
+    listProviders: () => overrides.providers ?? [{ id: 'p1', displayName: 'P1' }, { provider: 'p2' }],
+    listModels: async (provider) => {
+      if (overrides.listModels !== undefined) return overrides.listModels(provider)
+      return provider === 'p1' ? [{ id: 'm1', name: 'Model One' }, { id: 'm2' }] : [{ id: 'm3' }]
+    },
+    prepareCall: async (config, signal, configure) => {
+      seen.calls.push(config)
+      return {
+        config: { ...configure(config), provider: config.provider, model: config.model },
+        stream: (options) => {
+          seen.options = options
+          return (async function* generate() {
+            if (overrides.chunks !== undefined) {
+              for (const chunk of overrides.chunks) yield chunk
+              return
+            }
+            yield { type: 'text-delta', text: '  feat: 生成说明  ' }
+            yield { type: 'text-delta', text: '\n\n- 原因' }
+            yield { type: 'finish', reason: { kind: 'stop' } }
+          })()
+        }
+      }
+    }
+  }
+  return { service, seen }
+}
+
+const models = await import('../host/models.js')
+
+test('models.listModels：目录来自 llm 服务，provider/模型名都取到', async () => {
+  const { service } = fakeLlm()
+  const catalog = await models.listModels(service)
+  assert.deepEqual(catalog.failed, [])
+  assert.deepEqual(catalog.models.map((item) => item.ref), ['p1/m1', 'p1/m2', 'p2/m3'])
+  assert.equal(catalog.models[0].providerLabel, 'P1', 'displayName 优先')
+  assert.equal(catalog.models[0].modelLabel, 'Model One', '模型名优先')
+  assert.equal(catalog.models[1].modelLabel, 'm2', '没有名字时退回 id')
+})
+
+test('models.listModels：单个 provider 失败要报出来，不能吞掉也不能拖垮其它 provider', async () => {
+  const { service } = fakeLlm({
+    listModels: (provider) => {
+      if (provider === 'p1') throw new Error('api key 没配')
+      return [{ id: 'm3' }]
+    }
+  })
+  const catalog = await models.listModels(service)
+  assert.deepEqual(catalog.models.map((item) => item.ref), ['p2/m3'], '其它 provider 照常列出')
+  assert.equal(catalog.failed.length, 1)
+  assert.equal(catalog.failed[0].provider, 'p1')
+  assert.match(catalog.failed[0].message, /api key/)
+})
+
+test('models.listModels：没有 llm 服务时给 no-llm', async () => {
+  await assert.rejects(() => models.listModels(null), (error) => error.code === 'no-llm')
+})
+
+test('models.parseRef：按第一个斜杠切开，非法输入返回 null', () => {
+  assert.deepEqual(models.parseRef('p1/m1'), { provider: 'p1', model: 'm1' })
+  assert.deepEqual(models.parseRef('p1/a/b'), { provider: 'p1', model: 'a/b' })
+  assert.equal(models.parseRef('m1'), null)
+  assert.equal(models.parseRef('/m1'), null)
+  assert.equal(models.parseRef('p1/'), null)
+  assert.equal(models.parseRef(null), null)
+})
+
+test('models.generateCommitMessage：拼 text-delta 得到说明，并把 diff 与 system 传下去', async () => {
+  const { service, seen } = fakeLlm()
+  const result = await models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff --git a/x b/x')
+  assert.equal(result.message, 'feat: 生成说明  \n\n- 原因', '文本按块拼接并去掉首尾空白')
+  assert.equal(result.model, 'p1/m1')
+  assert.equal(seen.options.messages[0].role, 'user')
+  assert.equal(seen.options.messages[0].content[0].text, 'diff --git a/x b/x')
+  assert.match(seen.options.system, /提交说明/)
+  assert.equal(seen.calls[0].maxTokens > 0, true, '要带输出上限')
+})
+
+test('models.generateCommitMessage：finish 是错误时抛 model-failed，不返回半截文本', async () => {
+  const { service } = fakeLlm({
+    chunks: [
+      { type: 'text-delta', text: '半截' },
+      { type: 'finish', reason: { kind: 'error', failure: { message: '额度不足' } } }
+    ]
+  })
+  await assert.rejects(
+    () => models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff'),
+    (error) => error.code === 'model-failed' && /额度不足/.test(error.message)
+  )
+})
+
+test('models.generateCommitMessage：模型没吐文本时抛 model-failed', async () => {
+  const { service } = fakeLlm({ chunks: [{ type: 'finish', reason: { kind: 'stop' } }] })
+  await assert.rejects(
+    () => models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff'),
+    (error) => error.code === 'model-failed'
+  )
+})
+
+test('models.generateCommitMessage：模型不在目录里时抛 unknown-model', async () => {
+  const { service } = fakeLlm()
+  await assert.rejects(
+    () => models.generateCommitMessage(service, { provider: 'p1', model: 'nope' }, 'diff'),
+    (error) => error.code === 'unknown-model'
+  )
+})
+
+test('models 设置：存的是 provider/model 对，读回来一致，null 表示清空', async () => {
+  assert.equal((await models.readSettings()).commitModel, null, '没有设置文件时是 null')
+  await models.writeCommitModel({ provider: 'p1', model: 'm1' })
+  assert.deepEqual((await models.readSettings()).commitModel, { provider: 'p1', model: 'm1' })
+  await models.writeCommitModel(null)
+  assert.equal((await models.readSettings()).commitModel, null)
+})
+
+test('apply 注入 llm 后：models/list 走真实 llm，settings/set 校验模型存在', async () => {
+  // 全新模块实例：llmService 是模块级引用，不能与该文件顶部的 apply 混用
+  const fresh = await import('../index.js?llm-probe')
+  const freshRoutes = new Map()
+  const llm = fakeLlm().service
+  const ctx = {
+    connection: {
+      fetch: {
+        register(route) {
+          freshRoutes.set(route.path, route)
+          return () => freshRoutes.delete(route.path)
+        }
+      }
+    },
+    llm,
+    effect(fn) {
+      return fn()
+    },
+    inject(deps, callback) {
+      const provided = { connection: ctx.connection, llm: ctx.llm }
+      if (!deps.every((dep) => provided[dep] !== undefined)) return
+      callback(ctx)
+    },
+    get() {
+      return undefined
+    },
+    sessions: { get: () => undefined },
+    logger: { info() {}, warn() {}, error() {}, debug() {} }
+  }
+  fresh.apply(ctx)
+
+  const call = async (endpoint, payload) => {
+    const route = freshRoutes.get(fresh.routePathOf(endpoint))
+    assert.ok(route !== undefined, '没有注册路由: ' + endpoint)
+    const request = {
+      json: async () => ({ type: 'client-request', rpcId: 'r1', method: 'dsh-git/' + endpoint, payload })
+    }
+    const body = await (await route.fetch(request)).json()
+    return body.result
+  }
+
+  const listed = await call('models/list', {})
+  assert.equal(listed.ok, true, JSON.stringify(listed))
+  assert.deepEqual(listed.value.models.map((model) => model.ref), ['p1/m1', 'p1/m2', 'p2/m3'])
+
+  const bad = await call('settings/set', { commitModel: 'p1/nope' })
+  assert.equal(bad.ok, false, '目录里没有的模型必须拒绝')
+  assert.equal(bad.error.code, 'unknown-model')
+
+  const good = await call('settings/set', { commitModel: 'p1/m1' })
+  assert.equal(good.ok, true, JSON.stringify(good))
+  assert.deepEqual(good.value.commitModel, { provider: 'p1', model: 'm1' })
+  assert.deepEqual((await call('settings/get', {})).value.commitModel, { provider: 'p1', model: 'm1' })
 })
 
 test('未知端点没有路由；畸形 payload 返回错误信封，绝不抛出', async () => {

@@ -108,7 +108,8 @@ export const zh = {
   'settings.modelNone': '未选择',
   'settings.saved': '已保存',
   'settings.noModels': '没有读到可用的模型',
-  'settings.noCredential': '这个模型的密钥没有配置',
+  'settings.noLlm': '当前 profile 没有挂载 LLM 服务，无法列出模型',
+  'settings.partialModels': '这些 provider 读取失败：{list}',
   'settings.unknownModel': '所选模型不在目录里',
   'settings.loading': '正在读取…',
 
@@ -257,7 +258,8 @@ export const en = {
   'settings.modelNone': 'None selected',
   'settings.saved': 'Saved',
   'settings.noModels': 'No models are available',
-  'settings.noCredential': 'This model has no API key configured',
+  'settings.noLlm': 'This profile has no LLM service mounted, so models cannot be listed',
+  'settings.partialModels': 'These providers failed: {list}',
   'settings.unknownModel': 'The selected model is not in the catalog',
   'settings.loading': 'Loading…',
 

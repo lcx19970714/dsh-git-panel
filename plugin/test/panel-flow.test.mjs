@@ -1408,12 +1408,17 @@ test('用例 1u：设置按钮打开设置页，选择模型即保存', async ()
       'project/resolve': () => resolveOk([ROOT], PROJECT),
       status: () => sayOk(statusThree()),
       'models/list': () => sayOk({ models: [
-        { ref: 'kedaya-grok/grok-4.7', providerId: 'kedaya-grok', providerName: 'Kedaya Grok', modelId: 'grok-4.7', modelName: 'Grok 4.7' }
-      ] }),
+        { ref: 'kedaya-grok/grok-4.7', provider: 'kedaya-grok', model: 'grok-4.7', providerLabel: 'Kedaya Grok', modelLabel: 'Grok 4.7' }
+      ], failed: [] }),
       'settings/get': () => sayOk({ commitModel: null }),
       'settings/set': (payload) => {
         saved.push(payload)
-        return sayOk({ commitModel: payload.commitModel })
+        const at = String(payload.commitModel).indexOf('/')
+        return sayOk({
+          commitModel: payload.commitModel === null
+            ? null
+            : { provider: payload.commitModel.slice(0, at), model: payload.commitModel.slice(at + 1) }
+        })
       }
     }
   }, async (panel) => {

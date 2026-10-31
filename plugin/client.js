@@ -1309,7 +1309,8 @@ window.__ModuleLoader__.load({
         'settings.modelNone': '未选择',
         'settings.saved': '已保存',
         'settings.noModels': '没有读到可用的模型',
-        'settings.noCredential': '这个模型的密钥没有配置',
+        'settings.noLlm': '当前 profile 没有挂载 LLM 服务，无法列出模型',
+        'settings.partialModels': '这些 provider 读取失败：{list}',
         'settings.unknownModel': '所选模型不在目录里',
         'settings.loading': '正在读取…',
 
@@ -1458,7 +1459,8 @@ window.__ModuleLoader__.load({
         'settings.modelNone': 'None selected',
         'settings.saved': 'Saved',
         'settings.noModels': 'No models are available',
-        'settings.noCredential': 'This model has no API key configured',
+        'settings.noLlm': 'This profile has no LLM service mounted, so models cannot be listed',
+        'settings.partialModels': 'These providers failed: {list}',
         'settings.unknownModel': 'The selected model is not in the catalog',
         'settings.loading': 'Loading…',
 
@@ -2159,13 +2161,25 @@ window.__ModuleLoader__.load({
           }
         }, [activeRoot, commitGenerating])
 
+        /** 设置里存的是 {provider, model}，下拉框用的是扁平 ref。 */
+        const refOfPair = (pair) => (pair === null || pair === undefined ? null : pair.provider + '/' + pair.model)
+
         /** 打开设置页：同时拉模型目录和当前设置。 */
         const openSettings = useCallback(async () => {
           setShowSettings(true)
           setSettingsState({ loading: true, models: [], commitModel: null, error: null, saved: false })
           try {
             const [catalog, settings] = await Promise.all([api.listModels({}), api.readSettings({})])
-            setSettingsState({ loading: false, models: catalog.models, commitModel: settings.commitModel, error: null, saved: false })
+            const modelError = Array.isArray(catalog.failed) && catalog.failed.length > 0
+              ? tRef.current('settings.partialModels', { list: catalog.failed.map((item) => item.provider ?? '?').join(', ') })
+              : null
+            setSettingsState({
+              loading: false,
+              models: catalog.models,
+              commitModel: refOfPair(settings.commitModel),
+              error: modelError,
+              saved: false
+            })
           } catch (error) {
             setSettingsState({ loading: false, models: [], commitModel: null, error: api.describeError(error, tRef.current), saved: false })
           }
@@ -2177,7 +2191,7 @@ window.__ModuleLoader__.load({
           setSettingsState((previous) => ({ ...previous, commitModel, saved: false, error: null }))
           try {
             const saved = await api.writeSettings({ commitModel })
-            setSettingsState((previous) => ({ ...previous, commitModel: saved.commitModel, saved: true }))
+            setSettingsState((previous) => ({ ...previous, commitModel: refOfPair(saved.commitModel), saved: true }))
           } catch (error) {
             setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
           }
@@ -4934,8 +4948,7 @@ window.__ModuleLoader__.load({
         'no-cwd': 'status.noCwd',
         'no-commit-model': 'commit.noModel',
         'nothing-to-commit': 'commit.nothing',
-        'no-models': 'settings.noModels',
-        'no-credential': 'settings.noCredential',
+        'no-llm': 'settings.noLlm',
         'unknown-model': 'settings.unknownModel',
         'model-failed': 'commit.generateFailed'
       }
@@ -6329,7 +6342,7 @@ window.__ModuleLoader__.load({
               },
               h('option', { value: '' }, translate('settings.modelNone')),
               models.map((model) => h('option', { key: model.ref, value: model.ref },
-                model.providerName + ' · ' + model.modelName))),
+                model.providerLabel + ' · ' + model.modelLabel))),
               h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint')),
               saved ? h(InlineNote, { tone: 'info' }, translate('settings.saved')) : null))
       }

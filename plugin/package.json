@@ -1,6 +1,6 @@
 {
   "name": "dsh-git-panel",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": false,
   "description": "DSH Web 客户端插件：VSCode 风格 Git 变更 / 文件浏览面板（右侧栏），支持项目单仓库、项目内多仓库、以及手动追加的外部 Git 目录。",
   "type": "module",

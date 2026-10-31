@@ -185,6 +185,13 @@ InlineNote({ tone: 'info'|'warn'|'error', children })
 `dgp-btn`（`data-variant`: `primary|ghost|danger`，`data-size`: `sm`）、`dgp-iconbtn`、
 `dgp-seg` + `dgp-seg-btn[data-active]`、`dgp-input`、`dgp-search`、`dgp-kbd`、`dgp-hint`、`dgp-num`
 `dgp-pill` + `dgp-pill-badge[data-kind=primary|discovered|extra]` + `dgp-pill-branch` + `dgp-pill-count`
+（仅文件模式的浏览根选择器）
+
+### 变更模式的「储存库」区
+`dgp-changes`（左栏容器：储存库 + 提交框 + 列表）、`dgp-repolist`、`dgp-repolist-head`、
+`dgp-repolist-toggle[data-dgp-repolist-toggle][data-open]`、`dgp-repolist-title`、
+`dgp-repolist-rows`、`dgp-repo-row[data-dgp-repo][data-active]`、`dgp-repo-branch`、
+`dgp-row-action[data-dgp-repo-remove]`（仅外部仓库）、`dgp-addform` + `dgp-addform-actions`
 
 ### 左侧列表 / 树
 `dgp-list`、`dgp-level`（ul）、`dgp-item`（li）、`dgp-row`（button；`data-kind=dir|file`；`data-active`）、

@@ -244,6 +244,46 @@ export const CSS = `
 .dgp-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .dgp-pane-left { display: flex; flex: none; flex-direction: column; width: var(--dgp-left-width, 264px); min-width: 180px; min-height: 0; }
 .dgp-pane-right { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
+/* 变更模式左栏：储存库 + 提交框 + 变更列表（列表自己滚动） */
+.dgp-changes { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+
+/* 「储存库」区域 */
+.dgp-repolist { display: flex; flex: none; flex-direction: column; border-bottom: .5px solid var(--dsw-alias-border-l3); }
+.dgp-repolist-head { display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 2px; }
+.dgp-repolist-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  text-align: left;
+  cursor: pointer;
+}
+.dgp-repolist-toggle:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dgp-repolist-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dgp-repolist-rows { padding-bottom: 4px; }
+.dgp-repo-row { min-height: 26px; padding-top: 3px; padding-bottom: 3px; }
+.dgp-repo-row > .dgp-ico { color: var(--dsw-alias-label-tertiary); }
+.dgp-repo-branch {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+}
+.dgp-addform { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 8px; }
+.dgp-addform-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .dgp-list {
   display: flex;
   flex: 1 1 auto;

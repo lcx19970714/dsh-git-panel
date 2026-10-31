@@ -1260,11 +1260,16 @@ test('用例 1：挂载 → 解析根 → status → 分组与行', async () => 
     assert(statusCalls.length >= 1, '没有发 status')
     eq(statusCalls[0].payload, { rootPath: PROJECT }, 'status 载荷')
 
-    // 根信息常驻：胶囊显示当前根名字 + 分支（当前帧里就能断言）
-    const pill = panel.class('dgp-pill')
-    eq(pill.length, 1, '.dgp-pill 数量')
-    eq(textOf(panel.class('dgp-pill-label')[0]), 'project', '胶囊显示根名字')
-    assert(textOf(pill[0]).includes('main'), '胶囊应显示分支 main，实际 ' + textOf(pill[0]))
+    // 变更模式的仓库切换在「储存库」列表里，顶栏不再有下拉（胶囊只属于文件模式）
+    eq(panel.class('dgp-pill').length, 0, '变更模式不应有顶栏胶囊')
+    const repoList = panel.class('dgp-repolist')[0]
+    assert(repoList !== undefined, '缺少「储存库」区域')
+    eq(textOf(repoList).includes('储存库'), true, '储存库标题')
+    const repoRows = byAttr(repoList, 'data-dgp-repo')
+    eq(repoRows.length, 1, '只有一个仓库时应有一行')
+    eq(attr(repoRows[0], 'data-active'), 'true', '当前仓库应高亮')
+    assert(textOf(repoRows[0]).includes('project'), '行里应有仓库名，实际 ' + textOf(repoRows[0]))
+    assert(textOf(repoRows[0]).includes('main'), '行里应有分支，实际 ' + textOf(repoRows[0]))
 
     // 顶层结构
     eq(panel.class('dgp-root').length, 1, '.dgp-root 数量')
@@ -1432,6 +1437,43 @@ test('用例 1u：设置按钮打开设置页，选择模型即保存', async ()
 /* ================================================================== */
 /* 用例 2：点选 → diff 载荷 → diff 行                                  */
 /* ================================================================== */
+
+test('用例 1v：多仓库时储存库列表列出全部，点另一个仓库切走变更区', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT, ROOT_OTHER], PROJECT),
+      status: (payload) => (payload.rootPath === ROOT_OTHER.path
+        ? sayOk({
+          ...statusThree(),
+          repoRoot: ROOT_OTHER.path,
+          branch: 'dev',
+          files: [file({ path: 'only-in-other.js', status: 'M', unstaged: true, adds: 2, dels: 0 })],
+          counts: { total: 1, staged: 0, unstaged: 1, untracked: 0, conflicted: 0 }
+        })
+        : sayOk(statusThree()))
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const rows = panel.all((node) => isHost(node) && attr(node, 'data-dgp-repo') !== undefined)
+    eq(rows.map((node) => attr(node, 'data-dgp-repo')), [ROOT.id, ROOT_OTHER.id], '储存库行')
+    eq(attr(rows[0], 'data-active'), 'true', '默认在第一个仓库')
+
+    const other = rows.find((node) => attr(node, 'data-dgp-repo') === ROOT_OTHER.id)
+    click(other)
+    await panel.flush()
+
+    assert(panel.fileRow('only-in-other.js') !== null, '变更区应换成第二个仓库的改动')
+    assert(panel.fileRow('app.js') === null, '第一个仓库的改动不应还留着')
+    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-repo') === ROOT_OTHER.id), 'data-active'), 'true', '高亮跟着切')
+    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-repo') === ROOT.id), 'data-active'), 'false', '旧仓库不再高亮')
+
+    // 折叠储存库区：行消失，标题还在
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-repolist-toggle') !== undefined))
+    await panel.flush()
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-repo') !== undefined).length, 0, '折叠后不显示仓库行')
+    assert(panel.text().includes('储存库') || panel.text().includes('Repositories'), '折叠后仍有标题')
+  })
+})
 
 test('用例 2a：点未暂存文件 → diff 载荷', async () => {
   const status = statusWithBoth()
@@ -1670,18 +1712,13 @@ test('用例 5：切根会 abort 旧根的 in-flight status 请求', async () =>
   }, async (panel) => {
     await panel.flush()
 
-    const pill = panel.class('dgp-pill')[0]
-    assert(pill !== undefined, '找不到根胶囊')
-    click(pill)
-    await panel.flush()
-
-    const otherItem = findOne(panel.tree, (node) => (
-      isHost(node) && hasClass(node, 'dgp-menu-item') && node.type === 'button' && textOf(node).includes('other')
+    const otherRow = findOne(panel.tree, (node) => (
+      isHost(node) && attr(node, 'data-dgp-repo') === ROOT_OTHER.id
     ))
-    assert(otherItem !== null, '胶囊菜单里找不到第二个根')
+    assert(otherRow !== null, '储存库列表里找不到第二个仓库')
 
     const mark = panel.router.mark()
-    click(otherItem)
+    click(otherRow)
     await panel.flush()
 
     // 新根有发 status
@@ -1721,15 +1758,13 @@ test('用例 5b：切根后旧根的迟到响应不会覆盖新根', async () =>
   }, async (panel) => {
     await panel.flush()
 
-    click(panel.class('dgp-pill')[0])
-    await panel.flush()
-    const otherItem = findOne(panel.tree, (node) => (
-      isHost(node) && hasClass(node, 'dgp-menu-item') && textOf(node).includes('other')
+    const otherRow = findOne(panel.tree, (node) => (
+      isHost(node) && attr(node, 'data-dgp-repo') === ROOT_OTHER.id
     ))
-    assert(otherItem !== null, '胶囊菜单里找不到第二个根')
+    assert(otherRow !== null, '储存库列表里找不到第二个仓库')
 
     const mark = panel.router.mark()
-    click(otherItem)
+    click(otherRow)
     await panel.flush()
 
     const fresh = panel.findFrame((tree) => findAll(tree, (node) => (

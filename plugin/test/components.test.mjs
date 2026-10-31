@@ -400,6 +400,47 @@ test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行
   eq(busy.props['data-busy'], 'true', '忙状态钩子')
 })
 
+test('RepoList：列出全部仓库、当前仓库高亮、外部仓库可移除、折叠后不渲染行', () => {
+  const { RepoList } = loadModule('./components/RepoList.js')
+  const roots = [
+    { id: 'r1', name: 'project', path: 'C:/work/project', kind: 'primary', isGit: true, branch: 'main' },
+    { id: 'r2', name: 'web', path: 'C:/work/project/web', kind: 'discovered', isGit: true, branch: 'dev' },
+    { id: 'r3', name: 'ext', path: 'D:/ext', kind: 'extra', isGit: true, branch: null }
+  ]
+  const picked = []
+  const removed = []
+  const base = {
+    roots,
+    activeRootId: 'r2',
+    open: true,
+    onToggleOpen: () => {},
+    onSelect: (root) => picked.push(root.id),
+    onRemove: (root) => removed.push(root.id),
+    onAdd: () => Promise.resolve(),
+    t: tKey
+  }
+  const tree = renderComponent(RepoList, base)
+  const rows = collect(tree, (node) => node.$$host === true && node.props['data-dgp-repo'] !== undefined)
+  eq(rows.length, 3, '每个仓库一行')
+  eq(rows.map((node) => node.props['data-dgp-repo']), ['r1', 'r2', 'r3'], '顺序与入参一致')
+  eq(rows.find((node) => node.props['data-dgp-repo'] === 'r2').props['data-active'], 'true', '当前仓库高亮')
+  eq(rows.find((node) => node.props['data-dgp-repo'] === 'r1').props['data-active'], 'false', '其它仓库不高亮')
+  assert(textOf(rows[0]).includes('main'), '行里应有分支')
+
+  rows[0].props.onClick({ preventDefault() {}, stopPropagation() {} })
+  eq(picked, ['r1'], '点行应切到该仓库')
+
+  const removeButtons = collect(tree, (node) => node.$$host === true && node.props['data-dgp-repo-remove'] !== undefined)
+  eq(removeButtons.length, 1, '只有外部仓库带移除按钮')
+  eq(removeButtons[0].props['data-dgp-repo-remove'], 'r3')
+  removeButtons[0].props.onClick({ preventDefault() {}, stopPropagation() {} })
+  eq(removed, ['r3'], '移除回调')
+
+  const collapsed = renderComponent(RepoList, { ...base, open: false })
+  eq(collect(collapsed, (node) => node.$$host === true && node.props['data-dgp-repo'] !== undefined).length, 0, '折叠后不渲染仓库行')
+  eq(collect(collapsed, (node) => node.$$host === true && node.props['data-dgp-repolist-toggle'] !== undefined).length, 1, '折叠后仍有标题行')
+})
+
 test('ChangesList：筛选无结果给出提示', () => {
   const { ChangesList } = loadModule('./components/ChangesList.js')
   const tree = renderComponent(ChangesList, {

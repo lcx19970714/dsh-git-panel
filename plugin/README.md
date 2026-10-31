@@ -117,7 +117,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 
 **通用**
 
-- 顶栏 pill 切换根（项目 / 发现 / 外部），外部根可一键移除
+- 变更区顶部是「储存库」列表（VS Code 的 Repositories）：每个仓库一行，点选切换下方变更区，可折叠；外部仓库行尾可移除，标题行 `+` 添加。文件模式的浏览根仍用顶栏 pill 选择
 - **版本号 chip**（当前提交短 SHA）：点一下 = 检测更新（git fetch），结果一行说明「已是最新 / 落后 N 个 / 领先 N 个」
 - **打开 Git 仓库**按钮：按 remote.origin.url 转成 https 在新标签打开；本地路径类远端没有网页，按钮自动禁用
 - 手动刷新在「⋯」菜单的「立即刷新」里，`R` 键同效；可选 8s 自动刷新（仅在窗口可见且聚焦时跑）
@@ -286,7 +286,7 @@ export function apply(ctx) {
 |---|---|
 | 右侧栏「+」里没有「Git 变更」 | `dsh.profile.bundles` 是否含 `dsh-git-panel`；`node_modules/dsh-git-panel` 链接是否指向本目录；是否已重新组合 profile |
 | tab 能开但一片空白 | 浏览器 DevTools Console 有无报错；`exports["./client"]` 指向的文件是否存在 |
-| 面板显示「当前目录不是 Git 仓库」 | 会话 cwd 不是仓库；用顶栏「添加外部仓库…」补一个 |
+| 面板显示「当前目录不是 Git 仓库」 | 项目里没有任何工作树；用「储存库」标题行的 `+` 补一个外部仓库 |
 | 变更一直是旧的 | 关掉自动刷新时按 `⟳`；确认宿主 `status` 缓存 1.2s 内没有踩到 |
 | 文案显示成 key | 字典没注册上（`ctx.locale.register` 与 `locale: NS` 的 ns 必须都是 `dshGitPanel`） |
 

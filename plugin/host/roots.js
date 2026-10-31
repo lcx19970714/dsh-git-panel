@@ -30,8 +30,15 @@ import {
 } from './git.js'
 import { addExtra, listExtras, removeExtra } from './config.js'
 
-const MAX_DISCOVER_DEPTH = 2
-const MAX_DISCOVER_REPOS = 12
+/**
+ * 子仓库扫描预算。
+ *
+ * 深度 4 覆盖 `packages/ui/examples/demo` 这类布局；超出的部分不静默丢弃 ——
+ * 达到上限时 resolveRoots 会往 warnings 里写一条，用户能看到「可能还有仓库没列出」。
+ */
+const MAX_DISCOVER_DEPTH = 4
+const MAX_DISCOVER_REPOS = 24
+const MAX_DISCOVER_DIRS = 8000
 const IS_WINDOWS = process.platform === 'win32'
 
 /* ---------------------------------------------------------------- 小工具 */
@@ -187,21 +194,27 @@ export async function resolveRoots(projectRoot, options = {}) {
     )
   }
 
-  /* 2) 嵌套仓库（项目根是仓库时也继续找子模块/多仓库项目） */
+  /* 2) 嵌套工作树（项目根是仓库时也继续找子模块/多仓库项目） */
   if (projectIsDir) {
-    let found = []
+    let scan = { repos: [], truncated: false, scanned: 0 }
     try {
-      found = await discoverRepos(projectDir, {
+      scan = await discoverRepos(projectDir, {
         includeRoot: false,
         maxDepth: MAX_DISCOVER_DEPTH,
-        maxRepos: MAX_DISCOVER_REPOS
+        maxRepos: MAX_DISCOVER_REPOS,
+        maxDirs: MAX_DISCOVER_DIRS
       })
     } catch (error) {
       warnings.push(`扫描子仓库失败：${describe(error)}`)
     }
+    if (scan.truncated) {
+      warnings.push(
+        `子仓库扫描在达到上限时停止（已扫描 ${scan.scanned} 个目录、${scan.repos.length} 个仓库），可能还有仓库没有列出`
+      )
+    }
 
     const probes = await Promise.all(
-      found.map(async (item) => ({
+      scan.repos.map(async (item) => ({
         dir: toPosix(item.path),
         // .git 存在但 rev-parse 失败（损坏、权限、裸仓库）时 repo 为 null
         repo: await resolveRepo(item.path)
@@ -211,19 +224,9 @@ export async function resolveRoots(projectRoot, options = {}) {
 
     for (const probe of probes) {
       if (!probe.repo?.repoRoot) {
-        if (seenRepos.has(keyOf(probe.dir))) continue
-        seenRepos.add(keyOf(probe.dir))
-        drafts.push(
-          makeRoot({
-            id: probe.dir,
-            path: probe.dir,
-            repoRoot: null,
-            kind: 'discovered',
-            isGit: false,
-            error: '无法读取该仓库（git 命令失败）'
-          })
-        )
-        warnings.push(`无法读取仓库信息：${probe.dir}`)
+        // 有 .git 却读不出工作树（损坏 / 裸仓库目录）：它是「坏掉的仓库」，不是仓库根。
+        // 造一个 isGit:false 的根会让列表里出现一个永远报错的假仓库，所以只告警、不入列。
+        warnings.push(`跳过无法读取的仓库：${probe.dir}（git 命令失败）`)
         continue
       }
       const repoRoot = toPosix(probe.repo.repoRoot)

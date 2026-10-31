@@ -189,15 +189,22 @@ test('listDirectory 目录优先 + 自然序', async () => {
 })
 
 test('discoverRepos 找到项目内嵌仓库', async () => {
-  const repos = await discoverRepos(fixture, { includeRoot: false })
-  assert.equal(repos.length, 1, '应只发现 1 个内嵌仓库，实际：' + JSON.stringify(repos))
-  assert.ok(repos[0].path.toLowerCase().endsWith('packages/sub-repo'), '实际：' + repos[0].path)
+  const scan = await discoverRepos(fixture, { includeRoot: false })
+  assert.equal(scan.truncated, false, '没到上限时不应报告截断')
+  assert.equal(scan.repos.length, 1, '应只发现 1 个内嵌仓库，实际：' + JSON.stringify(scan.repos))
+  assert.ok(scan.repos[0].path.toLowerCase().endsWith('packages/sub-repo'), '实际：' + scan.repos[0].path)
 })
 
 test('discoverRepos includeRoot=true 时把根本身作为仓库', async () => {
-  const repos = await discoverRepos(fixture)
-  assert.equal(repos.length, 1)
-  assert.equal(repos[0].depth, 0)
+  const scan = await discoverRepos(fixture)
+  assert.equal(scan.repos.length, 1)
+  assert.equal(scan.repos[0].depth, 0)
+})
+
+test('discoverRepos：达到上限时明确报告 truncated，不静默少列', async () => {
+  const scan = await discoverRepos(fixture, { includeRoot: false, maxRepos: 0 })
+  assert.equal(scan.repos.length, 0)
+  assert.equal(scan.truncated, true, '仓库数达到上限时必须报告')
 })
 
 test('resolveInside 拒绝逃逸与 .git', async () => {

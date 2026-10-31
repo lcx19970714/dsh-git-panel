@@ -1054,6 +1054,50 @@ test('remote/fetch：非仓库目录 → not-a-repository', async () => {
 })
 
 
+test('project/resolve：项目子目录里的仓库都要被发现（深层 / vendor / 联接），跳过依赖树与坏仓库', async () => {
+  // 不变量：项目根的「是不是仓库」只是第一层判断。子目录里只要有 .git（目录或 gitfile）
+  // 就是一棵独立工作树，必须逐个列出；找到之后不再深入（里面属于同一个工作树）。
+  // 目录联接在 Windows 上不会被 readdir 报成目录，必须显式跟进去。
+  const project = tempDir('dgp-scan-')
+  writeFileSync(path.join(project, 'README.md'), '# project\n')
+
+  const depth1 = makeRepo(path.join(project, 'repo-d1'))
+  const depth2 = makeRepo(path.join(project, 'group', 'repo-d2'))
+  const depth3 = makeRepo(path.join(project, 'a', 'b', 'repo-d3'))
+  const vendored = makeRepo(path.join(project, 'vendor', 'repo-vendor'))
+  const thirdParty = makeRepo(path.join(project, 'third_party', 'repo-third'))
+  const inNodeModules = makeRepo(path.join(project, 'node_modules', 'repo-nm'))
+  const external = makeRepo(path.join(tempDir('dgp-scan-ext-'), 'external-repo'))
+  const linkPath = path.join(project, 'linked')
+  symlinkSync(external, linkPath, process.platform === 'win32' ? 'junction' : 'dir')
+
+  // 有 .git 但读不出工作树：只告警，不许造一个假的 isGit:false 根
+  mkdirSync(path.join(project, 'broken', '.git'), { recursive: true })
+
+  const value = await callOk('project/resolve', { cwd: project })
+  const repos = value.roots.filter((root) => root.isGit === true).map((root) => root.repoRoot)
+
+  for (const expected of [depth1, depth2, depth3, vendored, thirdParty, external]) {
+    assert.ok(
+      repos.some((root) => eqPath(root, expected)),
+      '缺少仓库：' + expected + '\n实际：' + JSON.stringify(repos)
+    )
+  }
+  assert.ok(
+    !repos.some((root) => eqPath(root, inNodeModules)),
+    'node_modules 里的目录应整棵跳过'
+  )
+  assert.equal(
+    value.roots.filter((root) => root.kind === 'discovered' && root.isGit === false).length,
+    0,
+    '坏仓库不应变成列表里的假仓库'
+  )
+  assert.ok(
+    value.warnings.some((w) => w.includes('broken')),
+    '坏仓库必须留下告警：' + JSON.stringify(value.warnings)
+  )
+})
+
 test('外部根：经目录联接添加后，按联接写法移除与去重都必须命中同一条记录', async () => {
   // 不变量：外部根的键一律是**规范化后的真实路径**。
   // 于是「用联接写法添加 / 再用联接写法移除」必须命中同一条记录，

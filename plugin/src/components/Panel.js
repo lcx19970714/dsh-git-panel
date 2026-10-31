@@ -18,6 +18,7 @@ import { h, useCallback, useEffect, useMemo, useRef, useState } from '../platfor
 import { Icon } from '../ui/Icon.js'
 import { PopupMenu, MenuItem, MenuLabel, MenuSeparator } from '../ui/Menu.js'
 import { RootPicker } from './RootPicker.js'
+import { RepoList } from './RepoList.js'
 import { ChangesList } from './ChangesList.js'
 import { FileTree } from './FileTree.js'
 import { DiffView } from './DiffView.js'
@@ -67,6 +68,7 @@ export function Panel(props) {
   const [autoRefresh, setAutoRefresh] = usePref('autoRefresh')
   const [leftWidth, setLeftWidth] = usePref('leftWidth')
   const [collapsedGroups, setCollapsedGroups] = usePref('collapsedGroups')
+  const [repositoriesOpen, setRepositoriesOpen] = usePref('repositoriesOpen')
 
   /* ------------------------------- 根 ------------------------------- */
   const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -76,6 +78,8 @@ export function Panel(props) {
   const [addingRoot, setAddingRoot] = useState(false)
 
   const roots = project.roots
+  /** 真正的仓库（排除只有文件浏览能力的「浏览根」）。变更模式只看这些。 */
+  const gitRoots = useMemo(() => roots.filter((root) => root.isGit === true), [roots])
   const activeRoot = roots.find((root) => root.id === activeRootId) ?? roots[0] ?? null
   const activeRootRef = useRef(activeRoot)
   activeRootRef.current = activeRoot
@@ -163,6 +167,10 @@ export function Panel(props) {
       setProject(next)
       setActiveRootId((previous) => {
         if (typeof previous === 'string' && next.roots.some((root) => root.id === previous)) return previous
+        // 变更模式看的是仓库：项目根只是「浏览根」时，默认选中第一个真正的仓库，
+        // 否则打开一个多仓库项目会先落到「不是 Git 仓库」的空态上。
+        const firstRepo = next.roots.find((root) => root.isGit === true)
+        if (firstRepo !== undefined) return firstRepo.id
         return next.roots.length > 0 ? next.roots[0].id : null
       })
     } catch (error) {
@@ -644,6 +652,17 @@ export function Panel(props) {
     }
   }, [])
 
+  /**
+   * 变更模式必须落在某个工作树上：当前根不是仓库（例如在文件模式选了浏览根）而项目里
+   * 确实有仓库时，切到第一个仓库。没有仓库时保持原样，由空态引导。
+   */
+  useEffect(() => {
+    if (mode !== MODE.changes) return
+    if (activeRoot !== null && activeRoot.isGit === true) return
+    const firstRepo = gitRoots[0]
+    if (firstRepo !== undefined) setActiveRootId(firstRepo.id)
+  }, [mode, activeRoot, gitRoots])
+
   const toggleGroup = useCallback((groupKey) => {
     setCollapsedGroups((previous) => {
       const next = { ...(previous && typeof previous === 'object' ? previous : {}) }
@@ -818,18 +837,21 @@ function buildUpdateNote(updateState, t) {
   /* ------------------------------ 渲染 ------------------------------ */
   const noSession = typeof sessionId !== 'string'
 
+  // 变更模式的仓库切换在「储存库」列表里；文件模式的浏览根仍用顶栏选择器。
   const toolbar = h('div', { className: 'dgp-toolbar' },
     h('div', { className: 'dgp-tbar-row' },
-      h(RootPicker, {
-        roots,
-        activeRootId: activeRoot === null ? null : activeRoot.id,
-        projectRoot: project.projectRoot,
-        onSelect: selectRoot,
-        onAdd: addExternalRoot,
-        onRemove: removeExternalRoot,
-        busy: addingRoot,
-        t
-      }),
+      mode === MODE.files
+        ? h(RootPicker, {
+          roots,
+          activeRootId: activeRoot === null ? null : activeRoot.id,
+          projectRoot: project.projectRoot,
+          onSelect: selectRoot,
+          onAdd: addExternalRoot,
+          onRemove: removeExternalRoot,
+          busy: addingRoot,
+          t
+        })
+        : null,
       h('div', { className: 'dgp-seg', role: 'tablist' },
         h('button', {
           type: 'button',
@@ -940,23 +962,11 @@ function buildUpdateNote(updateState, t) {
   const stagedCount = status !== null && status.counts !== null && status.counts !== undefined
     ? status.counts.staged
     : 0
-  const commitBox = mode === MODE.changes && activeRoot !== null && activeRoot.isGit !== false
-    ? h(CommitBox, {
-      message: commitMessage,
-      stagedCount,
-      busy: commitBusy,
-      generating: commitGenerating,
-      onChange: setCommitMessage,
-      onCommit: commitStaged,
-      onGenerate: generateMessage,
-      t
-    })
-    : null
 
   let leftPane
   if (mode === MODE.changes) {
-    if (activeRoot !== null && activeRoot.isGit === false) {
-      // 项目目录本身不是 git 仓库（只有一个「浏览根」）：变更列表无从谈起，但文件浏览照常可用。
+    if (gitRoots.length === 0) {
+      // 整个项目里没有任何工作树：变更列表无从谈起，但文件浏览照常可用。
       leftPane = h(EmptyState, {
         icon: 'git-branch',
         title: t('status.notRepo'),
@@ -971,22 +981,48 @@ function buildUpdateNote(updateState, t) {
         t
       })
     } else {
-      leftPane = h(ChangesList, {
-        status,
-        loading: statusLoading && status === null,
-        error: null,
-        selectedPath,
-        onSelect: selectEntry,
-        filter,
-        onFilterChange: setFilter,
-        collapsedGroups,
-        onToggleGroup: toggleGroup,
-        onStage: stageEntry,
-        pendingPath: stagePending,
-        onStageGroup: stageGroup,
-        pendingGroup: stagePending,
-        t
-      })
+      // VS Code 的排布：上面「储存库」，下面「变更」（提交框 + 分组）。
+      leftPane = h('div', { className: 'dgp-changes' },
+        h(RepoList, {
+          roots: gitRoots,
+          activeRootId: activeRoot === null ? null : activeRoot.id,
+          open: repositoriesOpen === true,
+          onToggleOpen: () => setRepositoriesOpen(repositoriesOpen !== true),
+          onSelect: selectRoot,
+          onAdd: addExternalRoot,
+          onRemove: removeExternalRoot,
+          t
+        }),
+        h(CommitBox, {
+          message: commitMessage,
+          stagedCount,
+          busy: commitBusy,
+          generating: commitGenerating,
+          onChange: setCommitMessage,
+          onCommit: commitStaged,
+          onGenerate: generateMessage,
+          t
+        }),
+        commitNote === null
+          ? null
+          : h('div', { className: 'dgp-notebar', 'data-commit-note': commitNote.tone },
+            h(InlineNote, { tone: commitNote.tone }, commitNote.text)),
+        h(ChangesList, {
+          status,
+          loading: statusLoading && status === null,
+          error: null,
+          selectedPath,
+          onSelect: selectEntry,
+          filter,
+          onFilterChange: setFilter,
+          collapsedGroups,
+          onToggleGroup: toggleGroup,
+          onStage: stageEntry,
+          pendingPath: stagePending,
+          onStageGroup: stageGroup,
+          pendingGroup: stagePending,
+          t
+        }))
     }
   } else {
     leftPane = h(FileTree, {
@@ -1139,10 +1175,7 @@ function buildUpdateNote(updateState, t) {
     ref: bodyRef,
     style: { '--dgp-left-width': String(leftWidth) + 'px' }
   },
-  h('div', { className: 'dgp-pane-left' }, commitBox, commitNote === null
-    ? null
-    : h('div', { className: 'dgp-notebar', 'data-commit-note': commitNote.tone },
-      h(InlineNote, { tone: commitNote.tone }, commitNote.text)), leftPane),
+  h('div', { className: 'dgp-pane-left' }, leftPane),
   h('div', {
     className: 'dgp-divider',
     role: 'separator',

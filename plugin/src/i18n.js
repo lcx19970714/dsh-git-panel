@@ -76,6 +76,8 @@ export const zh = {
   'root.remove': '移除',
   'root.invalid': '这个目录不是一个 Git 仓库',
 
+  'roots.title': '储存库',
+
   'group.conflicted': '冲突',
   'group.staged': '已暂存',
   'group.unstaged': '未暂存',
@@ -224,6 +226,8 @@ export const en = {
   'root.removeConfirm': 'Remove "{name}" from this project list? Files on disk are untouched.',
   'root.remove': 'Remove',
   'root.invalid': 'That folder is not a Git repository',
+
+  'roots.title': 'Repositories',
 
   'group.conflicted': 'Conflicts',
   'group.staged': 'Staged',

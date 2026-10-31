@@ -21,7 +21,9 @@ const DEFAULTS = {
   ignoreWhitespace: false,
   autoRefresh: true,
   leftWidth: 264,
-  collapsedGroups: {}
+  collapsedGroups: {},
+  /** 「储存库」区域的展开状态（只在有多个仓库时出现）。 */
+  repositoriesOpen: true
 }
 
 const GROUPS = ['conflicted', 'staged', 'unstaged', 'untracked']
@@ -40,6 +42,7 @@ function sanitize(input) {
   if (Number.isFinite(input.leftWidth)) {
     out.leftWidth = Math.min(720, Math.max(180, Math.round(input.leftWidth)))
   }
+  if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
   if (input.collapsedGroups && typeof input.collapsedGroups === 'object') {
     const groups = {}
     for (const key of GROUPS) if (input.collapsedGroups[key] === true) groups[key] = true

@@ -10,6 +10,7 @@
 import { h, useCallback, useRef, useState } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
 import { PopupMenu, MenuLabel, MenuSeparator, MenuItem } from '../ui/Menu.js'
+import { AddRootForm } from './AddRootForm.js'
 
 function kindBadge(kind) {
   if (kind === 'extra') return 'extra'
@@ -71,17 +72,12 @@ export function RootPicker(props) {
   const active = list.find((root) => root.id === activeRootId) ?? list[0] ?? null
   const [open, setOpen] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const [path, setPath] = useState('')
-  const [error, setError] = useState(null)
-  const [submitting, setSubmitting] = useState(false)
   const anchorRef = useRef(null)
   const [anchorRect, setAnchorRect] = useState(null)
 
   const close = useCallback(() => {
     setOpen(false)
     setShowForm(false)
-    setPath('')
-    setError(null)
   }, [])
 
   const toggle = useCallback(() => {
@@ -93,23 +89,6 @@ export function RootPicker(props) {
     setAnchorRect(node === null ? null : node.getBoundingClientRect())
     setOpen(true)
   }, [open, close])
-
-  const submit = useCallback(async () => {
-    const value = path.trim()
-    if (value === '') return
-    setSubmitting(true)
-    setError(null)
-    try {
-      await onAdd(value)
-      setPath('')
-      setShowForm(false)
-      close()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setSubmitting(false)
-    }
-  }, [path, onAdd, close])
 
   const activeName = active === null ? t('status.noRoots') : active.name
   const isDetached = active !== null && active.branch === null
@@ -154,51 +133,20 @@ export function RootPicker(props) {
         })),
       h(MenuSeparator),
       showForm
-        ? h('div', { className: 'dgp-menu-form' },
-          h('input', {
-            className: 'dgp-input',
-            style: { paddingLeft: 8 },
-            placeholder: t('root.addPlaceholder'),
-            value: path,
-            autoFocus: true,
-            spellCheck: false,
-            onChange: (event) => setPath(event.target.value),
-            onKeyDown: (event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                submit()
-              }
-            }
-          }),
-          h('div', { className: 'dgp-hint', style: { padding: 0 } }, t('root.addHint')),
-          error === null ? null : h('div', { className: 'dgp-note', 'data-tone': 'error' }, error),
-          h('div', { className: 'dgp-menu-form-actions' },
-            h('button', {
-              type: 'button',
-              className: 'dgp-btn',
-              'data-size': 'sm',
-              onClick: () => {
-                setShowForm(false)
-                setError(null)
-                setPath('')
-              }
-            }, t('root.addCancel')),
-            h('button', {
-              type: 'button',
-              className: 'dgp-btn',
-              'data-size': 'sm',
-              'data-variant': 'primary',
-              disabled: submitting || path.trim() === '',
-              onClick: submit
-            }, t('root.addConfirm'))))
+        ? h(AddRootForm, {
+          t,
+          onCancel: () => setShowForm(false),
+          onAdd: async (dir) => {
+            await onAdd(dir)
+            setShowForm(false)
+            close()
+          }
+        })
         : h(MenuItem, {
           icon: 'plus',
           label: t('toolbar.addRoot'),
-          disabled: submitting === true || projectRoot === '',
-          onClick: () => {
-            setShowForm(true)
-            setError(null)
-          }
+          disabled: projectRoot === '',
+          onClick: () => setShowForm(true)
         }),
       busy === true ? h('div', { className: 'dgp-note' }, t('status.loading')) : null))
 }

@@ -49,7 +49,7 @@ export const CSS = `
   flex: none;
   min-width: 14px;
   padding: 0 3px;
-  border-radius: 999px;
+  border-radius: var(--dsw-radius-xs);
   background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-tertiary);
   font-family: var(--ds-font-family-code);
@@ -64,7 +64,7 @@ export const CSS = `
   height: 24px;
   padding: 0 8px;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: var(--dsw-radius-xs);
   background: 0 0;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
@@ -88,7 +88,7 @@ export const CSS = `
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: var(--dsw-radius-xs);
   background: 0 0;
   color: var(--dsw-alias-label-secondary);
   line-height: 1;
@@ -123,7 +123,7 @@ export const CSS = `
   height: 28px;
   padding: 0 10px;
   border: 0;
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-xs);
   background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -142,7 +142,7 @@ export const CSS = `
 .dgp-btn[data-variant="ghost"] { background: 0 0; }
 .dgp-btn[data-variant="ghost"]:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
 .dgp-btn[data-variant="danger"] { background: 0 0; color: var(--dsw-alias-state-error-primary); }
-.dgp-btn[data-size="sm"] { height: 24px; padding: 0 8px; font-size: 11px; border-radius: var(--dsw-radius-sm); }
+.dgp-btn[data-size="sm"] { height: 24px; padding: 0 8px; font-size: 11px; border-radius: var(--dsw-radius-xs); }
 
 /* 搜索框 */
 .dgp-filter { display: flex; flex: none; align-items: center; gap: 6px; padding: 2px 8px 6px; }
@@ -153,7 +153,7 @@ export const CSS = `
   height: 26px;
   padding: 0 24px 0 26px;
   border: 0;
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-xs);
   background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -199,7 +199,7 @@ export const CSS = `
   height: 22px;
   padding: 0 4px;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: var(--dsw-radius-xs);
   background: 0 0;
   color: var(--dsw-alias-label-tertiary);
   font: inherit;
@@ -222,7 +222,7 @@ export const CSS = `
   margin-left: auto;
   padding: 1px 6px;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: var(--dsw-radius-xs);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   font: inherit;
@@ -289,7 +289,7 @@ export const CSS = `
   min-height: 28px;
   padding: 4px 10px 4px calc(4px + var(--dgp-depth, 0) * 14px);
   border: 0;
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-xs);
   background: 0 0;
   color: inherit;
   font: inherit;
@@ -361,7 +361,7 @@ export const CSS = `
   margin-left: 2px;
   padding: 0;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: var(--dsw-radius-xs);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -410,7 +410,7 @@ export const CSS = `
   margin-top: 2px;
   padding: 0 8px 0 4px;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: var(--dsw-radius-xs);
   background: 0 0;
   color: var(--dsw-alias-label-tertiary);
   font: inherit;
@@ -433,7 +433,7 @@ export const CSS = `
   margin-right: 6px;
   padding: 0;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: var(--dsw-radius-xs);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -472,7 +472,7 @@ export const CSS = `
   max-height: 160px;
   padding: 6px 30px 6px 8px;
   border: 0;
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-xs);
   background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -494,7 +494,7 @@ export const CSS = `
   height: 22px;
   padding: 0;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: var(--dsw-radius-xs);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -530,7 +530,7 @@ export const CSS = `
   max-width: 420px;
   padding: 0 8px;
   border: 0;
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-xs);
   background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -756,7 +756,7 @@ export const CSS = `
   gap: 6px;
   margin: 6px 8px;
   padding: 5px 8px;
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-xs);
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
@@ -778,7 +778,7 @@ export const CSS = `
   max-height: 60vh;
   padding: 4px;
   border: 0;
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-md, 0 8px 24px rgba(0, 0, 0, .18));
   overflow: auto;
@@ -792,7 +792,7 @@ export const CSS = `
   min-height: 28px;
   padding: 4px 8px;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: var(--dsw-radius-xs);
   background: 0 0;
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -835,7 +835,7 @@ export const CSS = `
   height: 24px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-xs);
   background: transparent;
   color: var(--dsw-alias-label-secondary, inherit);
   font: inherit;
@@ -881,7 +881,7 @@ export const CSS = `
   height: 26px;
   padding: 0 7px;
   border: 0;
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-xs);
   background: transparent;
   color: var(--dsw-alias-label-secondary, inherit);
   font-family: var(--dsw-alias-font-mono, ui-monospace, Menlo, Consolas, monospace);

@@ -2512,6 +2512,12 @@ test('用例 10a：点版本号触发 git fetch 检测更新，并给出结果�
     assert(textOf(note).includes('落后 3 个提交'), '结果文案：' + textOf(note))
     assert(textOf(note).includes('origin/main'), '结果里应带上游名')
 
+    // 结果贴在版本号左边，不单独占一行
+    const toolbar = panel.one((node) => isHost(node) && hasClass(node, 'dgp-toolbar'))
+    assert(findOne(toolbar, (node) => isHost(node) && attr(node, 'data-update-note') !== undefined) !== null,
+      '检测结果应在工具条里')
+    eq(panel.class('dgp-notebar').length, 0, '不应再单独起一行提示')
+
     assert(panel.router.all('status', mark).length >= 1, '检测后应刷新 status（fetch 改了远端跟踪引用）')
   })
 })

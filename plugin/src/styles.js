@@ -946,8 +946,21 @@ export const CSS = `
 .dgp-version:disabled { opacity: .45; cursor: default; }
 .dgp-version-text { letter-spacing: .2px; }
 
-/* 检测更新的一句话结果（在工具条下方） */
-.dgp-notebar { padding: 0 10px 6px; }
+/* 检测更新的结果：贴在版本号按钮左边，不单独占一行；空间不够时自己截断 */
+.dgp-update-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+.dgp-update-note[data-tone="info"] { color: var(--dsw-alias-label-secondary); }
+.dgp-update-note[data-tone="warn"] { color: var(--dsw-alias-state-warn-label); }
+.dgp-update-note[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
 
 
 /* ==================================================================

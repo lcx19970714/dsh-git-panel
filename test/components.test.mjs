@@ -498,7 +498,12 @@ test('RepoList：列出全部仓库、当前仓库高亮、外部仓库可移除
   eq(rows.map((node) => node.props['data-dgp-repo']), ['r1', 'r2', 'r3'], '顺序与入参一致')
   eq(rows.find((node) => node.props['data-dgp-repo'] === 'r2').props['data-active'], 'true', '当前仓库高亮')
   eq(rows.find((node) => node.props['data-dgp-repo'] === 'r1').props['data-active'], 'false', '其它仓库不高亮')
-  assert(textOf(rows[0]).includes('main'), '行里应有分支')
+  // 分支是行内的独立按钮（行本身不能嵌套按钮），点它开分支菜单
+  const branchButtons = collect(tree, (node) => node.$$host === true && node.props['data-dgp-branch'] !== undefined)
+  eq(branchButtons.length, 3, '每个仓库一个分支按钮')
+  eq(branchButtons.map((node) => node.props['data-dgp-branch']), ['r1', 'r2', 'r3'], '分支按钮按仓库顺序')
+  assert(textOf(branchButtons[0]).includes('main'), '分支按钮显示当前分支')
+  eq(textOf(branchButtons[2]), 'root.noBranch', '没有分支时显示占位文案')
 
   rows[0].props.onClick({ preventDefault() {}, stopPropagation() {} })
   eq(picked, ['r1'], '点行应切到该仓库')
@@ -540,19 +545,6 @@ test('States：四件套都能渲染文案', () => {
   assert(textOf(renderComponent(states.LoadingState, { label: 'LOADING-A', t: tKey })).includes('LOADING-A'), 'LoadingState 文案')
   assert(textOf(renderComponent(states.ErrorState, { message: 'BOOM', onRetry: () => {}, t: tKey })).includes('BOOM'), 'ErrorState 文案')
   assert(renderComponent(states.InlineNote, { tone: 'warn' }) !== undefined, 'InlineNote 渲染异常')
-})
-
-test('RootPicker：pill 显示当前根与分支', () => {
-  const { RootPicker } = loadModule('./components/RootPicker.js')
-  const roots = [
-    { id: 'r1', path: 'C:/a', repoRoot: 'C:/a', name: 'alpha', kind: 'primary', isGit: true, branch: 'main' },
-    { id: 'r2', path: 'C:/b', repoRoot: 'C:/b', name: 'beta', kind: 'extra', isGit: true, branch: null }
-  ]
-  const tree = renderComponent(RootPicker, { roots, activeRootId: 'r1', projectRoot: 'C:/a', onSelect: () => {}, onAdd: () => Promise.resolve(), onRemove: () => {}, busy: false, t: tKey })
-  eq(collect(tree, (node) => classOf(node).split(' ').includes('dgp-pill')).length, 1, 'pill 数量')
-  const text = textOf(tree)
-  assert(text.includes('alpha'), 'pill 没显示根名字')
-  assert(text.includes('main'), 'pill 没显示分支')
 })
 
 test('样式表覆盖了代码里用到的所有 dgp- class', () => {

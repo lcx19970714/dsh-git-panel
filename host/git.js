@@ -1143,6 +1143,51 @@ export async function commitIndex(repoRoot, message, options = {}) {
 }
 
 /**
+ * 列出本地分支（按最近提交时间排序）。
+ * 只列 `refs/heads`：切换分支就是切到本地分支，远端跟踪引用不在其列。
+ */
+export async function listBranches(repoRoot, options = {}) {
+  const { signal } = options
+  const result = await runGit(repoRoot, [
+    'for-each-ref',
+    '--sort=-committerdate',
+    '--format=%(refname:short)%09%(HEAD)',
+    'refs/heads'
+  ], { signal })
+  const branches = []
+  for (const line of result.stdout.toString('utf8').split('\n')) {
+    if (line.trim() === '') continue
+    const [name, head] = line.split('\t')
+    if (typeof name !== 'string' || name === '') continue
+    branches.push({ name, current: head === '*' })
+  }
+  // 当前分支排最前（git 的排序按时间，用户点开菜单第一眼要看到自己在哪）
+  branches.sort((left, right) => Number(right.current) - Number(left.current))
+  return { branches }
+}
+
+/**
+ * 切换分支。
+ *
+ * 用 `git switch`，工作区与索引怎么处理**完全交给 git**（与 VS Code 的默认行为一致）：
+ * 改动能带过去就带过去；会被覆盖时 git 自己拒绝，错误原文原样上抛，
+ * 由界面提示用户先提交或暂存 —— 这里不自动 stash、不 force。
+ */
+export async function switchBranch(repoRoot, branchName, options = {}) {
+  if (typeof branchName !== 'string' || branchName === '') {
+    throw new GitError('bad-request', '缺少分支名')
+  }
+  const { signal } = options
+  // 引用名合法性由 git 判定，不自己发明一套规则
+  const check = await runGit(repoRoot, ['check-ref-format', '--branch', branchName], { signal, allowFailure: true })
+  if (check.code !== 0) throw new GitError('bad-branch', '不是合法的分支名：' + branchName)
+
+  await runGit(repoRoot, ['switch', branchName], { signal })
+  const head = await readHead(repoRoot)
+  return { branch: head.branch, head: head.head }
+}
+
+/**
  * 生成提交说明用的差异文本。
  *
  * 与提交规则对齐：有已暂存的改动就只看索引（`git diff --cached`）；

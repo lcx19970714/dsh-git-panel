@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 26 个 */
+/* 模块: 25 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -227,57 +227,7 @@ window.__ModuleLoader__.load({
       .dgp-tbar-row { display: flex; align-items: center; gap: 6px; min-width: 0; width: 100%; }
       .dgp-spacer { flex: 1 1 auto; min-width: 0; }
 
-      /* 仓库选择 pill */
-      .dgp-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        height: 24px;
-        min-width: 0;
-        max-width: 200px;
-        padding: 0 8px;
-        border: 0;
-        border-radius: 999px;
-        background: var(--dsw-alias-bg-layer-2);
-        color: var(--dsw-alias-label-secondary);
-        font: inherit;
-        font-size: 12px;
-        line-height: 18px;
-        cursor: pointer;
-      }
-      .dgp-pill:hover, .dgp-pill[aria-expanded="true"] { background: var(--dsw-alias-interactive-bg-hover); }
-      .dgp-pill[data-empty="true"] { color: var(--dsw-alias-label-tertiary); }
-      .dgp-pill-label { flex: 0 1 auto; min-width: 0; }
-      .dgp-rootpicker { display: inline-flex; min-width: 0; }
-      /* 根列表里的一行：主体按钮 + 可选的移除按钮并排（button 不能嵌套 button） */
-      .dgp-root-row {
-        display: flex;
-        align-items: center;
-        gap: 2px;
-        border-radius: var(--dsw-radius-sm);
-      }
-      .dgp-root-row[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
-      .dgp-root-row > .dgp-menu-item { flex: 1 1 auto; min-width: 0; }
-      .dgp-pill-badge {
-        flex: none;
-        padding: 0 4px;
-        border-radius: var(--dsw-radius-xs);
-        background: var(--dsw-alias-bg-module-platform);
-        color: var(--dsw-alias-label-tertiary);
-        font-size: 10px;
-        line-height: 14px;
-      }
-      .dgp-pill-badge[data-kind="extra"] { color: var(--dsw-alias-state-business-primary); }
-      .dgp-pill-branch {
-        flex: none;
-        max-width: 96px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        color: var(--dsw-alias-label-tertiary);
-        font-family: var(--ds-font-family-code);
-        font-size: 11px;
-      }
+      /* 计数小胶囊（模式分段按钮上的数字） */
       .dgp-pill-count {
         flex: none;
         min-width: 14px;
@@ -340,7 +290,7 @@ window.__ModuleLoader__.load({
       .dgp-iconbtn:disabled, .dgp-tool:disabled { opacity: .4; cursor: default; }
       .dgp-iconbtn[data-busy="true"] svg { animation: dgp-spin 1s linear infinite; }
       .dgp-iconbtn:focus-visible, .dgp-tool:focus-visible, .dgp-btn:focus-visible,
-      .dgp-pill:focus-visible, .dgp-seg-btn:focus-visible, .dgp-input:focus-visible,
+      .dgp-seg-btn:focus-visible, .dgp-input:focus-visible,
       .dgp-row:focus-visible, .dgp-group-head:focus-visible {
         outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
         outline-offset: -1px;
@@ -448,14 +398,25 @@ window.__ModuleLoader__.load({
       .dgp-repolist-rows { padding-bottom: 4px; }
       .dgp-repo-row { min-height: 26px; padding-top: 3px; padding-bottom: 3px; }
       .dgp-repo-row > .dgp-ico { color: var(--dsw-alias-label-tertiary); }
+      /* 当前分支：行内的低调按钮，点开分支菜单（VS Code 的分支指示） */
       .dgp-repo-branch {
         flex: 0 1 auto;
         min-width: 0;
+        max-width: 45%;
         margin-left: auto;
+        padding: 1px 6px;
+        border: 0;
+        border-radius: var(--dsw-radius-sm);
+        background: transparent;
         color: var(--dsw-alias-label-tertiary);
+        font: inherit;
         font-family: var(--ds-font-family-code);
         font-size: 11px;
+        line-height: 18px;
+        cursor: pointer;
       }
+      .dgp-repo-branch:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+      .dgp-repo-branch:focus-visible { outline: none; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
       .dgp-addform { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 8px; }
       .dgp-addform-actions { display: flex; justify-content: flex-end; gap: 6px; }
       .dgp-list {
@@ -1034,12 +995,9 @@ window.__ModuleLoader__.load({
       .dgp-menu-item-sub { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
       .dgp-menu-label { padding: 6px 8px 4px; color: var(--dsw-alias-label-tertiary); font-size: 11px; font-weight: 600; }
       .dgp-menu-sep { height: .5px; margin: 4px 6px; background: var(--dsw-alias-border-l2); }
-      .dgp-menu-form { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px 8px; }
-      .dgp-menu-form-actions { display: flex; justify-content: flex-end; gap: 6px; }
 
       /* ===================== 10. 自适应 ===================== */
       .dgp-root[data-narrow="true"] .dgp-meta,
-      .dgp-root[data-narrow="true"] .dgp-pill-branch { display: none; }
       @media (prefers-reduced-motion: reduce) {
         .dgp-spinner { animation-duration: 2.4s; }
         .dgp-skel-dot, .dgp-skel-bar { animation: none; }
@@ -1252,11 +1210,8 @@ window.__ModuleLoader__.load({
         'update.noRemote': '这个仓库没有配置远端',
         'update.checkedAt': '检测于 {time}',
         'tab.title': '变更',
-        'panel.label': 'Git 变更',
         'header.label': '变更',
         'header.title': '打开 Git 变更面板（当前会话所在项目）',
-        'panel.listLabel': 'Git 变更',
-        'tab.titleWithCount': '变更 {count}',
         'guide.title': 'Git 变更与文件浏览',
         'guide.description': '查看项目改动、逐文件 diff，或直接浏览文件树',
 
@@ -1265,14 +1220,12 @@ window.__ModuleLoader__.load({
         'mode.changesHint': '查看工作区改动',
         'mode.filesHint': '浏览项目文件',
 
-        'toolbar.refresh': '刷新',
         'editor.save': '保存',
         'editor.saved': '已保存 {time}',
         'editor.unsaved': '未保存',
         'editor.conflict': '文件在磁盘上已被修改，保存会覆盖别人的改动',
         'editor.reload': '重新加载',
         'editor.overwrite': '覆盖保存',
-        'toolbar.autorefresh': '自动刷新',
         'toolbar.autoRefreshOn': '自动刷新：开',
         'toolbar.autoRefreshOff': '自动刷新：关',
         'toolbar.viewAsList': '以列表显示',
@@ -1283,34 +1236,27 @@ window.__ModuleLoader__.load({
         'toolbar.split': '并排视图',
         'toolbar.context': '上下文行数',
         'toolbar.ignoreWhitespace': '忽略空白差异',
-        'toolbar.ignoreWhitespaceOn': '已忽略空白差异',
-        'toolbar.ignoreWhitespaceOff': '未忽略空白差异',
         'toolbar.more': '更多',
         'toolbar.addRoot': '添加外部仓库…',
         'toolbar.removeRoot': '从列表移除「{name}」',
-        'toolbar.openExternal': '在系统文件管理器中打开',
         'toolbar.collapseAll': '全部折叠',
 
         'filter.placeholder': '筛选文件…',
         'filter.clear': '清除筛选',
         'filter.loadedOnly': '只搜索已展开的目录',
 
-        'root.primary': '项目',
-        'root.discovered': '发现',
-        'root.extra': '外部',
-        'root.select': '切换仓库',
         'root.noBranch': '未命名分支',
-        'root.detached': '分离 HEAD',
-        'root.branchTip': '{branch} · {status}',
-        'root.add': '添加外部仓库',
         'root.addPlaceholder': '输入或粘贴 Git 仓库目录的绝对路径',
         'root.addConfirm': '添加',
         'root.addCancel': '取消',
         'root.addHint': '支持任意位置的本机目录；添加后会与项目内仓库并列显示。',
-        'root.removeConfirm': '从本项目的仓库列表中移除「{name}」？磁盘上的文件不会被删除。',
-        'root.remove': '移除',
-        'root.invalid': '这个目录不是一个 Git 仓库',
 
+        'branch.hint': '当前分支 {branch} · 点击切换',
+        'branch.title': '切换分支 · {name}',
+        'branch.loading': '正在读取分支…',
+        'branch.empty': '这个仓库还没有任何分支',
+        'branch.switching': '正在切换到 {name}…',
+        'branch.failed': '切换失败：{message}',
         'roots.title': '储存库',
 
         'group.conflicted': '冲突',
@@ -1320,8 +1266,6 @@ window.__ModuleLoader__.load({
         'group.count': '{count}',
         'row.stage': '暂存',
         'row.unstage': '取消暂存',
-        'row.staging': '正在暂存…',
-        'row.unstaging': '正在取消暂存…',
         'group.stageAll': '暂存全部',
         'group.unstageAll': '取消全部暂存',
 
@@ -1354,7 +1298,6 @@ window.__ModuleLoader__.load({
         'settings.modelHint': '模型来自 DeepSeek Harness 当前配置的模型目录。',
         'settings.modelNone': '未选择',
         'settings.saved': '已保存',
-        'settings.noModels': '没有读到可用的模型',
         'settings.noLlm': '当前 profile 没有挂载 LLM 服务，无法列出模型',
         'settings.partialModels': '这些 provider 读取失败：{list}',
         'settings.unknownModel': '所选模型不在目录里',
@@ -1372,7 +1315,6 @@ window.__ModuleLoader__.load({
         'status.noRootsHint': '这个项目里没有 Git 仓库。可以手动添加一个外部仓库作为工作区。',
         'status.truncated': '结果过多，只显示了一部分',
         'status.discovering': '正在查找仓库…',
-        'status.lastRefresh': '上次刷新 {time}',
         'status.emptyFilter': '没有匹配「{filter}」的文件',
         'status.emptyDir': '这个目录是空的',
 
@@ -1394,9 +1336,7 @@ window.__ModuleLoader__.load({
         'viewer.noChanges': '这个文件在此侧没有内容差异',
         'viewer.expandAll': '展开全部',
         'action.retry': '重试',
-        'action.close': '关闭',
 
-        'error.rpc': '与宿主通信失败：{message}',
         'error.gitMissing': '系统里找不到 git，可执行文件缺失',
         'error.notRepository': '这个目录不是 Git 仓库',
         'error.timeout': '操作超时',
@@ -1416,11 +1356,8 @@ window.__ModuleLoader__.load({
         'update.noRemote': 'This repository has no remote configured',
         'update.checkedAt': 'Checked at {time}',
         'tab.title': 'Changes',
-        'panel.label': 'Git changes',
         'header.label': 'Changes',
         'header.title': "Open Git changes for this session's project",
-        'panel.listLabel': 'Git changes',
-        'tab.titleWithCount': 'Changes {count}',
         'guide.title': 'Git changes & file browser',
         'guide.description': 'Review changes with per-file diffs, or browse the project tree',
 
@@ -1429,14 +1366,12 @@ window.__ModuleLoader__.load({
         'mode.changesHint': 'Review working tree changes',
         'mode.filesHint': 'Browse project files',
 
-        'toolbar.refresh': 'Refresh',
         'editor.save': 'Save',
         'editor.saved': 'Saved {time}',
         'editor.unsaved': 'Unsaved',
         'editor.conflict': 'This file changed on disk; saving would overwrite those changes',
         'editor.reload': 'Reload',
         'editor.overwrite': 'Overwrite',
-        'toolbar.autorefresh': 'Auto refresh',
         'toolbar.autoRefreshOn': 'Auto refresh: on',
         'toolbar.autoRefreshOff': 'Auto refresh: off',
         'toolbar.viewAsList': 'View as list',
@@ -1447,34 +1382,27 @@ window.__ModuleLoader__.load({
         'toolbar.split': 'Split view',
         'toolbar.context': 'Context lines',
         'toolbar.ignoreWhitespace': 'Ignore whitespace',
-        'toolbar.ignoreWhitespaceOn': 'Whitespace ignored',
-        'toolbar.ignoreWhitespaceOff': 'Whitespace significant',
         'toolbar.more': 'More',
         'toolbar.addRoot': 'Add external repository…',
         'toolbar.removeRoot': 'Remove "{name}" from list',
-        'toolbar.openExternal': 'Reveal in file manager',
         'toolbar.collapseAll': 'Collapse all',
 
         'filter.placeholder': 'Filter files…',
         'filter.clear': 'Clear filter',
         'filter.loadedOnly': 'Only loaded folders are searched',
 
-        'root.primary': 'Project',
-        'root.discovered': 'Found',
-        'root.extra': 'External',
-        'root.select': 'Switch repository',
         'root.noBranch': 'no branch',
-        'root.detached': 'detached HEAD',
-        'root.branchTip': '{branch} · {status}',
-        'root.add': 'Add external repository',
         'root.addPlaceholder': 'Absolute path of a Git repository folder',
         'root.addConfirm': 'Add',
         'root.addCancel': 'Cancel',
         'root.addHint': 'Any local folder works; it will be listed next to project repositories.',
-        'root.removeConfirm': 'Remove "{name}" from this project list? Files on disk are untouched.',
-        'root.remove': 'Remove',
-        'root.invalid': 'That folder is not a Git repository',
 
+        'branch.hint': 'On {branch} · click to switch',
+        'branch.title': 'Switch branch · {name}',
+        'branch.loading': 'Loading branches…',
+        'branch.empty': 'This repository has no branches yet',
+        'branch.switching': 'Switching to {name}…',
+        'branch.failed': 'Could not switch: {message}',
         'roots.title': 'Repositories',
 
         'group.conflicted': 'Conflicts',
@@ -1484,8 +1412,6 @@ window.__ModuleLoader__.load({
         'group.count': '{count}',
         'row.stage': 'Stage',
         'row.unstage': 'Unstage',
-        'row.staging': 'Staging…',
-        'row.unstaging': 'Unstaging…',
         'group.stageAll': 'Stage all',
         'group.unstageAll': 'Unstage all',
 
@@ -1518,7 +1444,6 @@ window.__ModuleLoader__.load({
         'settings.modelHint': 'Models come from the catalog configured in DeepSeek Harness.',
         'settings.modelNone': 'None selected',
         'settings.saved': 'Saved',
-        'settings.noModels': 'No models are available',
         'settings.noLlm': 'This profile has no LLM service mounted, so models cannot be listed',
         'settings.partialModels': 'These providers failed: {list}',
         'settings.unknownModel': 'The selected model is not in the catalog',
@@ -1536,7 +1461,6 @@ window.__ModuleLoader__.load({
         'status.noRootsHint': 'This project contains no Git repository. You can add an external one.',
         'status.truncated': 'Too many results, showing a subset',
         'status.discovering': 'Looking for repositories…',
-        'status.lastRefresh': 'Refreshed {time}',
         'status.emptyFilter': 'No file matches "{filter}"',
         'status.emptyDir': 'This folder is empty',
 
@@ -1558,9 +1482,7 @@ window.__ModuleLoader__.load({
         'viewer.noChanges': 'No content difference on this side',
         'viewer.expandAll': 'Show all',
         'action.retry': 'Retry',
-        'action.close': 'Close',
 
-        'error.rpc': 'Host communication failed: {message}',
         'error.gitMissing': 'git executable not found',
         'error.notRepository': 'Not a Git repository',
         'error.timeout': 'Operation timed out',
@@ -1610,7 +1532,6 @@ window.__ModuleLoader__.load({
       const { h, useCallback, useEffect, useMemo, useRef, useState } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
       const { PopupMenu, MenuItem, MenuLabel, MenuSeparator } = __m("./ui/Menu.js");
-      const { RootPicker } = __m("./components/RootPicker.js");
       const { RepoList } = __m("./components/RepoList.js");
       const { ChangesList } = __m("./components/ChangesList.js");
       const { FileTree } = __m("./components/FileTree.js");
@@ -1672,12 +1593,18 @@ window.__ModuleLoader__.load({
         const [activeRootId, setActiveRootId] = useState(null)
         const [rootsLoading, setRootsLoading] = useState(true)
         const [rootsError, setRootsError] = useState(null)
-        const [addingRoot, setAddingRoot] = useState(false)
 
         const roots = project.roots
         /** 真正的仓库（排除只有文件浏览能力的「浏览根」）。变更模式只看这些。 */
         const gitRoots = useMemo(() => roots.filter((root) => root.isGit === true), [roots])
         const activeRoot = roots.find((root) => root.id === activeRootId) ?? roots[0] ?? null
+        /**
+         * 文件模式固定浏览项目根（roots[0]：项目仓库根，或项目根不是仓库时的浏览根）。
+         * 仓库切换只发生在变更模式的「储存库」列表里，文件模式不再有根选择器。
+         */
+        const browseRoot = roots[0] ?? null
+        const browseRootRef = useRef(browseRoot)
+        browseRootRef.current = browseRoot
         const activeRootRef = useRef(activeRoot)
         activeRootRef.current = activeRoot
         const projectRef = useRef(project)
@@ -1983,7 +1910,7 @@ window.__ModuleLoader__.load({
          * `force === true` 只由「覆盖保存」按钮传入 —— 那是用户看过冲突提示后的显式决定。
          */
         const saveDraft = useCallback(async (force) => {
-          if (mode !== MODE.files || activeRoot === null || selection === null) return
+          if (mode !== MODE.files || browseRoot === null || selection === null) return
           const path = selection.path
           const draft = draftsRef.current.get(path)
           if (draft === undefined) return
@@ -1991,7 +1918,7 @@ window.__ModuleLoader__.load({
 
           const token = saveSeq.begin()
           setSaveState((previous) => ({ ...previous, busy: true, error: null }))
-          const body = { rootPath: activeRoot.path, path, text: draft.text, eol: draft.eol, bom: draft.bom }
+          const body = { rootPath: browseRoot.path, path, text: draft.text, eol: draft.eol, bom: draft.bom }
           try {
             const result = force === true
               ? await api.writeFile({ ...body, force: true })
@@ -2019,7 +1946,7 @@ window.__ModuleLoader__.load({
             }
             setSaveState({ busy: false, savedAt: 0, error: api.describeError(error, tRef.current), conflict: null })
           }
-        }, [mode, activeRoot, selection, saveSeq, refreshStatus])
+        }, [mode, browseRoot, selection, saveSeq, refreshStatus])
 
         /** 冲突条的「重新加载」：丢掉本地改动，重新从磁盘读。 */
         const reloadDraft = useCallback(() => {
@@ -2104,7 +2031,7 @@ window.__ModuleLoader__.load({
           setFileLoading(true)
           setFileError(null)
           const path = selection.path
-          api.readFile({ rootPath: activeRoot.path, path }, { signal: controller.signal })
+          api.readFile({ rootPath: browseRoot.path, path }, { signal: controller.signal })
             .then((value) => {
               if (!fileSeq.isLatest(token)) return
               setFileData(value)
@@ -2119,7 +2046,7 @@ window.__ModuleLoader__.load({
               if (fileSeq.isLatest(token)) setFileLoading(false)
             })
           return () => controller.abort()
-        }, [mode, selection, activeRootId, fileSeq, fileNonce])
+        }, [mode, selection, browseRoot === null ? null : browseRoot.id, fileSeq, fileNonce])
 
         /* ============================== 交互 ============================== */
         const selectEntry = useCallback((entry, groupKey) => {
@@ -2326,7 +2253,6 @@ window.__ModuleLoader__.load({
           if (typeof projectRoot !== 'string' || projectRoot === '') {
             throw new Error(tRef.current('status.noCwd'))
           }
-          setAddingRoot(true)
           try {
             const value = await api.addRoot({ projectRoot, path: dir })
             const nextRoots = value.roots
@@ -2337,15 +2263,12 @@ window.__ModuleLoader__.load({
             return value
           } catch (error) {
             throw new Error(api.describeError(error, tRef.current))
-          } finally {
-            setAddingRoot(false)
           }
         }, [])
 
         const removeExternalRoot = useCallback(async (root) => {
           const projectRoot = projectRef.current.projectRoot
           if (root === null || typeof projectRoot !== 'string') return
-          setAddingRoot(true)
           try {
             const value = await api.removeRoot({ projectRoot, path: root.path })
             const nextRoots = value.roots
@@ -2355,13 +2278,25 @@ window.__ModuleLoader__.load({
             ))
           } catch (error) {
             setRootsError(api.describeError(error, tRef.current))
-          } finally {
-            setAddingRoot(false)
           }
         }, [])
 
+        /** 分支菜单：取数由面板做，组件只负责交互。 */
+        const loadBranches = useCallback(async (root) => api.listBranches({ rootPath: root.path }), [])
+
+        const switchBranch = useCallback(async (root, name) => {
+          try {
+            await api.switchBranch({ rootPath: root.path, name })
+          } catch (error) {
+            throw new Error(api.describeError(error, tRef.current))
+          }
+          // 切分支会改 HEAD 与工作区：重新解析根（分支名要更新）并重读状态
+          await resolveProject()
+          await refreshStatus()
+        }, [resolveProject, refreshStatus])
+
         const loadDir = useCallback(async (relPath, signal) => {
-          const root = activeRootRef.current
+          const root = browseRootRef.current
           if (root === null) return { entries: [], truncated: false }
           return api.listDirectory({ rootPath: root.path, path: relPath ?? '' }, { signal })
         }, [])
@@ -2481,21 +2416,9 @@ window.__ModuleLoader__.load({
         /* ------------------------------ 渲染 ------------------------------ */
         const noSession = typeof sessionId !== 'string'
 
-        // 变更模式的仓库切换在「储存库」列表里；文件模式的浏览根仍用顶栏选择器。
+        // 仓库切换只发生在变更模式的「储存库」列表里；文件模式固定浏览项目根，不放选择器。
         const toolbar = h('div', { className: 'dgp-toolbar' },
           h('div', { className: 'dgp-tbar-row' },
-            mode === MODE.files
-              ? h(RootPicker, {
-                roots,
-                activeRootId: activeRoot === null ? null : activeRoot.id,
-                projectRoot: project.projectRoot,
-                onSelect: selectRoot,
-                onAdd: addExternalRoot,
-                onRemove: removeExternalRoot,
-                busy: addingRoot,
-                t
-              })
-              : null,
             h('div', { className: 'dgp-seg', role: 'tablist' },
               h('button', {
                 type: 'button',
@@ -2648,6 +2571,8 @@ window.__ModuleLoader__.load({
                 onSelect: selectRoot,
                 onAdd: addExternalRoot,
                 onRemove: removeExternalRoot,
+                onLoadBranches: loadBranches,
+                onSwitchBranch: switchBranch,
                 t
               }),
               h(CommitBox, {
@@ -2684,7 +2609,7 @@ window.__ModuleLoader__.load({
           }
         } else {
           leftPane = h(FileTree, {
-            rootPath: activeRoot === null ? null : activeRoot.path,
+            rootPath: browseRoot === null ? null : browseRoot.path,
             selectedPath,
             onSelectFile: selectFile,
             filter,
@@ -3167,161 +3092,189 @@ window.__ModuleLoader__.load({
       Object.assign(exports, { PopupMenu, MenuItem, MenuLabel, MenuSeparator });
 
     });
-    __define("./components/RootPicker.js", (exports, module) => {
+    __define("./components/RepoList.js", (exports, module) => {
       /**
-       * src/components/RootPicker.js —— 仓库/根切换器
+       * src/components/RepoList.js —— 「储存库」区域（VS Code 的 Repositories）
        *
-       * 交互：
-       *  · 顶栏一个 pill 显示当前根（名字 + 类型徽标 + 分支），点开是根列表；
-       *  · 列表里 primary/discovered/extra 三类并列，extra 额外带一个「移除」按钮；
-       *  · 底部「添加外部仓库…」展开一个内联表单，粘贴绝对路径即可添加；
-       *  · 出错（不是仓库 / 路径不存在）就地显示，不弹窗。
+       * 结构：
+       *   div.dgp-repolist
+       *   ├─ div.dgp-repolist-head
+       *   │  ├─ button.dgp-repolist-toggle   ← 折叠/展开，带数量
+       *   │  └─ button[data-action=add-root] ← 添加外部仓库
+       *   ├─ ul.dgp-level
+       *   │  └─ li > div.dgp-row-wrap
+       *   │     ├─ button.dgp-repo-row[data-dgp-repo]   ← 选中该仓库
+       *   │     ├─ button.dgp-repo-branch[data-dgp-branch] ← 点开分支菜单（VS Code 的当前分支）
+       *   │     └─ button.dgp-row-action                ← 仅外部仓库：移除
+       *   ├─ AddRootForm（展开时）
+       *   └─ PopupMenu（分支菜单）
+       *
+       * 分支菜单的取数与切换都通过 props 交给 Panel：这里只负责交互与错误呈现，
+       * 切换失败（例如本地改动会被覆盖）原样显示 git 的话，让用户自己决定怎么处理。
        */
-      const { h, useCallback, useRef, useState } = __m("./platform.js");
+      const { h, useState } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
-      const { PopupMenu, MenuLabel, MenuSeparator, MenuItem } = __m("./ui/Menu.js");
+      const { MenuItem, MenuLabel, PopupMenu } = __m("./ui/Menu.js");
       const { AddRootForm } = __m("./components/AddRootForm.js");
 
-      function kindBadge(kind) {
-        if (kind === 'extra') return 'extra'
-        if (kind === 'discovered') return 'discovered'
-        return 'primary'
-      }
+      function RepoList(props) {
+        const source = props === null || props === undefined ? {} : props
+        const translate = source.t
+        const roots = Array.isArray(source.roots) ? source.roots : []
+        const activeRootId = typeof source.activeRootId === 'string' ? source.activeRootId : null
+        const open = source.open !== false
+        const [formOpen, setFormOpen] = useState(false)
+        // 分支菜单：{ root, rect, list, loading, switching, error }
+        const [branchMenu, setBranchMenu] = useState(null)
 
-      function kindLabel(kind, t) {
-        if (kind === 'extra') return t('root.extra')
-        if (kind === 'discovered') return t('root.discovered')
-        return t('root.primary')
-      }
+        if (roots.length === 0) return null
 
-      /** 单个根的一行：主体按钮 + 可选的移除按钮（不能嵌套 button，所以并排）。 */
-      function RootRow(props) {
-        const { root, active, onSelect, onRemove, t } = props
-        const subtitle = root.isGit === false
-          ? (root.error ?? t('status.notRepo'))
-          : (root.branch ?? t('root.noBranch'))
-        return h('div', { className: 'dgp-root-row', 'data-active': active ? 'true' : undefined },
-          h('button', {
-            type: 'button',
-            className: 'dgp-menu-item',
-            role: 'menuitemradio',
-            'aria-checked': active ? 'true' : 'false',
-            'data-checked': active ? 'true' : undefined,
-            title: root.path,
-            onClick: (event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onSelect(root)
-            }
-          },
-          h('span', { className: 'dgp-menu-check', style: { width: 14, display: 'flex' } },
-            active ? h(Icon, { name: 'check', size: 14 }) : null),
-          h('span', { className: 'dgp-menu-item-main', title: root.name }, root.name),
-          h('span', { className: 'dgp-pill-badge', 'data-kind': kindBadge(root.kind) }, kindLabel(root.kind, t)),
-          subtitle === '' || subtitle === null || subtitle === undefined
-            ? null
-            : h('span', { className: 'dgp-menu-item-sub', title: subtitle }, subtitle)),
-          root.kind === 'extra'
-            ? h('button', {
+        const closeForm = () => setFormOpen(false)
+        const closeBranches = () => setBranchMenu(null)
+
+        const loadBranches = (root, rect) => {
+          setBranchMenu({ root, rect, list: [], loading: true, switching: null, error: null })
+          Promise.resolve(source.onLoadBranches(root))
+            .then((value) => {
+              setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
+                ? previous
+                : { ...previous, list: value.branches, loading: false }))
+            })
+            .catch((error) => {
+              setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
+                ? previous
+                : { ...previous, loading: false, error: error && error.message ? error.message : String(error) }))
+            })
+        }
+
+        const chooseBranch = (menu, name) => {
+          setBranchMenu({ ...menu, switching: name, error: null })
+          Promise.resolve(source.onSwitchBranch(menu.root, name))
+            .then(() => setBranchMenu(null))
+            .catch((error) => {
+              setBranchMenu((previous) => (previous === null
+                ? previous
+                : { ...previous, switching: null, error: error && error.message ? error.message : String(error) }))
+            })
+        }
+
+        const branchMenuNode = branchMenu === null
+          ? null
+          : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 220 },
+            h(MenuLabel, null, translate('branch.title', { name: branchMenu.root.name })),
+            branchMenu.loading ? h(MenuLabel, null, translate('branch.loading')) : null,
+            branchMenu.list.map((branch) => h(MenuItem, {
+              key: branch.name,
+              label: branch.name,
+              checked: branch.current,
+              disabled: branchMenu.switching !== null,
+              onClick: () => {
+                if (branch.current) closeBranches()
+                else chooseBranch(branchMenu, branch.name)
+              }
+            })),
+            branchMenu.list.length === 0 && branchMenu.loading !== true
+              ? h(MenuLabel, null, translate('branch.empty'))
+              : null,
+            branchMenu.switching === null
+              ? null
+              : h(MenuLabel, null, translate('branch.switching', { name: branchMenu.switching })),
+            branchMenu.error === null
+              ? null
+              : h(MenuLabel, null, translate('branch.failed', { message: branchMenu.error })))
+
+        return h('div', { className: 'dgp-repolist', 'data-dgp-repolist': 'true' },
+          h('div', { className: 'dgp-repolist-head' },
+            h('button', {
+              type: 'button',
+              className: 'dgp-repolist-toggle',
+              'data-dgp-repolist-toggle': 'true',
+              'data-open': open ? 'true' : 'false',
+              'aria-expanded': open,
+              onClick: () => {
+                if (typeof source.onToggleOpen === 'function') source.onToggleOpen()
+              }
+            },
+            h('span', { className: 'dgp-caret', 'data-open': open ? 'true' : 'false' },
+              h(Icon, { name: 'chevron-right', size: 12 })),
+            h('span', { className: 'dgp-repolist-title' }, translate('roots.title')),
+            h('span', { className: 'dgp-group-count' }, String(roots.length))),
+            h('button', {
               type: 'button',
               className: 'dgp-iconbtn',
-              style: { width: 24, height: 24 },
-              title: t('toolbar.removeRoot', { name: root.name }),
-              onClick: (event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onRemove(root)
-              }
-            }, h(Icon, { name: 'trash', size: 13 }))
-            : null)
-      }
+              style: { width: 22, height: 22 },
+              'data-action': 'add-root',
+              title: translate('toolbar.addRoot'),
+              'aria-label': translate('toolbar.addRoot'),
+              onClick: () => setFormOpen((previous) => !previous)
+            }, h(Icon, { name: 'plus', size: 13 }))),
 
-      function RootPicker(props) {
-        const { roots, activeRootId, projectRoot, onSelect, onAdd, onRemove, busy, t } = props ?? {}
-        const list = Array.isArray(roots) ? roots : []
-        const active = list.find((root) => root.id === activeRootId) ?? list[0] ?? null
-        const [open, setOpen] = useState(false)
-        const [showForm, setShowForm] = useState(false)
-        const anchorRef = useRef(null)
-        const [anchorRect, setAnchorRect] = useState(null)
-
-        const close = useCallback(() => {
-          setOpen(false)
-          setShowForm(false)
-        }, [])
-
-        const toggle = useCallback(() => {
-          if (open) {
-            close()
-            return
-          }
-          const node = anchorRef.current
-          setAnchorRect(node === null ? null : node.getBoundingClientRect())
-          setOpen(true)
-        }, [open, close])
-
-        const activeName = active === null ? t('status.noRoots') : active.name
-        const isDetached = active !== null && active.branch === null
-
-        return h('div', { className: 'dgp-rootpicker', ref: anchorRef, style: { display: 'inline-flex', minWidth: 0 } },
-          h('button', {
-            type: 'button',
-            className: 'dgp-pill',
-            'data-empty': active === null ? 'true' : undefined,
-            'aria-expanded': open ? 'true' : 'false',
-            'aria-haspopup': 'menu',
-            title: active === null ? t('root.select') : active.path,
-            onClick: toggle
-          },
-          h(Icon, { name: 'git-branch', size: 13 }),
-          h('span', { className: 'dgp-pill-label dgp-oneline' }, activeName),
-          active !== null && active.kind !== 'primary'
-            ? h('span', { className: 'dgp-pill-badge', 'data-kind': kindBadge(active.kind) }, kindLabel(active.kind, t))
-            : null,
-          active !== null && isDetached
-            ? h('span', { className: 'dgp-pill-branch' }, t('root.detached'))
-            : (active !== null && active.branch
-              ? h('span', { className: 'dgp-pill-branch', title: active.branch }, active.branch)
-              : null),
-          list.length > 1 ? h('span', { className: 'dgp-pill-count' }, String(list.length)) : null,
-          h(Icon, { name: 'chevron-down', size: 12 })),
-
-          h(PopupMenu, { open, anchorRect, onClose: close, minWidth: 260 },
-            h(MenuLabel, null, t('root.select')),
-            list.length === 0
-              ? h('div', { className: 'dgp-note' }, t('status.noRoots'))
-              : list.map((root) => h(RootRow, {
-                key: root.id,
-                root,
-                active: active !== null && root.id === active.id,
-                t,
-                onSelect: (next) => {
-                  close()
-                  onSelect(next)
-                },
-                onRemove
-              })),
-            h(MenuSeparator),
-            showForm
-              ? h(AddRootForm, {
-                t,
-                onCancel: () => setShowForm(false),
-                onAdd: async (dir) => {
-                  await onAdd(dir)
-                  setShowForm(false)
-                  close()
-                }
+          open
+            ? h('ul', { className: 'dgp-level dgp-repolist-rows', role: 'none' },
+              roots.map((root) => {
+                const hasBranch = typeof root.branch === 'string' && root.branch !== ''
+                return h('li', { key: root.id, className: 'dgp-item' },
+                  h('div', { className: 'dgp-row-wrap' },
+                    h('button', {
+                      type: 'button',
+                      className: 'dgp-row dgp-repo-row',
+                      'data-dgp-repo': root.id,
+                      'data-active': root.id === activeRootId ? 'true' : 'false',
+                      'aria-current': root.id === activeRootId ? 'true' : undefined,
+                      title: root.path,
+                      onClick: () => {
+                        if (typeof source.onSelect === 'function') source.onSelect(root)
+                      }
+                    },
+                    h(Icon, { name: 'git-branch', size: 13 }),
+                    h('span', { className: 'dgp-name dgp-oneline' }, root.name)),
+                    root.isGit === false
+                      ? null
+                      : h('button', {
+                        type: 'button',
+                        className: 'dgp-repo-branch dgp-oneline',
+                        'data-dgp-branch': root.id,
+                        title: translate('branch.hint', { branch: hasBranch ? root.branch : translate('root.noBranch') }),
+                        onClick: (event) => {
+                          event.stopPropagation()
+                          const rect = event.currentTarget.getBoundingClientRect()
+                          loadBranches(root, rect)
+                        }
+                      }, hasBranch ? root.branch : translate('root.noBranch')),
+                    root.kind === 'extra'
+                      ? h('button', {
+                        type: 'button',
+                        className: 'dgp-row-action',
+                        'data-dgp-repo-remove': root.id,
+                        title: translate('toolbar.removeRoot', { name: root.name }),
+                        'aria-label': translate('toolbar.removeRoot', { name: root.name }),
+                        onClick: (event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          if (typeof source.onRemove === 'function') source.onRemove(root)
+                        }
+                      }, h(Icon, { name: 'trash', size: 13 }))
+                      : null))
               })
-              : h(MenuItem, {
-                icon: 'plus',
-                label: t('toolbar.addRoot'),
-                disabled: projectRoot === '',
-                onClick: () => setShowForm(true)
-              }),
-            busy === true ? h('div', { className: 'dgp-note' }, t('status.loading')) : null))
+            )
+            : null,
+
+          open && formOpen
+            ? h(AddRootForm, {
+              t: translate,
+              onCancel: closeForm,
+              onAdd: async (dir) => {
+                if (typeof source.onAdd !== 'function') return
+                await source.onAdd(dir)
+                setFormOpen(false)
+              }
+            })
+            : null,
+
+          branchMenuNode)
       }
 
-      Object.assign(exports, { RootPicker });
+      Object.assign(exports, { RepoList });
 
     });
     __define("./components/AddRootForm.js", (exports, module) => {
@@ -3398,118 +3351,6 @@ window.__ModuleLoader__.load({
       }
 
       Object.assign(exports, { AddRootForm });
-
-    });
-    __define("./components/RepoList.js", (exports, module) => {
-      /**
-       * src/components/RepoList.js —— 「储存库」区域（VS Code 的 Repositories）
-       *
-       * 结构：
-       *   div.dgp-repolist
-       *   ├─ div.dgp-repolist-head
-       *   │  ├─ button.dgp-repolist-toggle   ← 折叠/展开，带数量
-       *   │  └─ button[data-action=add-root] ← 添加外部仓库
-       *   ├─ ul.dgp-level
-       *   │  └─ li > div.dgp-row-wrap
-       *   │     ├─ button.dgp-row[data-dgp-repo]  ← 选中该仓库
-       *   │     └─ button.dgp-row-action          ← 仅外部仓库：移除
-       *   └─ AddRootForm（展开时）
-       *
-       * 只管展示与交互；选中、增删都由 Panel 通过 props 提供。
-       */
-      const { h, useState } = __m("./platform.js");
-      const { Icon } = __m("./ui/Icon.js");
-      const { AddRootForm } = __m("./components/AddRootForm.js");
-
-      function RepoList(props) {
-        const source = props === null || props === undefined ? {} : props
-        const translate = source.t
-        const roots = Array.isArray(source.roots) ? source.roots : []
-        const activeRootId = typeof source.activeRootId === 'string' ? source.activeRootId : null
-        const open = source.open !== false
-        const [formOpen, setFormOpen] = useState(false)
-
-        if (roots.length === 0) return null
-
-        const closeForm = () => setFormOpen(false)
-
-        return h('div', { className: 'dgp-repolist', 'data-dgp-repolist': 'true' },
-          h('div', { className: 'dgp-repolist-head' },
-            h('button', {
-              type: 'button',
-              className: 'dgp-repolist-toggle',
-              'data-dgp-repolist-toggle': 'true',
-              'data-open': open ? 'true' : 'false',
-              'aria-expanded': open,
-              onClick: () => {
-                if (typeof source.onToggleOpen === 'function') source.onToggleOpen()
-              }
-            },
-            h('span', { className: 'dgp-caret', 'data-open': open ? 'true' : 'false' },
-              h(Icon, { name: 'chevron-right', size: 12 })),
-            h('span', { className: 'dgp-repolist-title' }, translate('roots.title')),
-            h('span', { className: 'dgp-group-count' }, String(roots.length))),
-            h('button', {
-              type: 'button',
-              className: 'dgp-iconbtn',
-              style: { width: 22, height: 22 },
-              'data-action': 'add-root',
-              title: translate('toolbar.addRoot'),
-              'aria-label': translate('toolbar.addRoot'),
-              onClick: () => setFormOpen((previous) => !previous)
-            }, h(Icon, { name: 'plus', size: 13 }))),
-
-          open
-            ? h('ul', { className: 'dgp-level dgp-repolist-rows', role: 'none' },
-              roots.map((root) => h('li', { key: root.id, className: 'dgp-item' },
-                h('div', { className: 'dgp-row-wrap' },
-                  h('button', {
-                    type: 'button',
-                    className: 'dgp-row dgp-repo-row',
-                    'data-dgp-repo': root.id,
-                    'data-active': root.id === activeRootId ? 'true' : 'false',
-                    'aria-current': root.id === activeRootId ? 'true' : undefined,
-                    title: root.path,
-                    onClick: () => {
-                      if (typeof source.onSelect === 'function') source.onSelect(root)
-                    }
-                  },
-                  h(Icon, { name: 'git-branch', size: 13 }),
-                  h('span', { className: 'dgp-name dgp-oneline' }, root.name),
-                  h('span', { className: 'dgp-repo-branch dgp-oneline' },
-                    root.branch === null || root.branch === undefined ? translate('root.noBranch') : root.branch)),
-                  root.kind === 'extra'
-                    ? h('button', {
-                      type: 'button',
-                      className: 'dgp-row-action',
-                      'data-dgp-repo-remove': root.id,
-                      title: translate('toolbar.removeRoot', { name: root.name }),
-                      'aria-label': translate('toolbar.removeRoot', { name: root.name }),
-                      onClick: (event) => {
-                        if (event !== null && event !== undefined) {
-                          event.preventDefault()
-                          event.stopPropagation()
-                        }
-                        if (typeof source.onRemove === 'function') source.onRemove(root)
-                      }
-                    }, h(Icon, { name: 'trash', size: 13 }))
-                    : null))))
-            : null,
-
-          open && formOpen
-            ? h(AddRootForm, {
-              t: translate,
-              onCancel: closeForm,
-              onAdd: async (dir) => {
-                if (typeof source.onAdd !== 'function') return
-                await source.onAdd(dir)
-                setFormOpen(false)
-              }
-            })
-            : null)
-      }
-
-      Object.assign(exports, { RepoList });
 
     });
     __define("./components/ChangesList.js", (exports, module) => {
@@ -5196,7 +5037,17 @@ window.__ModuleLoader__.load({
         return call('index/stage-group', payload, options)
       }
 
-      /** 提交已暂存内容。 */
+      /** 列出本地分支。 */
+      function listBranches(payload, options) {
+        return call('branches/list', payload, options)
+      }
+
+      /** 切换分支（工作区怎么处理交给 git）。 */
+      function switchBranch(payload, options) {
+        return call('branch/switch', payload, options)
+      }
+
+      /** 提交：有暂存只提交暂存，没有则先全部暂存。 */
       function commitChanges(payload, options) {
         return call('commit', payload, options)
       }
@@ -5252,7 +5103,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {

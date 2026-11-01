@@ -45,57 +45,7 @@ export const CSS = `
 .dgp-tbar-row { display: flex; align-items: center; gap: 6px; min-width: 0; width: 100%; }
 .dgp-spacer { flex: 1 1 auto; min-width: 0; }
 
-/* 仓库选择 pill */
-.dgp-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  min-width: 0;
-  max-width: 200px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  font-size: 12px;
-  line-height: 18px;
-  cursor: pointer;
-}
-.dgp-pill:hover, .dgp-pill[aria-expanded="true"] { background: var(--dsw-alias-interactive-bg-hover); }
-.dgp-pill[data-empty="true"] { color: var(--dsw-alias-label-tertiary); }
-.dgp-pill-label { flex: 0 1 auto; min-width: 0; }
-.dgp-rootpicker { display: inline-flex; min-width: 0; }
-/* 根列表里的一行：主体按钮 + 可选的移除按钮并排（button 不能嵌套 button） */
-.dgp-root-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  border-radius: var(--dsw-radius-sm);
-}
-.dgp-root-row[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
-.dgp-root-row > .dgp-menu-item { flex: 1 1 auto; min-width: 0; }
-.dgp-pill-badge {
-  flex: none;
-  padding: 0 4px;
-  border-radius: var(--dsw-radius-xs);
-  background: var(--dsw-alias-bg-module-platform);
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 10px;
-  line-height: 14px;
-}
-.dgp-pill-badge[data-kind="extra"] { color: var(--dsw-alias-state-business-primary); }
-.dgp-pill-branch {
-  flex: none;
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--dsw-alias-label-tertiary);
-  font-family: var(--ds-font-family-code);
-  font-size: 11px;
-}
+/* 计数小胶囊（模式分段按钮上的数字） */
 .dgp-pill-count {
   flex: none;
   min-width: 14px;
@@ -158,7 +108,7 @@ export const CSS = `
 .dgp-iconbtn:disabled, .dgp-tool:disabled { opacity: .4; cursor: default; }
 .dgp-iconbtn[data-busy="true"] svg { animation: dgp-spin 1s linear infinite; }
 .dgp-iconbtn:focus-visible, .dgp-tool:focus-visible, .dgp-btn:focus-visible,
-.dgp-pill:focus-visible, .dgp-seg-btn:focus-visible, .dgp-input:focus-visible,
+.dgp-seg-btn:focus-visible, .dgp-input:focus-visible,
 .dgp-row:focus-visible, .dgp-group-head:focus-visible {
   outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: -1px;
@@ -266,14 +216,25 @@ export const CSS = `
 .dgp-repolist-rows { padding-bottom: 4px; }
 .dgp-repo-row { min-height: 26px; padding-top: 3px; padding-bottom: 3px; }
 .dgp-repo-row > .dgp-ico { color: var(--dsw-alias-label-tertiary); }
+/* 当前分支：行内的低调按钮，点开分支菜单（VS Code 的分支指示） */
 .dgp-repo-branch {
   flex: 0 1 auto;
   min-width: 0;
+  max-width: 45%;
   margin-left: auto;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
   color: var(--dsw-alias-label-tertiary);
+  font: inherit;
   font-family: var(--ds-font-family-code);
   font-size: 11px;
+  line-height: 18px;
+  cursor: pointer;
 }
+.dgp-repo-branch:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dgp-repo-branch:focus-visible { outline: none; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dgp-addform { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 8px; }
 .dgp-addform-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .dgp-list {
@@ -852,12 +813,9 @@ export const CSS = `
 .dgp-menu-item-sub { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .dgp-menu-label { padding: 6px 8px 4px; color: var(--dsw-alias-label-tertiary); font-size: 11px; font-weight: 600; }
 .dgp-menu-sep { height: .5px; margin: 4px 6px; background: var(--dsw-alias-border-l2); }
-.dgp-menu-form { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px 8px; }
-.dgp-menu-form-actions { display: flex; justify-content: flex-end; gap: 6px; }
 
 /* ===================== 10. 自适应 ===================== */
 .dgp-root[data-narrow="true"] .dgp-meta,
-.dgp-root[data-narrow="true"] .dgp-pill-branch { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .dgp-spinner { animation-duration: 2.4s; }
   .dgp-skel-dot, .dgp-skel-bar { animation: none; }

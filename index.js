@@ -47,6 +47,8 @@ import {
   stageGroup,
   commitIndex,
   commitDiffText,
+  listBranches,
+  switchBranch,
   writeTextFile
 } from './host/git.js'
 import {
@@ -95,6 +97,8 @@ export const ENDPOINTS = Object.freeze([
   'file/write',
   'index/stage',
   'index/stage-group',
+  'branches/list',
+  'branch/switch',
   'commit',
   'commit/message',
   'models/list',
@@ -417,8 +421,27 @@ function createDispatcher(ctx) {
     return result
   }
 
+  /* branches/list · branch/switch -------------------------------------- */
+  async function branchesList(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    return listBranches(normalizeSlashes(repo.repoRoot), { signal })
+  }
+
+  async function branchSwitch(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const branch = requireString(request.name, 'name')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
+    const result = await switchBranch(normalizeSlashes(repo.repoRoot), branch, { signal })
+    clearStatusCache()
+    return result
+  }
+
   /* commit ------------------------------------------------------------ */
-  /** 提交已暂存内容。没有暂存时 git 自己会失败，宿主不把未暂存的改动自动加进来。 */
+  /** 提交：有暂存只提交暂存；没有暂存则先把全部改动暂存再提交（smart commit）。 */
   async function commit(request, signal) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
     if (typeof request.message !== 'string') throw new GitError('bad-request', 'message 必须是字符串')
@@ -538,6 +561,10 @@ function createDispatcher(ctx) {
         return indexStage(request, signal)
       case 'index/stage-group':
         return indexStageGroup(request, signal)
+      case 'branches/list':
+        return branchesList(request, signal)
+      case 'branch/switch':
+        return branchSwitch(request, signal)
       case 'commit':
         return commit(request, signal)
       case 'commit/message':

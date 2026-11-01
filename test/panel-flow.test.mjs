@@ -1269,7 +1269,9 @@ test('用例 1：挂载 → 解析根 → status → 分组与行', async () => 
     eq(repoRows.length, 1, '只有一个仓库时应有一行')
     eq(attr(repoRows[0], 'data-active'), 'true', '当前仓库应高亮')
     assert(textOf(repoRows[0]).includes('project'), '行里应有仓库名，实际 ' + textOf(repoRows[0]))
-    assert(textOf(repoRows[0]).includes('main'), '行里应有分支，实际 ' + textOf(repoRows[0]))
+    const branchButton = byAttr(repoList, 'data-dgp-branch')[0]
+    assert(branchButton !== undefined, '仓库行应有分支按钮')
+    assert(textOf(branchButton).includes('main'), '分支按钮显示当前分支，实际 ' + textOf(branchButton))
 
     // 顶层结构
     eq(panel.class('dgp-root').length, 1, '.dgp-root 数量')
@@ -1504,6 +1506,71 @@ test('用例 1u：设置按钮打开设置页，选择模型即保存', async ()
 /* ================================================================== */
 /* 用例 2：点选 → diff 载荷 → diff 行                                  */
 /* ================================================================== */
+
+test('用例 1A：文件模式没有仓库选择器，固定浏览项目根', async () => {
+  const calls = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'tree/list': (payload) => {
+        calls.push(payload)
+        return sayOk({ entries: [], truncated: false })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const filesTab = panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))
+    click(filesTab[1])
+    await panel.flush()
+
+    assert(panel.class('dgp-pill').length === 0, '文件模式不应出现仓库下拉框')
+    assert(panel.all((node) => isHost(node) && hasClass(node, 'dgp-rootpicker')).length === 0, '也不应有根选择器')
+    eq(calls.length >= 1, true, '应去列目录')
+    eq(calls[0].rootPath, PROJECT, '固定浏览项目根')
+    eq(calls[0].path, '', '根目录')
+  })
+})
+
+test('用例 1B：点仓库行的分支名可以切换分支', async () => {
+  const switches = []
+  let resolveCalls = 0
+  await withPanel({
+    routes: {
+      'project/resolve': () => {
+        resolveCalls += 1
+        return resolveOk([ROOT], PROJECT)
+      },
+      status: () => sayOk(statusThree()),
+      'branches/list': () => sayOk({
+        branches: [{ name: 'main', current: true }, { name: 'feature', current: false }]
+      }),
+      'branch/switch': (payload) => {
+        switches.push(payload)
+        return sayOk({ branch: payload.name, head: 'aaa1111' })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const before = resolveCalls
+    const branchButton = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined)
+    click(branchButton)
+    await panel.flush()
+
+    const items = panel.all((node) => isHost(node) && hasClass(node, 'dgp-menu-item'))
+    eq(items.length, 2, '菜单里应列出两个分支')
+    const feature = items.find((node) => textOf(node).includes('feature'))
+    assert(feature !== undefined, '菜单里应有 feature 分支')
+    eq(attr(items.find((node) => textOf(node).includes('main')), 'data-checked'), 'true', '当前分支打勾')
+
+    click(feature)
+    await panel.flush()
+    eq(switches.length, 1, '应调用一次 branch/switch')
+    eq(switches[0], { rootPath: PROJECT, name: 'feature' }, '切换载荷')
+    eq(panel.all((node) => isHost(node) && hasClass(node, 'dgp-menu-item')).length, 0, '切完菜单应关闭')
+    assert(resolveCalls > before, '切完要重新解析根，分支名才会更新')
+  })
+})
 
 test('用例 1v：多仓库时储存库列表列出全部，点另一个仓库切走变更区', async () => {
   await withPanel({

@@ -155,7 +155,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 │  ├─ styles.js             全部样式（令牌取色，注入 <style>）
 │  ├─ util/{paths,diff,changes,remote,time}.js  纯函数（有单测）
 │  ├─ ui/{Icon,Menu}.js     内联 SVG 图标 + 轻量浮层菜单
-│  └─ components/           Panel / RootPicker / ChangesList / FileTree / DiffView / FileEditor / States
+│  └─ components/           Panel / RepoList / ChangesList / FileTree / DiffView / FileEditor / CommitBox / States
 ├─ build/build-client.mjs   零依赖微型打包器（ESM → 经典脚本 __ModuleLoader__）
 ├─ test/                    10 套测试（见下）
 ├─ scripts/install-profile.mjs  本地开发安装：junction + profile package.json
@@ -169,7 +169,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 16 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）和 `commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 18 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）和 `commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -183,6 +183,8 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 | `file/write` | `{rootPath, path, text, expectedHash, eol, bom}` 或 `{…, force:true}` | `{size, mtimeMs, hash}`；哈希不匹配 → `conflict` |
 | `index/stage` | `{rootPath, path, action}` | `{path, action}`；`stage` = `git add --`，`unstage` = `git restore --staged --` |
 | `index/stage-group` | `{rootPath, scope}` | `{scope}`；整组暂存 / 取消暂存 |
+| `branches/list` | `{rootPath}` | `{branches: [{name, current}]}`；本地分支，当前分支排最前 |
+| `branch/switch` | `{rootPath, name}` | `{branch, head}`；`git switch`，工作区怎么处理由 git 决定 |
 | `commit` | `{rootPath, message}` | `{head, subject, includedUnstaged}`；有暂存只提交暂存，没有则先 `git add -A` 再提交 |
 | `commit/message` | `{rootPath}` | `{message, model, source}`；有暂存看暂存，否则看未暂存 |
 | `models/list` | `{}` | `{models[], failed[]}`；模型来自 DSH 的 `llm` 服务，不读配置文件、不碰密钥 |

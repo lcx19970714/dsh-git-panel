@@ -17,7 +17,6 @@
 import { h, useCallback, useEffect, useMemo, useRef, useState } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
 import { PopupMenu, MenuItem, MenuLabel, MenuSeparator } from '../ui/Menu.js'
-import { RootPicker } from './RootPicker.js'
 import { RepoList } from './RepoList.js'
 import { ChangesList } from './ChangesList.js'
 import { FileTree } from './FileTree.js'
@@ -79,12 +78,18 @@ export function Panel(props) {
   const [activeRootId, setActiveRootId] = useState(null)
   const [rootsLoading, setRootsLoading] = useState(true)
   const [rootsError, setRootsError] = useState(null)
-  const [addingRoot, setAddingRoot] = useState(false)
 
   const roots = project.roots
   /** 真正的仓库（排除只有文件浏览能力的「浏览根」）。变更模式只看这些。 */
   const gitRoots = useMemo(() => roots.filter((root) => root.isGit === true), [roots])
   const activeRoot = roots.find((root) => root.id === activeRootId) ?? roots[0] ?? null
+  /**
+   * 文件模式固定浏览项目根（roots[0]：项目仓库根，或项目根不是仓库时的浏览根）。
+   * 仓库切换只发生在变更模式的「储存库」列表里，文件模式不再有根选择器。
+   */
+  const browseRoot = roots[0] ?? null
+  const browseRootRef = useRef(browseRoot)
+  browseRootRef.current = browseRoot
   const activeRootRef = useRef(activeRoot)
   activeRootRef.current = activeRoot
   const projectRef = useRef(project)
@@ -390,7 +395,7 @@ export function Panel(props) {
    * `force === true` 只由「覆盖保存」按钮传入 —— 那是用户看过冲突提示后的显式决定。
    */
   const saveDraft = useCallback(async (force) => {
-    if (mode !== MODE.files || activeRoot === null || selection === null) return
+    if (mode !== MODE.files || browseRoot === null || selection === null) return
     const path = selection.path
     const draft = draftsRef.current.get(path)
     if (draft === undefined) return
@@ -398,7 +403,7 @@ export function Panel(props) {
 
     const token = saveSeq.begin()
     setSaveState((previous) => ({ ...previous, busy: true, error: null }))
-    const body = { rootPath: activeRoot.path, path, text: draft.text, eol: draft.eol, bom: draft.bom }
+    const body = { rootPath: browseRoot.path, path, text: draft.text, eol: draft.eol, bom: draft.bom }
     try {
       const result = force === true
         ? await api.writeFile({ ...body, force: true })
@@ -426,7 +431,7 @@ export function Panel(props) {
       }
       setSaveState({ busy: false, savedAt: 0, error: api.describeError(error, tRef.current), conflict: null })
     }
-  }, [mode, activeRoot, selection, saveSeq, refreshStatus])
+  }, [mode, browseRoot, selection, saveSeq, refreshStatus])
 
   /** 冲突条的「重新加载」：丢掉本地改动，重新从磁盘读。 */
   const reloadDraft = useCallback(() => {
@@ -511,7 +516,7 @@ export function Panel(props) {
     setFileLoading(true)
     setFileError(null)
     const path = selection.path
-    api.readFile({ rootPath: activeRoot.path, path }, { signal: controller.signal })
+    api.readFile({ rootPath: browseRoot.path, path }, { signal: controller.signal })
       .then((value) => {
         if (!fileSeq.isLatest(token)) return
         setFileData(value)
@@ -526,7 +531,7 @@ export function Panel(props) {
         if (fileSeq.isLatest(token)) setFileLoading(false)
       })
     return () => controller.abort()
-  }, [mode, selection, activeRootId, fileSeq, fileNonce])
+  }, [mode, selection, browseRoot === null ? null : browseRoot.id, fileSeq, fileNonce])
 
   /* ============================== 交互 ============================== */
   const selectEntry = useCallback((entry, groupKey) => {
@@ -733,7 +738,6 @@ export function Panel(props) {
     if (typeof projectRoot !== 'string' || projectRoot === '') {
       throw new Error(tRef.current('status.noCwd'))
     }
-    setAddingRoot(true)
     try {
       const value = await api.addRoot({ projectRoot, path: dir })
       const nextRoots = value.roots
@@ -744,15 +748,12 @@ export function Panel(props) {
       return value
     } catch (error) {
       throw new Error(api.describeError(error, tRef.current))
-    } finally {
-      setAddingRoot(false)
     }
   }, [])
 
   const removeExternalRoot = useCallback(async (root) => {
     const projectRoot = projectRef.current.projectRoot
     if (root === null || typeof projectRoot !== 'string') return
-    setAddingRoot(true)
     try {
       const value = await api.removeRoot({ projectRoot, path: root.path })
       const nextRoots = value.roots
@@ -762,13 +763,25 @@ export function Panel(props) {
       ))
     } catch (error) {
       setRootsError(api.describeError(error, tRef.current))
-    } finally {
-      setAddingRoot(false)
     }
   }, [])
 
+  /** 分支菜单：取数由面板做，组件只负责交互。 */
+  const loadBranches = useCallback(async (root) => api.listBranches({ rootPath: root.path }), [])
+
+  const switchBranch = useCallback(async (root, name) => {
+    try {
+      await api.switchBranch({ rootPath: root.path, name })
+    } catch (error) {
+      throw new Error(api.describeError(error, tRef.current))
+    }
+    // 切分支会改 HEAD 与工作区：重新解析根（分支名要更新）并重读状态
+    await resolveProject()
+    await refreshStatus()
+  }, [resolveProject, refreshStatus])
+
   const loadDir = useCallback(async (relPath, signal) => {
-    const root = activeRootRef.current
+    const root = browseRootRef.current
     if (root === null) return { entries: [], truncated: false }
     return api.listDirectory({ rootPath: root.path, path: relPath ?? '' }, { signal })
   }, [])
@@ -888,21 +901,9 @@ function buildUpdateNote(updateState, t) {
   /* ------------------------------ 渲染 ------------------------------ */
   const noSession = typeof sessionId !== 'string'
 
-  // 变更模式的仓库切换在「储存库」列表里；文件模式的浏览根仍用顶栏选择器。
+  // 仓库切换只发生在变更模式的「储存库」列表里；文件模式固定浏览项目根，不放选择器。
   const toolbar = h('div', { className: 'dgp-toolbar' },
     h('div', { className: 'dgp-tbar-row' },
-      mode === MODE.files
-        ? h(RootPicker, {
-          roots,
-          activeRootId: activeRoot === null ? null : activeRoot.id,
-          projectRoot: project.projectRoot,
-          onSelect: selectRoot,
-          onAdd: addExternalRoot,
-          onRemove: removeExternalRoot,
-          busy: addingRoot,
-          t
-        })
-        : null,
       h('div', { className: 'dgp-seg', role: 'tablist' },
         h('button', {
           type: 'button',
@@ -1055,6 +1056,8 @@ function buildUpdateNote(updateState, t) {
           onSelect: selectRoot,
           onAdd: addExternalRoot,
           onRemove: removeExternalRoot,
+          onLoadBranches: loadBranches,
+          onSwitchBranch: switchBranch,
           t
         }),
         h(CommitBox, {
@@ -1091,7 +1094,7 @@ function buildUpdateNote(updateState, t) {
     }
   } else {
     leftPane = h(FileTree, {
-      rootPath: activeRoot === null ? null : activeRoot.path,
+      rootPath: browseRoot === null ? null : browseRoot.path,
       selectedPath,
       onSelectFile: selectFile,
       filter,

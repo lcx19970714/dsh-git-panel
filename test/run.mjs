@@ -15,7 +15,7 @@ const SUITES = [
   { name: 'diff', file: 'diff.test.mjs', args: [] },
   { name: 'tree', file: 'tree.test.mjs', args: [] },
   { name: 'build', file: 'build.test.mjs', args: [] },
-  { name: 'git', file: 'git.test.mjs', args: [path.resolve(HERE, '..', '..', '_sandbox', 'repo')] },
+  { name: 'git', file: 'git.test.mjs', args: [path.resolve(HERE, '..', '_sandbox', 'repo')] },
   { name: 'host', file: 'host.test.mjs', args: [] },
   { name: 'client', file: 'client.test.mjs', args: [] },
   { name: 'components', file: 'components.test.mjs', args: [] },

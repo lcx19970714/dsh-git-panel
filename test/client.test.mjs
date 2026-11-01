@@ -2,7 +2,7 @@
  * test/client.test.mjs —— 客户端产物冒烟测试（不需要浏览器）
  *
  * 做的事情：
- *  1. 在假的 `window.__ModuleLoader__` 环境里装载 plugin/client.js；
+ *  1. 在假的 `window.__ModuleLoader__` 环境里装载 client.js；
  *  2. 用假的 react（支持 useState/useEffect/useMemo/useRef/useCallback/useLayoutEffect）
  *     和假的 ctx（locale / sidebarRightTabs / sidebarRight / slots / shortcuts / connection）
  *     调用 `apply(ctx)`；

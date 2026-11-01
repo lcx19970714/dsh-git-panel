@@ -19,7 +19,7 @@ import {
   runGit
 } from '../host/git.js'
 
-const fixture = process.argv[2] || path.resolve(import.meta.dirname, '../../_sandbox/repo')
+const fixture = process.argv[2] || path.resolve(import.meta.dirname, '../_sandbox/repo')
 const results = []
 function test(name, fn) {
   results.push({ name, fn })

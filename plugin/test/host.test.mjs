@@ -15,6 +15,7 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  chmodSync,
   rmSync,
   symlinkSync,
   writeFileSync
@@ -1215,6 +1216,41 @@ test('index/stage-group：stage-untracked 只加未跟踪文件，stage-all 两�
   await callOk('index/stage-group', { rootPath: dir, scope: 'stage-all' })
   const afterAll = await callOk('status', { rootPath: dir })
   assert.equal(afterAll.files.every((file) => file.staged === true), true, 'stage-all 之后不该还有未暂存内容')
+})
+
+test('commit：pre-commit hook 失败时把 hook 的输出报出来，不是只说退出码', async () => {
+  // 曾经的表现：git 把原因写在 stdout，而错误只取了 stderr，用户只看到「以退出码 1 结束」。
+  const dir = makeRepo(path.join(tempDir('dgp-commit-hook-'), 'repo'))
+  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
+  const hook = path.join(dir, '.git', 'hooks', 'pre-commit')
+  mkdirSync(path.dirname(hook), { recursive: true })
+  writeFileSync(hook, '#!/bin/sh\necho "pre-commit: lint failed"\nexit 1\n', 'utf8')
+  try {
+    chmodSync(hook, 0o755)
+  } catch {
+    /* Windows 上一般不需要可执行位 */
+  }
+
+  const failed = await callRoute('commit', { rootPath: dir, message: 'feat: x' })
+  assert.equal(failed.ok, false, 'hook 失败时提交必须失败')
+  assert.match(failed.error.message, /lint failed/, '错误里要带 hook 的输出：' + JSON.stringify(failed.error))
+  assert.doesNotMatch(failed.error.message, /以退出码/, '不该只剩一句退出码')
+})
+
+test('commit：有未解决冲突时明确报 unmerged，而不是让 git 用退出码 1 失败', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-commit-unmerged-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  git('checkout', '-q', '-b', 'other')
+  writeFileSync(path.join(dir, 'hello.txt'), 'other\n')
+  git('commit', '-qam', 'other')
+  git('checkout', '-q', 'main')
+  writeFileSync(path.join(dir, 'hello.txt'), 'main\n')
+  git('commit', '-qam', 'main')
+  assert.throws(() => git('merge', 'other'), '合并应产生冲突')
+
+  const failed = await callRoute('commit', { rootPath: dir, message: 'feat: merge' })
+  assert.equal(failed.ok, false)
+  assert.equal(failed.error.code, 'unmerged')
 })
 
 test('commitDiffText：有暂存看暂存；没有则看工作区并带上未跟踪文件清单', async () => {

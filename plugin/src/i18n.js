@@ -105,6 +105,7 @@ export const zh = {
   'commit.hintStageAll': '没有已暂存的改动，提交时会先暂存全部',
   'commit.noModel': '还没有配置生成提交说明的模型，先到右上角的设置里选一个',
   'commit.nothing': '没有可提交的改动',
+  'commit.unmerged': '有未解决的冲突，先把冲突解决掉再提交',
   'commit.generateFailed': '生成提交说明失败：{message}',
 
   'settings.title': '设置',
@@ -268,6 +269,7 @@ export const en = {
   'commit.hintStageAll': 'Nothing staged — all changes will be staged when you commit',
   'commit.noModel': 'No model is configured for commit messages. Pick one in Settings.',
   'commit.nothing': 'Nothing to commit',
+  'commit.unmerged': 'Resolve the conflicts before committing',
   'commit.generateFailed': 'Could not generate a commit message: {message}',
 
   'settings.title': 'Settings',

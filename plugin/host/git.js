@@ -18,6 +18,9 @@ export const DEFAULT_TIMEOUT_MS = 15_000
 export const DIFF_TIMEOUT_MS = 30_000
 export const MAX_GIT_OUTPUT = 16 * 1024 * 1024
 export const MAX_TEXT_FILE_BYTES = 1024 * 1024
+
+/** 错误详情里保留的 git 输出上限：够看清原因，又不会把信封撑爆。 */
+const DETAIL_LIMIT = 4000
 export const MAX_TREE_ENTRIES = 2000
 
 /** 与 git 交互时的统一错误类型。 */
@@ -149,8 +152,16 @@ export function runGit(cwd, args, options = {}) {
         finish(resolve, { stdout, stderr, code: code ?? -1, truncated })
         return
       }
-      finish(reject, new GitError(code === 128 ? 'not-a-repository' : 'git-failed',
-        stderr || `git ${args[0]} 以退出码 ${code} 结束`, { args, code, stderr }))
+      // 失败原因可能在 stdout（commit 的 "nothing to commit"、hook 的输出、push 的进度…）
+      // 也可能在 stderr，两边都要看，否则用户只看到一句「以退出码 N 结束」。
+      const stdoutText = stdout.toString('utf8').trim()
+      const reason = stderr !== '' ? stderr : stdoutText
+      const notARepo = code === 128 && /not a git repository/i.test(reason)
+      finish(reject, new GitError(
+        notARepo ? 'not-a-repository' : 'git-failed',
+        reason.slice(0, DETAIL_LIMIT) || `git ${args[0]} 以退出码 ${code} 结束`,
+        { args, code, stderr, stdout: stdoutText.slice(0, DETAIL_LIMIT) }
+      ))
     })
 
     if (input !== undefined) {
@@ -1102,6 +1113,12 @@ export async function commitIndex(repoRoot, message, options = {}) {
   }
   const { signal } = options
 
+  // 有未解决的冲突时 git 会以退出码 1 结束，且只说一句英文：提前拦住并说清原因
+  const unmerged = await runGit(repoRoot, ['ls-files', '--unmerged', '-z'], { signal, allowFailure: true })
+  if (unmerged.code === 0 && unmerged.stdout.length > 0) {
+    throw new GitError('unmerged', '有未解决的冲突，先把冲突解决掉再提交')
+  }
+
   let includedUnstaged = false
   if (!(await indexHasChanges(repoRoot, signal))) {
     // 没有暂存：把工作区改动全部加入索引（-A 覆盖修改、删除与未跟踪文件）
@@ -1112,7 +1129,17 @@ export async function commitIndex(repoRoot, message, options = {}) {
     includedUnstaged = true
   }
 
-  const result = await runGit(repoRoot, ['commit', '--file=-'], { signal, input: message })
+  let result
+  try {
+    result = await runGit(repoRoot, ['commit', '--file=-'], { signal, input: message })
+  } catch (error) {
+    // 索引看起来有内容、git 却拒绝提交：把 git 的原话透出去（hook 失败、签名失败都在这里）
+    const text = error instanceof GitError ? error.message : ''
+    if (/nothing to commit|no changes added to commit/i.test(text)) {
+      throw new GitError('nothing-to-commit', '没有可提交的改动')
+    }
+    throw error
+  }
   const head = await readHead(repoRoot)
   return {
     head: head.head,

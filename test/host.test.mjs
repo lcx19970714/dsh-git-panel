@@ -1253,6 +1253,45 @@ test('commit：有未解决冲突时明确报 unmerged，而不是让 git 用退
   assert.equal(failed.error.code, 'unmerged')
 })
 
+test('branches/list 与 branch/switch：列出本地分支、切换后当前分支跟着变', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-branch-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  git('branch', 'feature')
+
+  const listed = await callOk('branches/list', { rootPath: dir })
+  const names = listed.branches.map((branch) => branch.name)
+  assert.ok(names.includes('main') && names.includes('feature'), '应列出全部本地分支：' + names.join(','))
+  assert.equal(listed.branches.find((branch) => branch.name === 'main').current, true, '当前分支要标出来')
+  assert.equal(listed.branches[0].name, 'main', '当前分支排最前')
+
+  const switched = await callOk('branch/switch', { rootPath: dir, name: 'feature' })
+  assert.equal(switched.branch, 'feature')
+
+  const after = await callOk('branches/list', { rootPath: dir })
+  assert.equal(after.branches.find((branch) => branch.name === 'feature').current, true)
+  assert.equal(after.branches.find((branch) => branch.name === 'main').current, false)
+
+  const bad = await callRoute('branch/switch', { rootPath: dir, name: 'has space' })
+  assert.equal(bad.ok, false, '非法分支名必须拒绝')
+  assert.equal(bad.error.code, 'bad-branch')
+})
+
+test('branch/switch：改动会被覆盖时由 git 拒绝，错误原样上抛且不丢改动', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-branch-dirty-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  git('checkout', '-q', '-b', 'other')
+  writeFileSync(path.join(dir, 'hello.txt'), 'other\n')
+  git('commit', '-qam', 'other changes hello')
+  git('checkout', '-q', 'main')
+  writeFileSync(path.join(dir, 'hello.txt'), 'dirty\n') // 未提交、且与 other 冲突
+
+  const failed = await callRoute('branch/switch', { rootPath: dir, name: 'other' })
+  assert.equal(failed.ok, false, '会被覆盖时必须失败')
+  assert.match(failed.error.message, /overwritten|local changes/i, '要带 git 的原话：' + failed.error.message)
+  // 与 VS Code 的默认行为一致：不自动 stash、不 force，改动还在原处
+  assert.equal(readFileSync(path.join(dir, 'hello.txt'), 'utf8'), 'dirty\n', '未提交的改动不能被悄悄丢掉')
+})
+
 test('commitDiffText：有暂存看暂存；没有则看工作区并带上未跟踪文件清单', async () => {
   const gitHost = await import('../host/git.js')
   const dir = makeRepo(path.join(tempDir('dgp-commit-diff-'), 'repo'))

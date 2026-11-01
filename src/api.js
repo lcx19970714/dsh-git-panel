@@ -121,7 +121,17 @@ export function stageGroup(payload, options) {
   return call('index/stage-group', payload, options)
 }
 
-/** 提交已暂存内容。 */
+/** 列出本地分支。 */
+export function listBranches(payload, options) {
+  return call('branches/list', payload, options)
+}
+
+/** 切换分支（工作区怎么处理交给 git）。 */
+export function switchBranch(payload, options) {
+  return call('branch/switch', payload, options)
+}
+
+/** 提交：有暂存只提交暂存，没有则先全部暂存。 */
 export function commitChanges(payload, options) {
   return call('commit', payload, options)
 }

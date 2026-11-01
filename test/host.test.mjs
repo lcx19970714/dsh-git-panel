@@ -25,7 +25,7 @@ import path from 'node:path'
 
 /* ---------------------------------------------------------------- 准备环境 */
 
-const FIXTURE = path.resolve(import.meta.dirname, '../../_sandbox/repo')
+const FIXTURE = path.resolve(import.meta.dirname, '../_sandbox/repo')
 if (!existsSync(path.join(FIXTURE, '.git'))) {
   console.error('缺少沙盒仓库，请先运行：')
   console.error(`  node "${path.resolve(import.meta.dirname, 'make-fixture.mjs')}" "${FIXTURE}"`)

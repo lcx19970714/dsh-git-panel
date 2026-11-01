@@ -102,30 +102,26 @@ const manifestChanged = nextRaw !== raw
 const linkPath = path.join(profileDir, 'node_modules', PACKAGE_NAME)
 let linkAction = 'none'
 let existingIsOurs = false
-if (existsSync(linkPath) || (() => { try { lstatSync(linkPath); return true } catch { return false } })()) {
-  try {
-    const stat = lstatSync(linkPath)
-    if (stat.isSymbolicLink()) {
-      let target = ''
-      try {
-        target = readlinkSync(linkPath)
-      } catch {
-        target = ''
-      }
-      target = path.resolve(path.dirname(linkPath), target)
-      existingIsOurs = path.resolve(target) === path.resolve(PLUGIN_DIR)
-    } else {
-      fail(linkPath + ' 已存在且不是链接/目录联接 —— 为避免误删真实文件，请手工处理后再运行')
-    }
-  } catch (error) {
-    if (String(error && error.message).includes('请手工处理')) throw error
+let linkExists = false
+try {
+  linkExists = lstatSync(linkPath) !== undefined
+} catch {
+  linkExists = false
+}
+if (linkExists) {
+  const stat = lstatSync(linkPath)
+  if (!stat.isSymbolicLink()) {
+    fail(linkPath + ' 已存在且不是链接/目录联接 —— 为避免误删真实文件，请手工处理后再运行')
   }
+  const target = path.resolve(path.dirname(linkPath), readlinkSync(linkPath))
+  existingIsOurs = target === path.resolve(PLUGIN_DIR)
 }
 
 if (uninstall) {
   if (existingIsOurs) linkAction = 'remove'
 } else if (!existingIsOurs) {
-  linkAction = 'create'
+  // 指向别处（例如包目录搬过家）的旧链接：链接本身只是个指针，删掉它不会动任何文件
+  linkAction = linkExists ? 'replace' : 'create'
 }
 
 /* -------------------------------- 执行 --------------------------------- */
@@ -134,6 +130,7 @@ if (dryRun) {
   if (manifestChanged) info('改写 profile package.json（dependencies 与 dsh.profile.bundles）')
   else info('package.json 无需改动')
   if (linkAction === 'create') info('创建链接 ' + linkPath + ' -> ' + PLUGIN_DIR)
+  if (linkAction === 'replace') info('替换指向别处的旧链接 ' + linkPath + ' -> ' + PLUGIN_DIR)
   if (linkAction === 'remove') info('删除链接 ' + linkPath)
   if (linkAction === 'none') info('链接已就绪，无需改动')
   process.exit(0)
@@ -149,7 +146,16 @@ if (manifestChanged) {
   info('package.json 无需改动')
 }
 
-if (linkAction === 'create') {
+if (linkAction === 'replace') {
+  try {
+    unlinkSync(linkPath)
+  } catch (error) {
+    fail('删除旧链接失败: ' + error.message)
+  }
+  info('已删除旧链接')
+}
+
+if (linkAction === 'create' || linkAction === 'replace') {
   mkdirSync(path.dirname(linkPath), { recursive: true })
   try {
     // Windows 用目录联接（不需要管理员权限）；POSIX 用普通符号链接。

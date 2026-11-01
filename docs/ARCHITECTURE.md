@@ -9,24 +9,29 @@
 给 DSH Web/桌面端加一个 **VSCode 风格**的 Git 面板：左侧看改动（或直接浏览文件树），
 右侧看 diff（或直接编辑文件并保存）。装在**右侧栏**里，按会话的项目目录工作。
 
-## 安装（从 GitHub）
+## 安装
+
+普通用户走**在线安装**：DSH → 侧边栏「插件」→「安装第三方插件」→ 填 `github:lcx19970714/dsh-git-panel`，
+或命令行 `dsh plugin add github:lcx19970714/dsh-git-panel`。仓库根就是 npm 包根，pnpm 直接能装。
+
+改代码的开发流程用本地联接：
 
 ```bash
 git clone https://github.com/lcx19970714/dsh-git-panel.git
 cd dsh-git-panel
-node plugin/scripts/install-profile.mjs          # 加 --dry-run 可先看它会改什么
+node scripts/install-profile.mjs          # 加 --dry-run 可先看它会改什么
 ```
 
 它会做三件事（幂等，可重复执行）：
 
-1. 在 profile 的 `node_modules` 下建目录联接 → 指到 `plugin/`（Windows 用 junction，免管理员权限）
+1. 在 profile 的 `node_modules` 下建目录联接 → 指到仓库根（Windows 用 junction，免管理员权限）
 2. 把 `dsh-git-panel` 写进 profile 的 `dependencies`（`link:` 形式）
 3. 把 `dsh-git-panel` 追加进 `dsh.profile.bundles`
 
 **然后重启一次 DSH**（宿主半体是 ESM，只在启动时加载）。之后在任意会话里：
 
 - 点**标题栏最右侧的「变更」按钮**，或右侧栏「+」→「Git 变更」
-- 卸载：`node plugin/scripts/install-profile.mjs --uninstall`
+- 卸载：`node scripts/install-profile.mjs --uninstall`
 
 > 需要 Node ≥ 22。安装脚本按自身位置定位插件目录，克隆到哪个盘都行。
 
@@ -134,8 +139,9 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 ## 3. 架构
 
 ```
-plugin/
-├─ index.js                 宿主入口：ctx.inject(['connection']) + rpc.handle('/dsh-git')
+<仓库根>                      ← 仓库根就是 npm 包根，pnpm / github: 安装才能直接吃到
+├─ package.json             包清单：main / exports / dsh.client / dsh.bundle
+├─ index.js                 宿主入口：ctx.inject(['connection']) + 精确 Fetch 路由
 ├─ host/
 │  ├─ git.js                零依赖 git 引擎（spawn git；porcelain=v2 -z 解析、unified diff、目录、仓库发现、文件读写）
 │  ├─ roots.js              三种根的解析（primary / discovered / extra）
@@ -152,7 +158,8 @@ plugin/
 │  └─ components/           Panel / RootPicker / ChangesList / FileTree / DiffView / FileEditor / States
 ├─ build/build-client.mjs   零依赖微型打包器（ESM → 经典脚本 __ModuleLoader__）
 ├─ test/                    10 套测试（见下）
-└─ scripts/install-profile.mjs  装进 DSH profile（junction + package.json）
+├─ scripts/install-profile.mjs  本地开发安装：junction + profile package.json
+└─ docs/ARCHITECTURE.md     本文
 ```
 
 为什么**没有构建工具**：这台机器上没有 esbuild，而 DSH 的客户端插件必须是**经典脚本**
@@ -187,13 +194,15 @@ plugin/
 ## 4. 开发
 
 ```bash
-cd plugin
 node build/build-client.mjs          # 构建 client.js（改完 src/ 必跑）
 node test/run.mjs                    # 跑全部测试
 node test/run.mjs --only client      # 只跑某一套
 node scripts/install-profile.mjs     # 装进 desktop profile（幂等）
 node scripts/install-profile.mjs --dry-run
 ```
+
+发版清单：改完代码 → `node build/build-client.mjs` → `node test/run.mjs` →
+**同步 README 的「能做什么 / 限制」与 `package.json` 版本号** → 提交推送 → 打 tag 发 Release。
 
 测试包含：
 

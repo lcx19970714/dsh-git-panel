@@ -1197,6 +1197,26 @@ test('index/stage-group：未暂存整组暂存、已暂存整组取消', async 
   assert.equal(cleared.files.find((file) => file.path === 'hello.txt').unstaged, true, '工作区改动还在')
 })
 
+test('index/stage-group：stage-untracked 只加未跟踪文件，stage-all 两者都加', async () => {
+  // 不变量：每个 scope 的作用范围必须和那一组里到底有什么一致。
+  // 分开模式里「未跟踪」组只该加新文件；合并模式里「未暂存」组两者都有，才用 stage-all。
+  const dir = makeRepo(path.join(tempDir('dgp-stage-scope-'), 'repo'))
+  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')   // 已跟踪改动
+  writeFileSync(path.join(dir, 'fresh.txt'), 'new\n')       // 未跟踪
+
+  await callOk('index/stage-group', { rootPath: dir, scope: 'stage-untracked' })
+  const afterUntracked = await callOk('status', { rootPath: dir })
+  const fresh = afterUntracked.files.find((file) => file.path === 'fresh.txt')
+  const hello = afterUntracked.files.find((file) => file.path === 'hello.txt')
+  assert.equal(fresh.staged, true, '未跟踪文件应进入已暂存')
+  assert.equal(hello.staged, false, 'stage-untracked 不该连带已跟踪改动')
+  assert.equal(hello.unstaged, true, '已跟踪改动仍留在未暂存')
+
+  await callOk('index/stage-group', { rootPath: dir, scope: 'stage-all' })
+  const afterAll = await callOk('status', { rootPath: dir })
+  assert.equal(afterAll.files.every((file) => file.staged === true), true, 'stage-all 之后不该还有未暂存内容')
+})
+
 test('commit：只提交已暂存内容，空说明与空索引都拒绝', async () => {
   const dir = makeRepo(path.join(tempDir('dgp-commit-'), 'repo'))
   writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')

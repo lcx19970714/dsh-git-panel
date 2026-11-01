@@ -70,6 +70,7 @@ export function Panel(props) {
   const [collapsedGroups, setCollapsedGroups] = usePref('collapsedGroups')
   const [repositoriesOpen, setRepositoriesOpen] = usePref('repositoriesOpen')
   const [changesView, setChangesView] = usePref('changesView')
+  const [untrackedMode, setUntrackedMode] = usePref('untrackedMode')
 
   /* ------------------------------- 根 ------------------------------- */
   const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -575,7 +576,7 @@ export function Panel(props) {
   /** 分组头的批量按钮：一次暂存或取消暂存整组。 */
   const stageGroup = useCallback(async (scope) => {
     if (activeRoot === null || activeRoot.isGit === false) return
-    if (scope !== 'stage-unstaged' && scope !== 'stage-untracked' && scope !== 'unstage') return
+    if (scope !== 'stage-unstaged' && scope !== 'stage-untracked' && scope !== 'stage-all' && scope !== 'unstage') return
     if (stagePendingRef.current !== null) return
     stagePendingRef.current = scope
     setStagePending(scope)
@@ -1025,6 +1026,7 @@ function buildUpdateNote(updateState, t) {
           loading: statusLoading && status === null,
           error: null,
           view: changesView,
+          untrackedMode,
           selectedPath,
           onSelect: selectEntry,
           filter,
@@ -1268,6 +1270,8 @@ function buildUpdateNote(updateState, t) {
       onChangeModel: changeCommitModel,
       changesView,
       onChangeChangesView: setChangesView,
+      untrackedMode,
+      onChangeUntrackedMode: setUntrackedMode,
       onBack: () => setShowSettings(false),
       t
     })

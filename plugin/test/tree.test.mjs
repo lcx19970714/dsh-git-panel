@@ -75,7 +75,14 @@ test('groupChanges：MM 文件同时出现在「已暂存」和「未暂存」',
     entry('c.js', { staged: true, unstaged: false, status: 'A' }),
     entry('u.js', { staged: false, unstaged: false, untracked: true, status: '?' })
   ]
-  const groups = groupChanges(files)
+  // 默认 merge：未跟踪的 u.js 并进「未暂存」，不单独成组
+  const merged = groupChanges(files)
+  assert.deepEqual(merged.map((group) => group.key), ['staged', 'unstaged'])
+  const mergedByKey = new Map(merged.map((group) => [group.key, group.entries.map((item) => item.path)]))
+  assert.deepEqual(mergedByKey.get('staged'), ['b.js', 'c.js'])
+  assert.deepEqual(mergedByKey.get('unstaged'), ['a.js', 'b.js', 'u.js'])
+
+  const groups = groupChanges(files, { untrackedMode: 'separate' })
   assert.deepEqual(groups.map((group) => group.key), ['staged', 'unstaged', 'untracked'])
 
   const byKey = new Map(groups.map((group) => [group.key, group.entries.map((item) => item.path)]))
@@ -100,7 +107,7 @@ test('groupChanges：固定顺序 conflicted → staged → unstaged → untrack
     entry('w.js', { unstaged: true }),
     entry('k.js', { conflicted: true, status: 'U' })
   ]
-  const groups = groupChanges(files)
+  const groups = groupChanges(files, { untrackedMode: 'separate' })
   assert.deepEqual(groups.map((group) => group.key), GROUP_ORDER)
   assert.deepEqual(GROUP_ORDER, ['conflicted', 'staged', 'unstaged', 'untracked'])
   // 空数组/无变更时不产生任何分组
@@ -111,12 +118,21 @@ test('groupChanges：固定顺序 conflicted → staged → unstaged → untrack
   assert.deepEqual(groupChanges({}), [])
 })
 
-test('groupChanges：未跟踪文件 staged/unstaged 都是 false 时只进未跟踪组', () => {
+test('groupChanges：未跟踪文件的归属由 untrackedMode 决定（默认并进未暂存）', () => {
   const untracked = entry('new.txt', { staged: false, unstaged: false, untracked: true, status: '?' })
-  const groups = groupChanges([untracked])
-  assert.equal(groups.length, 1)
-  assert.equal(groups[0].key, 'untracked')
-  assert.equal(groups[0].entries.length, 1)
+
+  const merged = groupChanges([untracked])
+  assert.equal(merged.length, 1)
+  assert.equal(merged[0].key, 'unstaged', '默认合并：和 VS Code 一样放进「未暂存」')
+  assert.equal(merged[0].entries.length, 1)
+
+  const separate = groupChanges([untracked], { untrackedMode: 'separate' })
+  assert.equal(separate.length, 1)
+  assert.equal(separate[0].key, 'untracked')
+  assert.equal(separate[0].entries.length, 1)
+
+  // 未知模式按默认处理，不产生第三种分组
+  assert.equal(groupChanges([untracked], { untrackedMode: 'whatever' })[0].key, 'unstaged')
 })
 
 /* ==========================================================================
@@ -362,10 +378,14 @@ test('buildListRows：一行一个文件、没有目录行，按完整路径自�
   assert.deepEqual(buildListRows([null, { path: '' }]), [])
 })
 
-test('groupActionOf：分组头的批量按钮只由分组决定', () => {
+test('groupActionOf：批量按钮必须与组里到底有什么一致', () => {
   assert.equal(groupActionOf('staged'), 'unstage', '已暂存组是全部取消暂存')
-  assert.equal(groupActionOf('unstaged'), 'stage-unstaged', '未暂存组是暂存全部已跟踪改动')
-  assert.equal(groupActionOf('untracked'), 'stage-untracked', '未跟踪组是暂存全部新文件')
+  // 合并模式：未暂存组里还有未跟踪文件，暂存整组就得连新文件一起加
+  assert.equal(groupActionOf('unstaged', 'merge'), 'stage-all', '合并模式的未暂存组 = 全部暂存')
+  assert.equal(groupActionOf('unstaged'), 'stage-all', '默认就是合并模式')
+  // 分开模式：未暂存组里只有已跟踪改动
+  assert.equal(groupActionOf('unstaged', 'separate'), 'stage-unstaged', '分开模式只暂存已跟踪改动')
+  assert.equal(groupActionOf('untracked', 'separate'), 'stage-untracked', '未跟踪组只暂存新文件')
   assert.equal(groupActionOf('conflicted'), null, '冲突组没有批量按钮')
   assert.equal(groupActionOf(undefined), null)
 })

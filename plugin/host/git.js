@@ -1046,21 +1046,30 @@ export async function stageFile(repoRoot, relPath, action, options = {}) {
 /**
  * 整组暂存 / 取消暂存（分组头右侧的 + / −）。
  *
- * scope 由客户端按所点的分组显式给出，宿主不看当前 status 自行决定：
- *   stage-unstaged  未暂存的已跟踪改动 → `git add -u`
- *   stage-untracked 未跟踪文件         → `git add -A`
- *   unstage         全部已暂存         → `git restore --staged --source=HEAD -- .`（只动索引）
+ * scope 由客户端按所点的分组显式给出，宿主不看当前 status 自行决定。
+ * 每个 scope 的作用范围必须和那一组里到底有什么严格对应：
+ *   stage-unstaged  只有已跟踪的未暂存改动 → `git add -u`
+ *   stage-untracked 只有未跟踪文件         → 取 `ls-files --others` 的路径逐个 add
+ *   stage-all       两者都有（未跟踪并进未暂存）→ `git add -A`
+ *   unstage         全部已暂存             → `git restore --staged --source=HEAD`（只动索引）
  */
 export async function stageGroup(repoRoot, scope, options = {}) {
   const { signal } = options
   if (scope === 'stage-unstaged') {
     await runGit(repoRoot, ['add', '-u', '--', '.'], { signal })
   } else if (scope === 'stage-untracked') {
+    const listed = await runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z'], { signal })
+    const paths = listed.stdout.toString('utf8').split('\0').filter((item) => item !== '')
+    // 分批 add：未跟踪文件可能很多，命令行长度有上限
+    for (let at = 0; at < paths.length; at += 100) {
+      await runGit(repoRoot, ['add', '--', ...paths.slice(at, at + 100)], { signal })
+    }
+  } else if (scope === 'stage-all') {
     await runGit(repoRoot, ['add', '-A', '--', '.'], { signal })
   } else if (scope === 'unstage') {
     await runGit(repoRoot, ['restore', '--staged', '--source=HEAD', '--', '.'], { signal })
   } else {
-    throw new GitError('bad-request', 'scope 必须是 stage-unstaged、stage-untracked 或 unstage')
+    throw new GitError('bad-request', 'scope 必须是 stage-unstaged、stage-untracked、stage-all 或 unstage')
   }
   return { scope }
 }

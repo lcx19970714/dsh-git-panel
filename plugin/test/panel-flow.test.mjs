@@ -1280,9 +1280,12 @@ test('用例 1：挂载 → 解析根 → status → 分组与行', async () => 
     const frame = panel.changesFrame()
     assert(frame !== null, '没有任何一帧渲染出变更行（见 xfail 诊断 1）')
 
-    // 3 个分组（已暂存 / 未暂存 / 未跟踪），顺序固定
+    // 默认合并模式：未跟踪并进「未暂存」，所以只有两组，顺序固定
     const groups = byAttr(frame, 'data-dgp-group')
-    eq(groups.map((node) => attr(node, 'data-dgp-group')), ['staged', 'unstaged', 'untracked'], '分组顺序')
+    eq(groups.map((node) => attr(node, 'data-dgp-group')), ['staged', 'unstaged'], '分组顺序（合并模式）')
+    const unstagedGroup = groups.find((node) => attr(node, 'data-dgp-group') === 'unstaged')
+    assert(byAttr(unstagedGroup, 'data-dgp-path').some((node) => attr(node, 'data-dgp-path') === 'notes.txt'),
+      '未跟踪的 notes.txt 应该并进未暂存组')
 
     // 每个组 1 个文件 → 直接就是文件行，共 3 行
     const rows = byAttr(frame, 'data-dgp-row', 'file')
@@ -1342,7 +1345,8 @@ test('用例 1s：未暂存行点加号暂存，已暂存行点减号取消暂�
     eq(attr(stageButton, 'data-dgp-action'), 'stage', '未暂存行应是加号（暂存）')
     const unstageButton = buttonFor('staged', 'util.ts')
     eq(attr(unstageButton, 'data-dgp-action'), 'unstage', '已暂存行应是减号（取消暂存）')
-    const untrackedButton = buttonFor('untracked', 'notes.txt')
+    // 合并模式下未跟踪文件就在「未暂存」组里，同样带加号
+    const untrackedButton = buttonFor('unstaged', 'notes.txt')
     eq(attr(untrackedButton, 'data-dgp-action'), 'stage', '未跟踪行也应能暂存')
 
     const mark = panel.router.mark()
@@ -1538,6 +1542,47 @@ test('用例 1w：变更列表的列表 / 树形两种显示方式，设置页�
     click(toggle)
     await panel.flush()
     eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-row') === 'file').length, 2, '切回列表后又是两个文件行')
+  })
+})
+
+test('用例 1x：未跟踪文件可以并进未暂存，也可以单列一组（设置里切）', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'models/list': () => sayOk({ models: [], failed: [] }),
+      'settings/get': () => sayOk({ commitModel: null })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const groupKeys = () => panel.all((node) => isHost(node) && attr(node, 'data-dgp-group') !== undefined)
+      .map((node) => attr(node, 'data-dgp-group'))
+
+    // 默认合并：notes.txt（未跟踪）在「未暂存」里，没有单独的未跟踪组
+    eq(groupKeys(), ['staged', 'unstaged'], '默认合并成两组')
+    const unstaged = panel.one((node) => isHost(node) && attr(node, 'data-dgp-group') === 'unstaged')
+    assert(findAll(unstaged, (node) => isHost(node) && attr(node, 'data-dgp-path') === 'notes.txt').length > 0,
+      '未跟踪文件应出现在未暂存组里')
+    // 合并模式下这一组的批量按钮是「全部暂存」
+    const stageAllButton = panel.one((node) => isHost(node) && attr(node, 'data-dgp-group-action') === 'stage-all')
+    assert(stageAllButton !== null, '合并模式的未暂存组应是「全部暂存」')
+
+    // 设置里改成单列
+    click(panel.one((node) => isHost(node) && attr(node, 'data-action') === 'open-settings'))
+    await panel.flush()
+    const select = panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'untracked-mode')
+    assert(select !== null, '设置页应有未跟踪文件的分组选项')
+    eq(attr(select, 'value'), 'merge', '默认合并')
+    select.props.onChange({ target: { value: 'separate' } })
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'back'))
+    await panel.flush()
+
+    eq(groupKeys(), ['staged', 'unstaged', 'untracked'], '单列后三组')
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-group-action') === 'stage-untracked').length, 1,
+      '未跟踪组的批量按钮应只暂存新文件')
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-group-action') === 'stage-unstaged').length, 1,
+      '未暂存组的批量按钮应只暂存已跟踪改动')
   })
 })
 

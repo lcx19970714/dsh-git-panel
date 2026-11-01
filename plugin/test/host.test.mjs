@@ -1217,22 +1217,64 @@ test('index/stage-group：stage-untracked 只加未跟踪文件，stage-all 两�
   assert.equal(afterAll.files.every((file) => file.staged === true), true, 'stage-all 之后不该还有未暂存内容')
 })
 
-test('commit：只提交已暂存内容，空说明与空索引都拒绝', async () => {
-  const dir = makeRepo(path.join(tempDir('dgp-commit-'), 'repo'))
-  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
-  writeFileSync(path.join(dir, 'fresh.txt'), 'new\n')
+test('commitDiffText：有暂存看暂存；没有则看工作区并带上未跟踪文件清单', async () => {
+  const gitHost = await import('../host/git.js')
+  const dir = makeRepo(path.join(tempDir('dgp-commit-diff-'), 'repo'))
 
-  const empty = await callRoute('commit', { rootPath: dir, message: 'nothing staged yet' })
-  assert.equal(empty.ok, false, '没有暂存内容时提交必须失败')
+  assert.equal(await gitHost.commitDiffText(dir), null, '干净仓库没有可生成的差异')
+
+  // 只有未跟踪文件也要有内容：git diff 不显示它们，必须显式列出来
+  writeFileSync(path.join(dir, 'brand-new.txt'), 'hello\n')
+  const onlyUntracked = await gitHost.commitDiffText(dir)
+  assert.equal(onlyUntracked.source, 'unstaged')
+  assert.match(onlyUntracked.text, /brand-new\.txt/, '未跟踪文件应出现在文本里：' + onlyUntracked.text)
+
+  // 有已跟踪改动时也一并带上
+  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
+  const mixed = await gitHost.commitDiffText(dir)
+  assert.match(mixed.text, /hello\.txt/, '已跟踪改动应在文本里')
+  assert.match(mixed.text, /brand-new\.txt/, '未跟踪文件也应在文本里')
+
+  // 一旦有暂存内容，就只看暂存（优先用暂存的）
+  await callOk('index/stage', { rootPath: dir, path: 'hello.txt', action: 'stage' })
+  const staged = await gitHost.commitDiffText(dir)
+  assert.equal(staged.source, 'staged')
+  assert.match(staged.text, /hello\.txt/)
+  assert.doesNotMatch(staged.text, /brand-new\.txt/, '有暂存时不应混入未跟踪文件')
+})
+
+test('commit：有暂存只提交暂存；没有暂存就把全部改动暂存后提交', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-commit-'), 'repo'))
+
+  // 完全没有改动：明确告诉调用方没有可提交的东西
+  const clean = await callRoute('commit', { rootPath: dir, message: 'nothing to see' })
+  assert.equal(clean.ok, false, '工作区干净时提交必须失败')
+  assert.equal(clean.error.code, 'nothing-to-commit')
 
   const blank = await callRoute('commit', { rootPath: dir, message: '   ' })
   assert.equal(blank.ok, false)
   assert.equal(blank.error.code, 'bad-request')
 
+  // 只有未暂存改动：自动全部暂存（含未跟踪）再提交
+  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
+  writeFileSync(path.join(dir, 'fresh.txt'), 'new\n')
+  const smart = await callOk('commit', { rootPath: dir, message: 'update hello\n\nwhy: test' })
+  assert.equal(typeof smart.head, 'string', '应返回新提交的短 SHA')
+  assert.equal(smart.includedUnstaged, true, '这次提交是自己把未暂存改动加进来的')
+  assert.equal(smart.subject, 'update hello', '返回首行主题')
+
+  const afterSmart = await callOk('status', { rootPath: dir })
+  assert.equal(afterSmart.files.length, 0, '全部改动都应被提交走：' + JSON.stringify(afterSmart.files))
+})
+
+test('commit：已有暂存内容时只提交暂存，未暂存的改动留在工作区', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-commit-staged-'), 'repo'))
+  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
+  writeFileSync(path.join(dir, 'fresh.txt'), 'new\n')
+
   await callOk('index/stage', { rootPath: dir, path: 'hello.txt', action: 'stage' })
-  const committed = await callOk('commit', { rootPath: dir, message: 'update hello\n\nwhy: test' })
-  assert.equal(typeof committed.head, 'string', '应返回新提交的短 SHA')
-  assert.notEqual(committed.head, '', '短 SHA 不应为空')
+  const committed = await callOk('commit', { rootPath: dir, message: 'update hello' })
+  assert.equal(committed.includedUnstaged, false, '这次提交用的是已暂存内容')
 
   const after = await callOk('status', { rootPath: dir })
   assert.equal(after.files.find((file) => file.path === 'hello.txt'), undefined, '已提交的文件应离开变更列表')

@@ -1077,11 +1077,21 @@ export async function stageGroup(repoRoot, scope, options = {}) {
 /** 提交说明的长度上限：超过就不是一条提交说明了。 */
 export const COMMIT_MESSAGE_MAX = 5000
 
+/** 索引里有没有已暂存的改动（`git diff --cached --quiet`：有差异时退出码 1）。 */
+async function indexHasChanges(repoRoot, signal) {
+  const result = await runGit(repoRoot, ['diff', '--cached', '--quiet'], { signal, allowFailure: true })
+  if (result.code === 0) return false
+  if (result.code === 1) return true
+  throw new GitError('git-failed', result.stderr || '无法读取暂存区状态', { code: result.code })
+}
+
 /**
- * 提交当前索引。
+ * 提交。
  *
- * 只提交已经暂存的内容（`git commit`，不带 -a）：未暂存的改动留在工作区。
- * 索引里什么都没有时 git 以非 0 退出，原样报错，不自动把工作区改动加进来。
+ * 规则（与 VS Code 的 smart commit 一致）：
+ *  - 索引里有内容 → 只提交已暂存的部分，未暂存的改动留在工作区；
+ *  - 索引是空的、但工作区有改动 → 先把全部改动（含未跟踪文件）暂存，再提交。
+ * 两边都没有改动时报 `nothing-to-commit`，而不是让 git 用一句 "nothing to commit" 失败。
  */
 export async function commitIndex(repoRoot, message, options = {}) {
   if (typeof message !== 'string' || message.trim() === '') {
@@ -1091,26 +1101,56 @@ export async function commitIndex(repoRoot, message, options = {}) {
     throw new GitError('bad-request', '提交说明超过 ' + COMMIT_MESSAGE_MAX + ' 个字符')
   }
   const { signal } = options
+
+  let includedUnstaged = false
+  if (!(await indexHasChanges(repoRoot, signal))) {
+    // 没有暂存：把工作区改动全部加入索引（-A 覆盖修改、删除与未跟踪文件）
+    await runGit(repoRoot, ['add', '-A', '--', '.'], { signal })
+    if (!(await indexHasChanges(repoRoot, signal))) {
+      throw new GitError('nothing-to-commit', '没有可提交的改动')
+    }
+    includedUnstaged = true
+  }
+
   const result = await runGit(repoRoot, ['commit', '--file=-'], { signal, input: message })
   const head = await readHead(repoRoot)
-  return { head: head.head, subject: message.split('\n')[0], output: result.stderr }
+  return {
+    head: head.head,
+    subject: message.split('\n')[0],
+    includedUnstaged,
+    output: result.stderr
+  }
 }
 
 /**
  * 生成提交说明用的差异文本。
  *
- * 有已暂存的改动就只看索引（`git diff --cached`）；索引是干净的才看工作区
- * （`git diff HEAD`，包含未跟踪文件）。两边都没有差异时返回 null。
+ * 与提交规则对齐：有已暂存的改动就只看索引（`git diff --cached`）；
+ * 索引干净时才看工作区 —— `git diff HEAD` 覆盖已跟踪的改动，
+ * 未跟踪文件另列一份路径清单（git diff 不会显示它们，
+ * 只新建文件时若不带这份清单，模型会收到「没有改动」）。
+ * 两边都没有差异时返回 null。
  */
 export async function commitDiffText(repoRoot, options = {}) {
   const { signal } = options
   const staged = await runGit(repoRoot, ['diff', '--cached', '--stat', '--patch'], { signal })
   const stagedText = staged.stdout.toString('utf8')
   if (stagedText.trim() !== '') return { source: 'staged', text: stagedText }
+
   const working = await runGit(repoRoot, ['diff', 'HEAD', '--stat', '--patch'], { signal, allowFailure: true })
-  const workingText = working.code === 0 ? working.stdout.toString('utf8') : ''
-  if (workingText.trim() !== '') return { source: 'unstaged', text: workingText }
-  return null
+  const workingText = working.code === 0 ? working.stdout.toString('utf8').trimEnd() : ''
+  const listed = await runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z'], { signal, allowFailure: true })
+  const untracked = listed.code === 0
+    ? listed.stdout.toString('utf8').split('\0').filter((item) => item !== '')
+    : []
+
+  if (workingText === '' && untracked.length === 0) return null
+  const parts = []
+  if (workingText !== '') parts.push(workingText)
+  if (untracked.length > 0) {
+    parts.push(['新文件（未跟踪）：', ...untracked.map((item) => '  ' + item)].join('\n'))
+  }
+  return { source: 'unstaged', text: parts.join('\n\n') }
 }
 
 /** 把相对路径解析进 root，并拒绝逃逸。 */

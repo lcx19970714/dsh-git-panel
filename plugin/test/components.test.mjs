@@ -413,7 +413,7 @@ test('CommitBox：状态只占一行，按 结果 > 生成中 > 提交中 > 原�
   const byMark = (tree, mark) => collect(tree, (node) => node.$$host === true && node.props['data-dgp-commit'] === mark)[0] ?? null
   const status = (tree) => byMark(tree, 'status')
   const base = {
-    message: 'feat: x', stagedCount: 1, busy: false, generating: false, elapsedMs: 0, note: null,
+    message: 'feat: x', stagedCount: 1, changeCount: 1, busy: false, generating: false, elapsedMs: 0, note: null,
     onChange: () => {}, onCommit: () => {}, onGenerate: () => {}, t: tKey
   }
 
@@ -422,13 +422,18 @@ test('CommitBox：状态只占一行，按 结果 > 生成中 > 提交中 > 原�
   eq(status(ready), null, '就绪时状态行不占位')
   eq(byMark(ready, 'submit').props.disabled, false, '就绪可提交')
 
-  // 没有已暂存内容：说清原因，而不是无声禁用
-  const noStaged = renderComponent(CommitBox, { ...base, stagedCount: 0 })
-  eq(status(noStaged).props['data-kind'], 'hint', '没有暂存时给提示')
-  eq(textOf(status(noStaged)), 'commit.hintNoStaged', '提示内容')
-  eq(byMark(noStaged, 'submit').props.disabled, true, '没有暂存时不可提交')
+  // 完全没有改动：说清原因，而不是无声禁用
+  const noChanges = renderComponent(CommitBox, { ...base, stagedCount: 0, changeCount: 0 })
+  eq(status(noChanges).props['data-kind'], 'hint', '没有改动时给提示')
+  eq(textOf(status(noChanges)), 'commit.hintNoChanges', '提示内容')
+  eq(byMark(noChanges, 'submit').props.disabled, true, '没有改动时不可提交')
 
-  // 有暂存但没写说明
+  // 有改动但都没暂存：仍然可以提交（提交时会先暂存全部），提示说明会发生什么
+  const unstagedOnly = renderComponent(CommitBox, { ...base, stagedCount: 0, changeCount: 2 })
+  eq(textOf(status(unstagedOnly)), 'commit.hintStageAll', '未暂存时的说明')
+  eq(byMark(unstagedOnly, 'submit').props.disabled, false, '只有未暂存改动也能提交')
+
+  // 有改动但没写说明
   const noMessage = renderComponent(CommitBox, { ...base, message: '   ' })
   eq(textOf(status(noMessage)), 'commit.hintNoMessage', '缺说明时的提示')
   eq(byMark(noMessage, 'submit').props.disabled, true)
@@ -448,7 +453,7 @@ test('CommitBox：状态只占一行，按 结果 > 生成中 > 提交中 > 原�
 
   // 结果优先于其它状态
   const done = renderComponent(CommitBox, {
-    ...base, message: '', stagedCount: 0, note: { tone: 'info', text: '已提交 abc1234 · feat: x' }
+    ...base, message: '', stagedCount: 0, changeCount: 0, note: { tone: 'info', text: '已提交 abc1234 · feat: x' }
   })
   eq(status(done).props['data-kind'], 'note', '结果优先显示')
   eq(status(done).props['data-tone'], 'info', '结果色调')

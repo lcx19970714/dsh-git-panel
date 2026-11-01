@@ -161,7 +161,7 @@ plugin/
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 16 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）和 `commit`（只提交已暂存内容）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 16 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）和 `commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -175,7 +175,7 @@ plugin/
 | `file/write` | `{rootPath, path, text, expectedHash, eol, bom}` 或 `{…, force:true}` | `{size, mtimeMs, hash}`；哈希不匹配 → `conflict` |
 | `index/stage` | `{rootPath, path, action}` | `{path, action}`；`stage` = `git add --`，`unstage` = `git restore --staged --` |
 | `index/stage-group` | `{rootPath, scope}` | `{scope}`；整组暂存 / 取消暂存 |
-| `commit` | `{rootPath, message}` | `{head, subject}`；只提交已暂存内容 |
+| `commit` | `{rootPath, message}` | `{head, subject, includedUnstaged}`；有暂存只提交暂存，没有则先 `git add -A` 再提交 |
 | `commit/message` | `{rootPath}` | `{message, model, source}`；有暂存看暂存，否则看未暂存 |
 | `models/list` | `{}` | `{models[], failed[]}`；模型来自 DSH 的 `llm` 服务，不读配置文件、不碰密钥 |
 | `settings/get` / `settings/set` | `{commitModel?}` | `{commitModel: {provider, model} \| null}`；生成提交说明所用的模型 |
@@ -275,7 +275,7 @@ export function apply(ctx) {
 ——之前那个"面板一直闪、diff 永远加载不出来"的 bug 就是一路静默降级掩盖出来的。
 ## 5. 已知边界（v1 明确不做）
 
-- **提交只提交已暂存内容**：未暂存的改动不会被自动带上；不做 discard / 分支操作。
+- **提交是 smart commit**：有暂存就只提交暂存；没有暂存但工作区有改动时，会先把全部改动（含未跟踪文件）暂存再提交 —— 与 VS Code 的 `git.enableSmartCommit` 行为一致，只是这里始终开启。不做 discard / 分支操作。
 - 项目根是仓库子目录时，变更列表展示的是**整个仓库**的变更（VSCode 行为），不做「只看项目目录以内」的过滤。
 - 文件模式的筛选只搜索**已展开**的目录，不做仓库级全文搜索。
 - 单个文件 diff 超过 5000 行会截断并给出「展开全部」。

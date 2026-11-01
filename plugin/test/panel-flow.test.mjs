@@ -1586,6 +1586,59 @@ test('用例 1x：未跟踪文件可以并进未暂存，也可以单列一组�
   })
 })
 
+test('用例 1y：生成提交说明时显示进度，失败时把真实原因显示出来', async () => {
+  let pending = null
+  let reply = 'pending'
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'models/list': () => sayOk({ models: [], failed: [] }),
+      'settings/get': () => sayOk({ commitModel: null }),
+      'commit/message': () => {
+        if (reply === 'ok') return sayOk({ message: 'feat: 生成好了', model: 'p1/m1', source: 'staged' })
+        if (reply === 'error') return sayFail('model-failed', '额度不足，请稍后再试')
+        // 挂住不返回：由测试决定它最后成功还是失败
+        return new Promise((resolve) => { pending = resolve })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const generate = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'generate')
+    const progress = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'progress')
+
+    eq(progress(), null, '没在生成时不应有进度条')
+
+    click(generate())
+    await panel.flush()
+    const bar = progress()
+    assert(bar !== null, '生成中应显示进度')
+    assert(textOf(bar).includes('正在生成'), '进度条应带说明文字：' + textOf(bar))
+    eq(findAll(generate(), (node) => isHost(node) && hasClass(node, 'dgp-spinner')).length, 1,
+      '生成按钮里应换成转圈')
+    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit'), 'disabled'), true,
+      '生成中提交按钮应禁用')
+
+    // 让它以失败结束：必须显示服务端给的真实原因，而不是字面的 {message}
+    assert(pending !== null, '请求没有挂住')
+    pending(sayFail('model-failed', '额度不足，请稍后再试'))
+    await panel.flush()
+    eq(progress(), null, '失败后进度条应消失')
+    const note = panel.one((node) => isHost(node) && attr(node, 'data-commit-note') === 'error')
+    assert(note !== null, '失败时应有错误提示')
+    const noteText = textOf(note)
+    assert(noteText.includes('额度不足'), '错误提示要带上真实原因，实际：' + noteText)
+    assert(!noteText.includes('{message}'), '占位符不能被原样显示：' + noteText)
+
+    // 成功：说明填进输入框
+    reply = 'ok'
+    click(generate())
+    await panel.flush()
+    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input'), 'value'),
+      'feat: 生成好了', '生成结果应填进输入框')
+  })
+})
+
 test('用例 2a：点未暂存文件 → diff 载荷', async () => {
   const status = statusWithBoth()
   await withPanel({

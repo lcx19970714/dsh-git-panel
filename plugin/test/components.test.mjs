@@ -408,6 +408,27 @@ test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行
   eq(busy.props['data-busy'], 'true', '忙状态钩子')
 })
 
+test('CommitBox：生成中显示进度与已等待时间，并禁用提交', () => {
+  const { CommitBox } = loadModule('./components/CommitBox.js')
+  const byMark = (tree, mark) => collect(tree, (node) => node.$$host === true && node.props['data-dgp-commit'] === mark)[0] ?? null
+  const base = {
+    message: 'feat: x', stagedCount: 1, busy: false, generating: false, elapsedMs: 0,
+    onChange: () => {}, onCommit: () => {}, onGenerate: () => {}, t: tKey
+  }
+
+  const idle = renderComponent(CommitBox, base)
+  eq(byMark(idle, 'progress'), null, '空闲时没有进度行')
+  eq(byMark(idle, 'submit').props.disabled, false, '空闲可提交')
+
+  const busy = renderComponent(CommitBox, { ...base, generating: true, elapsedMs: 3200 })
+  const bar = byMark(busy, 'progress')
+  assert(bar !== null, '生成中应有进度行')
+  assert(textOf(bar).includes('3.2'), '应显示已等待秒数，实际：' + textOf(bar))
+  eq(collect(busy, (node) => node.$$host === true && classOf(node).split(' ').includes('dgp-spinner')).length, 1,
+    '生成中按钮里应换成转圈')
+  eq(byMark(busy, 'submit').props.disabled, true, '生成中禁止提交')
+})
+
 test('RepoList：列出全部仓库、当前仓库高亮、外部仓库可移除、折叠后不渲染行', () => {
   const { RepoList } = loadModule('./components/RepoList.js')
   const roots = [

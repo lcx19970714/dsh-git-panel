@@ -146,6 +146,8 @@ export function Panel(props) {
   const [commitMessage, setCommitMessage] = useState('')
   const [commitBusy, setCommitBusy] = useState(false)
   const [commitGenerating, setCommitGenerating] = useState(false)
+  /** 生成中的已等待毫秒数：每 200ms 刷新一次，让用户看得见它在跑。 */
+  const [generateElapsed, setGenerateElapsed] = useState(0)
   const [commitNote, setCommitNote] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, error: null, saved: false })
@@ -615,6 +617,18 @@ export function Panel(props) {
     }
   }, [activeRoot, commitMessage, commitBusy, refreshStatus])
 
+  // 生成期间每 200ms 刷新一次已等待时间；结束（成功或失败）立刻归零。
+  useEffect(() => {
+    if (commitGenerating !== true) {
+      setGenerateElapsed(0)
+      return undefined
+    }
+    const started = Date.now()
+    setGenerateElapsed(0)
+    const timer = setInterval(() => setGenerateElapsed(Date.now() - started), 200)
+    return () => clearInterval(timer)
+  }, [commitGenerating])
+
   /** 生成提交说明：有暂存看暂存，否则看未暂存，由宿主决定。 */
   const generateMessage = useCallback(async () => {
     if (activeRoot === null || activeRoot.isGit === false || commitGenerating) return
@@ -1012,6 +1026,7 @@ function buildUpdateNote(updateState, t) {
           stagedCount,
           busy: commitBusy,
           generating: commitGenerating,
+          elapsedMs: generateElapsed,
           onChange: setCommitMessage,
           onCommit: commitStaged,
           onGenerate: generateMessage,

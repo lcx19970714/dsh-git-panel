@@ -1252,10 +1252,13 @@ function fakeLlm(overrides = {}) {
     },
     prepareCall: async (config, signal, configure) => {
       seen.calls.push(config)
+      // configure 会拿到 (controls, model 元数据)：给一份带推理档位的模型信息
+      const info = overrides.modelInfo ?? { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } }
       return {
-        config: { ...configure(config), provider: config.provider, model: config.model },
+        config: { ...configure(config, info), provider: config.provider, model: config.model },
         stream: (options) => {
           seen.options = options
+          if (overrides.stream !== undefined) return overrides.stream(options)
           return (async function* generate() {
             if (overrides.chunks !== undefined) {
               for (const chunk of overrides.chunks) yield chunk
@@ -1340,6 +1343,48 @@ test('models.generateCommitMessage：模型没吐文本时抛 model-failed', asy
   await assert.rejects(
     () => models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff'),
     (error) => error.code === 'model-failed'
+  )
+})
+
+test('models.generateCommitMessage：输出上限留够，不被推理吃掉', async () => {
+  const { service, seen } = fakeLlm()
+  await models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff')
+  assert.equal(seen.calls[0].maxTokens >= 1024, true, 'maxTokens 太小会让推理型模型返回空文本：' + seen.calls[0].maxTokens)
+})
+
+test('models.generateCommitMessage：模型没有推理档位时不动 controls', async () => {
+  const { service } = fakeLlm({ modelInfo: {} })
+  const result = await models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff')
+  assert.equal(result.message.includes('feat'), true)
+})
+
+test('models.generateCommitMessage：provider 一直不回时按 timeout 结束，不无限挂', async () => {
+  const { service } = fakeLlm({
+    stream: (options) => (async function* hang() {
+      await new Promise((resolve, reject) => {
+        if (options.signal !== undefined && options.signal.aborted === true) {
+          reject(new Error('aborted'))
+          return
+        }
+        options.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+      })
+    })()
+  })
+  await assert.rejects(
+    () => models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff', { timeoutMs: 30 }),
+    (error) => error.code === 'timeout' && /秒内没有返回/.test(error.message)
+  )
+})
+
+test('models.generateCommitMessage：provider 抛异常时把原因和模型都写进 message', async () => {
+  const { service } = fakeLlm({
+    stream: () => (async function* boom() {
+      throw new Error('connect ECONNREFUSED')
+    })()
+  })
+  await assert.rejects(
+    () => models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff'),
+    (error) => error.code === 'model-failed' && /ECONNREFUSED/.test(error.message) && /p1\/m1/.test(error.message)
   )
 })
 

@@ -50,5 +50,17 @@ export function SettingsView(props) {
         models.map((model) => h('option', { key: model.ref, value: model.ref },
           model.providerLabel + ' · ' + model.modelLabel))),
         h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint')),
-        saved ? h(InlineNote, { tone: 'info' }, translate('settings.saved')) : null))
+        saved ? h(InlineNote, { tone: 'info' }, translate('settings.saved')) : null),
+    h('div', { className: 'dgp-settings-field' },
+      h('label', { className: 'dgp-settings-label' }, translate('settings.viewLabel')),
+      h('select', {
+        className: 'dgp-select',
+        'data-dgp-settings': 'changes-view',
+        value: source.changesView === 'tree' ? 'tree' : 'list',
+        onChange: (event) => {
+          if (typeof source.onChangeChangesView === 'function') source.onChangeChangesView(event.target.value)
+        }
+      },
+      h('option', { value: 'list' }, translate('settings.viewList')),
+      h('option', { value: 'tree' }, translate('settings.viewTree')))))
 }

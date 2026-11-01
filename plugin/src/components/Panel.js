@@ -69,6 +69,7 @@ export function Panel(props) {
   const [leftWidth, setLeftWidth] = usePref('leftWidth')
   const [collapsedGroups, setCollapsedGroups] = usePref('collapsedGroups')
   const [repositoriesOpen, setRepositoriesOpen] = usePref('repositoriesOpen')
+  const [changesView, setChangesView] = usePref('changesView')
 
   /* ------------------------------- 根 ------------------------------- */
   const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -1023,6 +1024,7 @@ function buildUpdateNote(updateState, t) {
           status,
           loading: statusLoading && status === null,
           error: null,
+          view: changesView,
           selectedPath,
           onSelect: selectEntry,
           filter,
@@ -1177,6 +1179,15 @@ function buildUpdateNote(updateState, t) {
     onClick: () => setAutoRefresh(!autoRefresh)
   }),
   h(MenuItem, {
+    icon: changesView === 'tree' ? 'file' : 'folder',
+    label: changesView === 'tree' ? t('toolbar.viewAsList') : t('toolbar.viewAsTree'),
+    'data-action': 'toggle-changes-view',
+    onClick: () => {
+      setChangesView(changesView === 'tree' ? 'list' : 'tree')
+      setMoreOpen(false)
+    }
+  }),
+  h(MenuItem, {
     icon: 'minus',
     label: t('toolbar.collapseAll'),
     onClick: () => {
@@ -1255,6 +1266,8 @@ function buildUpdateNote(updateState, t) {
       error: settingsState.error,
       saved: settingsState.saved,
       onChangeModel: changeCommitModel,
+      changesView,
+      onChangeChangesView: setChangesView,
       onBack: () => setShowSettings(false),
       t
     })

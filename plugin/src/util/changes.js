@@ -169,6 +169,26 @@ export function buildGroupRows(entries, isExpanded) {
 }
 
 /**
+ * 把一个分组的条目压成**扁平行**（列表模式：不造目录行，一行一个文件）。
+ *
+ * 文件名是主体，父路径在行内弱化显示（VS Code 的 List 视图）。
+ * 排序按完整路径的自然序，同一目录的文件相邻。
+ *
+ * @param {object[]} entries
+ * @returns {Array<{kind:'file', path: string, depth: number, displayName: string}>}
+ */
+export function buildListRows(entries) {
+  const list = Array.isArray(entries) ? entries : []
+  const rows = []
+  for (const entry of list) {
+    if (entry === null || entry === undefined || typeof entry.path !== 'string' || entry.path === '') continue
+    rows.push(fileRow(entry, 0))
+  }
+  rows.sort((left, right) => naturalCompare(left.path, right.path))
+  return rows
+}
+
+/**
  * 选中文件所在分组里，需要展开的目录链（用于「自动展开到选中项」）。
  * 分组只有 1 个条目时没有目录行，返回空数组。
  *

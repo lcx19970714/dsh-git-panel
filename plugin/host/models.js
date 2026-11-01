@@ -38,23 +38,17 @@ function dshHome() {
 
 /* ------------------------------------------------------------- 模型目录 */
 
-/** provider 路由的 id：不同适配器给的字段名不一致，只按确定顺序取第一个存在的。 */
-function providerIdOf(route) {
-  for (const key of ['id', 'provider', 'name']) {
-    const value = route === null || route === undefined ? undefined : route[key]
-    if (typeof value === 'string' && value !== '') return value
-  }
-  return null
-}
-
-function displayOf(route, fallback) {
-  if (route !== null && route !== undefined && typeof route.displayName === 'string' && route.displayName !== '') {
-    return route.displayName
-  }
-  return fallback
-}
-
-/** 拉出完整模型目录：`ref` 是扁平标识，`provider`/`model` 是真正传给 llm 的两个参数。 */
+/**
+ * 拉出完整模型目录：`ref` 是扁平标识，`provider`/`model` 是真正传给 llm 的两个参数。
+ *
+ * 字段形状以 dsh-llm 的契约为准，不做「这个没有就试那个」：
+ *  - provider 路由由适配器的 `providerInfo()` 给出，固定是 `{ id, name }`；
+ *  - 模型记录由 `llm.listModels()` 校验并重建过，`provider`/`id`/`name` 都是非空字符串。
+ * 违反契约说明适配器或运行时有问题，直接报出来，不猜、不跳过。
+ *
+ * `failed` 只用于「某个 provider 自己读取失败」（例如它的凭据没配）——
+ * 那是运行时不变量允许的部分失败，必须显示出来而不是藏掉其它 provider。
+ */
 export async function listModels(llm) {
   if (llm === null || llm === undefined) {
     throw new GitError('no-llm', '当前 profile 没有挂载 LLM 服务，无法列出模型')
@@ -62,28 +56,23 @@ export async function listModels(llm) {
   const models = []
   const failed = []
   for (const route of llm.listProviders()) {
-    const provider = providerIdOf(route)
-    if (provider === null) {
-      failed.push({ provider: null, message: '有一个 provider 路由没有 id' })
-      continue
+    if (typeof route?.id !== 'string' || route.id === '' || typeof route.name !== 'string' || route.name === '') {
+      throw new GitError('bad-provider', 'llm 返回的 provider 路由缺少 id/name：' + JSON.stringify(route))
     }
     let listed
     try {
-      listed = await llm.listModels(provider)
+      listed = await llm.listModels(route.id)
     } catch (error) {
-      // 单个 provider 配置坏了不该藏起其它 provider，但必须把它报出来
-      failed.push({ provider, message: error instanceof Error ? error.message : String(error) })
+      failed.push({ provider: route.id, message: messageOf(error) })
       continue
     }
-    const providerLabel = displayOf(route, provider)
     for (const model of listed) {
-      if (typeof model?.id !== 'string' || model.id === '') continue
       models.push({
-        ref: provider + '/' + model.id,
-        provider,
+        ref: route.id + '/' + model.id,
+        provider: route.id,
         model: model.id,
-        providerLabel,
-        modelLabel: typeof model.name === 'string' && model.name !== '' ? model.name : model.id
+        providerLabel: route.name,
+        modelLabel: model.name
       })
     }
   }
@@ -220,11 +209,17 @@ export function settingsPath() {
   return path.join(dshHome(), 'dsh-git-panel', SETTINGS_FILE)
 }
 
-/** 读设置：文件不存在就是「还没选模型」；损坏直接报错，不静默重置。 */
+/**
+ * 读设置。
+ *
+ * 只有「文件不存在」等于「还没选模型」；文件在但解析失败、或字段形状不对，
+ * 都是坏配置，直接报错 —— 把坏数据悄悄当成「未设置」等于掩盖问题。
+ */
 export async function readSettings() {
+  const file = settingsPath()
   let text
   try {
-    text = await readFile(settingsPath(), 'utf8')
+    text = await readFile(file, 'utf8')
   } catch (error) {
     if (error !== null && error.code === 'ENOENT') return { commitModel: null }
     throw error
@@ -233,13 +228,20 @@ export async function readSettings() {
   try {
     parsed = JSON.parse(text)
   } catch {
-    throw new GitError('bad-config', '设置文件损坏：' + settingsPath())
+    throw new GitError('bad-config', '设置文件不是合法 JSON：' + file)
   }
-  const pair = parsed?.commitModel
-  const valid = pair !== null && typeof pair === 'object'
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new GitError('bad-config', '设置文件顶层必须是对象：' + file)
+  }
+  const pair = parsed.commitModel
+  if (pair === undefined || pair === null) return { commitModel: null }
+  const valid = typeof pair === 'object' && !Array.isArray(pair)
     && typeof pair.provider === 'string' && pair.provider !== ''
     && typeof pair.model === 'string' && pair.model !== ''
-  return { commitModel: valid ? { provider: pair.provider, model: pair.model } : null }
+  if (!valid) {
+    throw new GitError('bad-config', '设置里的 commitModel 必须是 {provider, model}：' + file)
+  }
+  return { commitModel: { provider: pair.provider, model: pair.model } }
 }
 
 /** 保存「生成提交说明用的模型」。传 null 表示清空。 */

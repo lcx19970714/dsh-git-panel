@@ -257,12 +257,17 @@ test('languageForPath 常见类型', async () => {
   assert.equal(languageForPath('中文/说明.md'), 'markdown')
 })
 
-test('git 不存在/非仓库时给出结构化错误', async () => {
+test('git 失败时抛 GitError，并把 git 的原话带上来', async () => {
   // 同上：临时目录保证不在任何仓库内部
   const outside = mkdtempSync(path.join(os.tmpdir(), 'dgp-notrepo-'))
   await assert.rejects(
     () => runGit(outside, ['status']),
-    (error) => error.code === 'not-a-repository'
+    (error) => {
+      // 错误码不在进程封装层分类（仓库语义由调用方判定），但原因必须原样透出
+      assert.equal(error.code, 'git-failed')
+      assert.match(error.message, /not a git repository/)
+      return true
+    }
   )
 })
 

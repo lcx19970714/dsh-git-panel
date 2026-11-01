@@ -44,7 +44,7 @@
 | `src/components/Panel.js` | `Panel` | 根布局：工具条 + 分栏 + 键盘 + 拖拽 |
 | `src/index.js` | `apply(ctx)`、`name`、`inject` | 注册入口 |
 
-## 2. 数据契约（Host RPC 返回的形状；见 `../../_recon/notes/architecture.md` §3）
+## 2. 数据契约（Host RPC 返回的形状；端点清单见 `docs/ARCHITECTURE.md` §3.2）
 
 ```ts
 type RpcResult<T> = { ok: true, value: T } | { ok: false, error: { code: string, message: string, details: object } }
@@ -169,7 +169,7 @@ InlineNote({ tone: 'info'|'warn'|'error', children })
 ## 4. 样式契约
 
 - 所有 class 以 `dgp-` 开头，禁止全局选择器、禁止 `!important`。
-- 颜色/圆角/字体/间距**只用** `styles.js` 里已定义的 `--dsw-*` / `--ds-*` 变量（token 见 `_recon/notes/ui-design.md` §2）。
+- 颜色/圆角/字体/间距**只用** `styles.js` 里已定义的 `--dsw-*` / `--ds-*` 变量（主题令牌清单见 `docs/ARCHITECTURE.md` §4.3）。
 - 0.5px 发丝线：`border-bottom: .5px solid var(--dsw-alias-border-l3)`。
 - 行数据要带稳定钩子：`data-dgp-entry` / `data-dgp-path` / `data-dgp-row`。
 

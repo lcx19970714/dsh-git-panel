@@ -26,7 +26,7 @@ import path from 'node:path'
 
 import { normalizeSlashes } from './git.js'
 
-export const CONFIG_VERSION = 1
+const CONFIG_VERSION = 1
 
 const IS_WINDOWS = process.platform === 'win32'
 const CONFIG_DIR_NAME = 'dsh-git-panel'
@@ -157,7 +157,7 @@ async function quarantine(file, options, cause) {
  * @param {{logger?: object}} [options]
  * @returns {Promise<{version: number, projects: Record<string, string[]>}>}
  */
-export async function readConfig(options = {}) {
+async function readConfig(options = {}) {
   const file = configPath()
 
   let text

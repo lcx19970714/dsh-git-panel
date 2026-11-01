@@ -1,7 +1,7 @@
 /**
  * src/styles.js —— 面板全部样式
  *
- * 规则（见 CONTRACT.md §4/§6）：
+ * 规则（见 docs/CONTRACT.md §4/§6）：
  *  · 颜色/圆角/字体/间距全部取自 DSH 主题令牌（--dsw-* / --dsh-*），**零字面量色值**；
  *  · 深浅色自动跟随（令牌定义在 body 上，暗色由 body[data-ds-dark-theme] 切换），
  *    因此这里不需要写暗色覆写；
@@ -29,7 +29,6 @@ export const CSS = `
   /* 不设背景：右侧栏 tab 宿主已经是页面地面色 */
 }
 .dgp-root *, .dgp-root *::before, .dgp-root *::after { box-sizing: border-box; }
-.dgp-mono { font-family: var(--ds-font-family-code); }
 .dgp-oneline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dgp-ico { display: block; flex: none; }
 
@@ -80,7 +79,7 @@ export const CSS = `
 }
 
 /* 工具按钮（28×28 / 图标 15×15） */
-.dgp-iconbtn, .dgp-tool {
+.dgp-iconbtn {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -95,19 +94,19 @@ export const CSS = `
   line-height: 1;
   cursor: pointer;
 }
-.dgp-iconbtn svg, .dgp-tool svg { width: 15px; height: 15px; }
-.dgp-iconbtn:hover:not(:disabled), .dgp-tool:hover:not(:disabled) {
+.dgp-iconbtn svg { width: 15px; height: 15px; }
+.dgp-iconbtn:hover:not(:disabled) {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
 .dgp-iconbtn[data-active="true"], .dgp-iconbtn[aria-pressed="true"],
-.dgp-tool[data-active="true"], .dgp-tool[aria-pressed="true"] {
+.dgp-iconbtn[data-active="true"], .dgp-iconbtn[aria-pressed="true"] {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
-.dgp-iconbtn:disabled, .dgp-tool:disabled { opacity: .4; cursor: default; }
+.dgp-iconbtn:disabled { opacity: .4; cursor: default; }
 .dgp-iconbtn[data-busy="true"] svg { animation: dgp-spin 1s linear infinite; }
-.dgp-iconbtn:focus-visible, .dgp-tool:focus-visible, .dgp-btn:focus-visible,
+.dgp-iconbtn:focus-visible, .dgp-btn:focus-visible,
 .dgp-seg-btn:focus-visible, .dgp-input:focus-visible,
 .dgp-row:focus-visible, .dgp-group-head:focus-visible {
   outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
@@ -180,7 +179,6 @@ export const CSS = `
 }
 .dgp-search-clear:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
 .dgp-hint { padding: 4px 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
-.dgp-num { font-family: var(--ds-font-family-code); font-size: 12px; }
 
 /* ===================== 3. 主区：左列 + 分裂条 + 右栏 ===================== */
 .dgp-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
@@ -247,7 +245,7 @@ export const CSS = `
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
-.dgp-divider, .dgp-splitter {
+.dgp-divider {
   position: relative;
   z-index: 1;
   flex: none;
@@ -255,14 +253,14 @@ export const CSS = `
   cursor: col-resize;
   touch-action: none;
 }
-.dgp-divider::before, .dgp-splitter::before {
+.dgp-divider::before {
   content: "";
   position: absolute;
   top: 0; bottom: 0; left: -.25px;
   width: .5px;
   background: var(--dsw-alias-border-l4);
 }
-.dgp-divider::after, .dgp-splitter::after {
+.dgp-divider::after {
   content: "";
   position: absolute;
   inset: 0 -4px;
@@ -271,7 +269,6 @@ export const CSS = `
   transition: opacity .12s ease-out;
 }
 .dgp-divider:hover::after, .dgp-divider[data-dragging="true"]::after,
-.dgp-splitter:hover::after, .dgp-splitter:active::after, .dgp-splitter:focus-visible::after { opacity: 1; }
 .dgp-divider:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -2px; }
 
 /* ===================== 4. 左列：分组与行 ===================== */
@@ -542,7 +539,6 @@ export const CSS = `
 
 .dgp-note { margin: 0; padding: 4px 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 .dgp-note[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
-.dgp-empty { padding: 6px 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 
 /* ===================== 5. 右栏查看器 ===================== */
 .dgp-viewer { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
@@ -624,7 +620,6 @@ export const CSS = `
   line-height: 22px;
   white-space: pre;
 }
-.dgp-diff-gutter { display: contents; }
 .dgp-ln {
   padding: 0 6px 0 0;
   color: var(--dsw-alias-label-tertiary);
@@ -663,7 +658,6 @@ export const CSS = `
 .dgp-diff-col[data-side="old"] .dgp-diff-mark {
   background: var(--dsw-alias-code-diff-deleted, color-mix(in srgb, var(--dsw-alias-state-error-primary) 28%, transparent));
 }
-.dgp-diff-note { margin: 0; padding: 4px 16px 8px; color: var(--dsw-alias-label-tertiary); font-family: var(--dsw-font-family); font-size: 12px; }
 .dgp-diff-truncated {
   display: flex;
   align-items: center;
@@ -823,7 +817,7 @@ export const CSS = `
 }
 @media (pointer: coarse) {
   .dgp-row, .dgp-group-head { min-height: 40px; }
-  .dgp-iconbtn, .dgp-tool { width: 32px; height: 32px; }
+  .dgp-iconbtn { width: 32px; height: 32px; }
   .dgp-divider::after { inset: 0 -10px; }
   /* 触屏没有悬停，行尾与分组头的按钮必须一直在 */
   .dgp-row-action, .dgp-group-action { opacity: 1; }

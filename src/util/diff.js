@@ -15,7 +15,7 @@
 export const MAX_DIFF_ROWS = 5000
 
 /** 词级高亮的单行字符上限；超过则整行标记为 changed（不做逐字比对，保证 O(n)）。 */
-export const MAX_WORD_DIFF_CHARS = 2000
+const MAX_WORD_DIFF_CHARS = 2000
 
 // ---------------------------------------------------------------------------
 // 内部小工具

@@ -14,14 +14,21 @@ import { basename, buildTree, flattenTree, matchesFilter, naturalCompare, parent
 /** 分组固定顺序：冲突 → 已暂存 → 未暂存 → 未跟踪（与 i18n 的 group.* 键一一对应）。 */
 export const GROUP_ORDER = ['conflicted', 'staged', 'unstaged', 'untracked']
 
+/**
+ * 未跟踪文件的呈现方式：
+ *   merge    —— 并进「未暂存」（VS Code 的默认行为，「Changes」里同时有改动和新文件）
+ *   separate —— 单列「未跟踪」组
+ */
+export const UNTRACKED_MODES = ['merge', 'separate']
+
 /** 单个文件归属的分组；冲突文件只进「冲突」组（与 VSCode 的 Merge Changes 一致）。 */
-export function groupsOfFile(file) {
+export function groupsOfFile(file, untrackedMode = 'merge') {
   if (file === null || file === undefined || typeof file !== 'object') return []
   if (file.conflicted === true) return ['conflicted']
   const out = []
   if (file.staged === true) out.push('staged')
   if (file.unstaged === true) out.push('unstaged')
-  if (file.untracked === true) out.push('untracked')
+  if (file.untracked === true) out.push(untrackedMode === 'merge' ? 'unstaged' : 'untracked')
   return out
 }
 
@@ -32,14 +39,16 @@ export function groupsOfFile(file) {
  * 因为右侧 diff 要看哪一侧取决于用户点的是哪一组的行。
  *
  * @param {Array<{path: string, staged?: boolean, unstaged?: boolean, untracked?: boolean, conflicted?: boolean}>} files
+ * @param {{untrackedMode?: 'merge'|'separate'}} [options] 未跟踪文件是并进未暂存还是单列一组
  * @returns {Array<{key: 'conflicted'|'staged'|'unstaged'|'untracked', entries: object[]}>}
  */
-export function groupChanges(files) {
+export function groupChanges(files, options = {}) {
+  const untrackedMode = options.untrackedMode === 'separate' ? 'separate' : 'merge'
   const list = Array.isArray(files) ? files : []
   const buckets = new Map()
   for (const key of GROUP_ORDER) buckets.set(key, [])
   for (const file of list) {
-    for (const key of groupsOfFile(file)) {
+    for (const key of groupsOfFile(file, untrackedMode)) {
       const bucket = buckets.get(key)
       if (bucket !== undefined) bucket.push(file)
     }
@@ -68,15 +77,17 @@ export function rowActionOf(groupKey) {
 }
 
 /**
- * 分组头右侧的批量操作。与行尾按钮同一套规则，作用范围是整组：
+ * 分组头右侧的批量操作。与行尾按钮同一套规则，作用范围是**整组**，
+ * 所以必须跟着分组内容走：
  *   staged    → unstage（取消暂存全部已暂存）
- *   unstaged  → stage-unstaged（暂存全部已跟踪的未暂存改动）
- *   untracked → stage-untracked（暂存全部未跟踪文件）
+ *   unstaged  → 合并模式：组里还有未跟踪文件 → stage-all（全部加进来）
+ *               分开模式：组里只有已跟踪改动 → stage-unstaged（git add -u）
+ *   untracked → stage-untracked（只暂存未跟踪文件）
  *   conflicted → null
  */
-export function groupActionOf(groupKey) {
+export function groupActionOf(groupKey, untrackedMode = 'merge') {
   if (groupKey === 'staged') return 'unstage'
-  if (groupKey === 'unstaged') return 'stage-unstaged'
+  if (groupKey === 'unstaged') return untrackedMode === 'merge' ? 'stage-all' : 'stage-unstaged'
   if (groupKey === 'untracked') return 'stage-untracked'
   return null
 }

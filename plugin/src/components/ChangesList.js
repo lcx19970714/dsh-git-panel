@@ -56,6 +56,8 @@ export function ChangesList(props) {
     : null
   /** 显示方式：list = 一行一个文件（文件名 + 弱化路径）；tree = 按文件夹展开。 */
   const view = source.view === 'tree' ? 'tree' : 'list'
+  /** 未跟踪文件：merge = 并进「未暂存」，separate = 单列一组。 */
+  const untrackedMode = source.untrackedMode === 'separate' ? 'separate' : 'merge'
   const translate = source.t
   // 注意：`onFilterChange` 归 Panel 管（它渲染筛选输入框），这里只消费 `filter`。
 
@@ -70,7 +72,7 @@ export function ChangesList(props) {
   /* ------------------------------ 派生数据 ------------------------------ */
 
   const filteredFiles = useMemo(() => filterEntries(files, filter), [files, filter])
-  const groups = useMemo(() => groupChanges(filteredFiles), [filteredFiles])
+  const groups = useMemo(() => groupChanges(filteredFiles, { untrackedMode }), [filteredFiles, untrackedMode])
 
   /** 分组可见性 + 每组要渲染的行（含固定顺序的扁平序号基数）。 */
   const layout = useMemo(() => {
@@ -360,7 +362,7 @@ export function ChangesList(props) {
   }
 
   const renderGroup = (group) => {
-    const action = groupActionOf(group.key)
+    const action = groupActionOf(group.key, untrackedMode)
     const busy = pendingGroup !== null && pendingGroup === action
     const actionButton = action === null || onStageGroup === null
       ? null

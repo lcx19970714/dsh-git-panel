@@ -25,8 +25,13 @@ const DEFAULTS = {
   /** 「储存库」区域的展开状态（只在有多个仓库时出现）。 */
   repositoriesOpen: true,
   /** 变更列表显示方式：list = 一行一个文件（文件名 + 弱化路径），tree = 按文件夹展开。 */
-  changesView: 'list'
+  changesView: 'list',
+  /** 未跟踪文件：merge = 并进「未暂存」（VS Code 行为），separate = 单列「未跟踪」组。 */
+  untrackedMode: 'merge'
 }
+
+/** 未跟踪文件的两种呈现方式（设置页与分组逻辑共用）。 */
+export const UNTRACKED_MODES = ['merge', 'separate']
 
 /** 变更列表的两种显示方式（设置页与 ⋯ 菜单共用）。 */
 export const CHANGES_VIEWS = ['list', 'tree']
@@ -49,6 +54,7 @@ function sanitize(input) {
   }
   if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
   if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
+  if (UNTRACKED_MODES.includes(input.untrackedMode)) out.untrackedMode = input.untrackedMode
   if (input.collapsedGroups && typeof input.collapsedGroups === 'object') {
     const groups = {}
     for (const key of GROUPS) if (input.collapsedGroups[key] === true) groups[key] = true

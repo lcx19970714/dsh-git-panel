@@ -1308,6 +1308,9 @@ window.__ModuleLoader__.load({
         'settings.title': '设置',
         'settings.back': '返回',
         'settings.open': '设置',
+        'settings.untrackedLabel': '未跟踪文件的分组',
+        'settings.untrackedMerge': '并进「未暂存」（与 VS Code 一致）',
+        'settings.untrackedSeparate': '单列「未跟踪」组',
         'settings.viewLabel': '变更文件的显示方式',
         'settings.viewList': '列表：一行一个文件，文件名在前、路径在后',
         'settings.viewTree': '树形：按文件夹展开/折叠',
@@ -1463,6 +1466,9 @@ window.__ModuleLoader__.load({
         'settings.title': 'Settings',
         'settings.back': 'Back',
         'settings.open': 'Settings',
+        'settings.untrackedLabel': 'Untracked files',
+        'settings.untrackedMerge': 'Inside Changes (like VS Code)',
+        'settings.untrackedSeparate': 'As their own group',
         'settings.viewLabel': 'Changes list layout',
         'settings.viewList': 'List: one file per row, name first then its folder',
         'settings.viewTree': 'Tree: files grouped by folder',
@@ -1615,6 +1621,7 @@ window.__ModuleLoader__.load({
         const [collapsedGroups, setCollapsedGroups] = usePref('collapsedGroups')
         const [repositoriesOpen, setRepositoriesOpen] = usePref('repositoriesOpen')
         const [changesView, setChangesView] = usePref('changesView')
+        const [untrackedMode, setUntrackedMode] = usePref('untrackedMode')
 
         /* ------------------------------- 根 ------------------------------- */
         const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -2120,7 +2127,7 @@ window.__ModuleLoader__.load({
         /** 分组头的批量按钮：一次暂存或取消暂存整组。 */
         const stageGroup = useCallback(async (scope) => {
           if (activeRoot === null || activeRoot.isGit === false) return
-          if (scope !== 'stage-unstaged' && scope !== 'stage-untracked' && scope !== 'unstage') return
+          if (scope !== 'stage-unstaged' && scope !== 'stage-untracked' && scope !== 'stage-all' && scope !== 'unstage') return
           if (stagePendingRef.current !== null) return
           stagePendingRef.current = scope
           setStagePending(scope)
@@ -2570,6 +2577,7 @@ window.__ModuleLoader__.load({
                 loading: statusLoading && status === null,
                 error: null,
                 view: changesView,
+                untrackedMode,
                 selectedPath,
                 onSelect: selectEntry,
                 filter,
@@ -2813,6 +2821,8 @@ window.__ModuleLoader__.load({
             onChangeModel: changeCommitModel,
             changesView,
             onChangeChangesView: setChangesView,
+            untrackedMode,
+            onChangeUntrackedMode: setUntrackedMode,
             onBack: () => setShowSettings(false),
             t
           })
@@ -3474,6 +3484,8 @@ window.__ModuleLoader__.load({
           : null
         /** 显示方式：list = 一行一个文件（文件名 + 弱化路径）；tree = 按文件夹展开。 */
         const view = source.view === 'tree' ? 'tree' : 'list'
+        /** 未跟踪文件：merge = 并进「未暂存」，separate = 单列一组。 */
+        const untrackedMode = source.untrackedMode === 'separate' ? 'separate' : 'merge'
         const translate = source.t
         // 注意：`onFilterChange` 归 Panel 管（它渲染筛选输入框），这里只消费 `filter`。
 
@@ -3488,7 +3500,7 @@ window.__ModuleLoader__.load({
         /* ------------------------------ 派生数据 ------------------------------ */
 
         const filteredFiles = useMemo(() => filterEntries(files, filter), [files, filter])
-        const groups = useMemo(() => groupChanges(filteredFiles), [filteredFiles])
+        const groups = useMemo(() => groupChanges(filteredFiles, { untrackedMode }), [filteredFiles, untrackedMode])
 
         /** 分组可见性 + 每组要渲染的行（含固定顺序的扁平序号基数）。 */
         const layout = useMemo(() => {
@@ -3778,7 +3790,7 @@ window.__ModuleLoader__.load({
         }
 
         const renderGroup = (group) => {
-          const action = groupActionOf(group.key)
+          const action = groupActionOf(group.key, untrackedMode)
           const busy = pendingGroup !== null && pendingGroup === action
           const actionButton = action === null || onStageGroup === null
             ? null
@@ -4058,14 +4070,21 @@ window.__ModuleLoader__.load({
       /** 分组固定顺序：冲突 → 已暂存 → 未暂存 → 未跟踪（与 i18n 的 group.* 键一一对应）。 */
       const GROUP_ORDER = ['conflicted', 'staged', 'unstaged', 'untracked']
 
+      /**
+       * 未跟踪文件的呈现方式：
+       *   merge    —— 并进「未暂存」（VS Code 的默认行为，「Changes」里同时有改动和新文件）
+       *   separate —— 单列「未跟踪」组
+       */
+      const UNTRACKED_MODES = ['merge', 'separate']
+
       /** 单个文件归属的分组；冲突文件只进「冲突」组（与 VSCode 的 Merge Changes 一致）。 */
-      function groupsOfFile(file) {
+      function groupsOfFile(file, untrackedMode = 'merge') {
         if (file === null || file === undefined || typeof file !== 'object') return []
         if (file.conflicted === true) return ['conflicted']
         const out = []
         if (file.staged === true) out.push('staged')
         if (file.unstaged === true) out.push('unstaged')
-        if (file.untracked === true) out.push('untracked')
+        if (file.untracked === true) out.push(untrackedMode === 'merge' ? 'unstaged' : 'untracked')
         return out
       }
 
@@ -4076,14 +4095,16 @@ window.__ModuleLoader__.load({
        * 因为右侧 diff 要看哪一侧取决于用户点的是哪一组的行。
        *
        * @param {Array<{path: string, staged?: boolean, unstaged?: boolean, untracked?: boolean, conflicted?: boolean}>} files
+       * @param {{untrackedMode?: 'merge'|'separate'}} [options] 未跟踪文件是并进未暂存还是单列一组
        * @returns {Array<{key: 'conflicted'|'staged'|'unstaged'|'untracked', entries: object[]}>}
        */
-      function groupChanges(files) {
+      function groupChanges(files, options = {}) {
+        const untrackedMode = options.untrackedMode === 'separate' ? 'separate' : 'merge'
         const list = Array.isArray(files) ? files : []
         const buckets = new Map()
         for (const key of GROUP_ORDER) buckets.set(key, [])
         for (const file of list) {
-          for (const key of groupsOfFile(file)) {
+          for (const key of groupsOfFile(file, untrackedMode)) {
             const bucket = buckets.get(key)
             if (bucket !== undefined) bucket.push(file)
           }
@@ -4112,15 +4133,17 @@ window.__ModuleLoader__.load({
       }
 
       /**
-       * 分组头右侧的批量操作。与行尾按钮同一套规则，作用范围是整组：
+       * 分组头右侧的批量操作。与行尾按钮同一套规则，作用范围是**整组**，
+       * 所以必须跟着分组内容走：
        *   staged    → unstage（取消暂存全部已暂存）
-       *   unstaged  → stage-unstaged（暂存全部已跟踪的未暂存改动）
-       *   untracked → stage-untracked（暂存全部未跟踪文件）
+       *   unstaged  → 合并模式：组里还有未跟踪文件 → stage-all（全部加进来）
+       *               分开模式：组里只有已跟踪改动 → stage-unstaged（git add -u）
+       *   untracked → stage-untracked（只暂存未跟踪文件）
        *   conflicted → null
        */
-      function groupActionOf(groupKey) {
+      function groupActionOf(groupKey, untrackedMode = 'merge') {
         if (groupKey === 'staged') return 'unstage'
-        if (groupKey === 'unstaged') return 'stage-unstaged'
+        if (groupKey === 'unstaged') return untrackedMode === 'merge' ? 'stage-all' : 'stage-unstaged'
         if (groupKey === 'untracked') return 'stage-untracked'
         return null
       }
@@ -4304,7 +4327,7 @@ window.__ModuleLoader__.load({
         if (entry === undefined) return null
         return { path: entry.path, entry, side: selection.side }
       }
-      Object.assign(exports, { GROUP_ORDER, groupsOfFile, groupChanges, rowActionOf, groupActionOf, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, buildListRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection });
+      Object.assign(exports, { GROUP_ORDER, UNTRACKED_MODES, groupsOfFile, groupChanges, rowActionOf, groupActionOf, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, buildListRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection });
 
     });
     __define("./components/States.js", (exports, module) => {
@@ -6411,7 +6434,19 @@ window.__ModuleLoader__.load({
               }
             },
             h('option', { value: 'list' }, translate('settings.viewList')),
-            h('option', { value: 'tree' }, translate('settings.viewTree')))))
+            h('option', { value: 'tree' }, translate('settings.viewTree')))),
+          h('div', { className: 'dgp-settings-field' },
+            h('label', { className: 'dgp-settings-label' }, translate('settings.untrackedLabel')),
+            h('select', {
+              className: 'dgp-select',
+              'data-dgp-settings': 'untracked-mode',
+              value: source.untrackedMode === 'separate' ? 'separate' : 'merge',
+              onChange: (event) => {
+                if (typeof source.onChangeUntrackedMode === 'function') source.onChangeUntrackedMode(event.target.value)
+              }
+            },
+            h('option', { value: 'merge' }, translate('settings.untrackedMerge')),
+            h('option', { value: 'separate' }, translate('settings.untrackedSeparate')))))
       }
 
       Object.assign(exports, { SettingsView });
@@ -6445,8 +6480,13 @@ window.__ModuleLoader__.load({
         /** 「储存库」区域的展开状态（只在有多个仓库时出现）。 */
         repositoriesOpen: true,
         /** 变更列表显示方式：list = 一行一个文件（文件名 + 弱化路径），tree = 按文件夹展开。 */
-        changesView: 'list'
+        changesView: 'list',
+        /** 未跟踪文件：merge = 并进「未暂存」（VS Code 行为），separate = 单列「未跟踪」组。 */
+        untrackedMode: 'merge'
       }
+
+      /** 未跟踪文件的两种呈现方式（设置页与分组逻辑共用）。 */
+      const UNTRACKED_MODES = ['merge', 'separate']
 
       /** 变更列表的两种显示方式（设置页与 ⋯ 菜单共用）。 */
       const CHANGES_VIEWS = ['list', 'tree']
@@ -6469,6 +6509,7 @@ window.__ModuleLoader__.load({
         }
         if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
         if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
+        if (UNTRACKED_MODES.includes(input.untrackedMode)) out.untrackedMode = input.untrackedMode
         if (input.collapsedGroups && typeof input.collapsedGroups === 'object') {
           const groups = {}
           for (const key of GROUPS) if (input.collapsedGroups[key] === true) groups[key] = true
@@ -6534,7 +6575,7 @@ window.__ModuleLoader__.load({
         return useMemo(() => ({ begin, isLatest }), [begin, isLatest])
       }
 
-      Object.assign(exports, { MODE, CHANGES_VIEWS, usePref, useLatestGuard });
+      Object.assign(exports, { MODE, UNTRACKED_MODES, CHANGES_VIEWS, usePref, useLatestGuard });
 
     });
     __define("./util/remote.js", (exports, module) => {

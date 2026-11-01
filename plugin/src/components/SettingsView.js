@@ -62,5 +62,17 @@ export function SettingsView(props) {
         }
       },
       h('option', { value: 'list' }, translate('settings.viewList')),
-      h('option', { value: 'tree' }, translate('settings.viewTree')))))
+      h('option', { value: 'tree' }, translate('settings.viewTree')))),
+    h('div', { className: 'dgp-settings-field' },
+      h('label', { className: 'dgp-settings-label' }, translate('settings.untrackedLabel')),
+      h('select', {
+        className: 'dgp-select',
+        'data-dgp-settings': 'untracked-mode',
+        value: source.untrackedMode === 'separate' ? 'separate' : 'merge',
+        onChange: (event) => {
+          if (typeof source.onChangeUntrackedMode === 'function') source.onChangeUntrackedMode(event.target.value)
+        }
+      },
+      h('option', { value: 'merge' }, translate('settings.untrackedMerge')),
+      h('option', { value: 'separate' }, translate('settings.untrackedSeparate')))))
 }

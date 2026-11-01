@@ -322,14 +322,20 @@ test('FileEditor：wrap 开启时不画行号（避免与折行错位）', () =>
   const plain = renderComponent(FileEditor, { ...props, wrap: false })
   eq(collect(plain, (node) => classOf(node).split(' ').includes('dgp-editor-ln')).length, 3, '不 wrap 时应有三行行号')
 })
-test('ChangesList：四组齐全 + 数据钩子', () => {
+test('ChangesList：默认合并未跟踪，分开模式四组齐全 + 数据钩子', () => {
   const { ChangesList } = loadModule('./components/ChangesList.js')
-  const tree = renderComponent(ChangesList, {
+  const base = {
     status: statusFixture, loading: false, error: null, selectedPath: 'README.md',
     onSelect: () => {}, filter: '', onFilterChange: () => {}, collapsedGroups: {}, onToggleGroup: () => {}, t: tKey
-  })
+  }
+  const tree = renderComponent(ChangesList, base)
   const keys = collect(tree, (node) => node.$$host === true && node.props['data-dgp-group'] !== undefined).map((node) => node.props['data-dgp-group'])
-  for (const group of ['staged', 'unstaged', 'untracked']) assert(keys.includes(group), '缺少分组 ' + group)
+  for (const group of ['staged', 'unstaged']) assert(keys.includes(group), '缺少分组 ' + group)
+  assert(!keys.includes('untracked'), '默认（合并）不应出现「未跟踪」组')
+
+  const separate = renderComponent(ChangesList, { ...base, untrackedMode: 'separate' })
+  const separateKeys = collect(separate, (node) => node.$$host === true && node.props['data-dgp-group'] !== undefined).map((node) => node.props['data-dgp-group'])
+  for (const group of ['staged', 'unstaged', 'untracked']) assert(separateKeys.includes(group), '分开模式缺少分组 ' + group)
   const paths = collect(tree, (node) => node.$$host === true && typeof node.props['data-dgp-path'] === 'string').map((node) => node.props['data-dgp-path'])
   assert(paths.length > 0, '没有 data-dgp-path 钩子')
   assert(collect(tree, (node) => node.$$host === true && node.props['data-active'] === 'true').length >= 1, '缺少选中态')
@@ -359,6 +365,8 @@ test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行
   }
   const tree = renderComponent(ChangesList, {
     status: flat, loading: false, error: null, selectedPath: null,
+    // 这个用例要看三个可操作分组各自的按钮，用分开模式
+    untrackedMode: 'separate',
     onSelect: () => {}, filter: '', onFilterChange: () => {}, collapsedGroups: {}, onToggleGroup: () => {},
     pendingPath: 'work.js',
     onStage: (path, action) => staged.push({ path, action }),

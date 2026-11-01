@@ -702,7 +702,9 @@ window.__ModuleLoader__.load({
         font: inherit;
         font-size: 12px;
         line-height: 1.5;
-        resize: vertical;
+        /* 高度由内容决定（CommitBox 里按 scrollHeight 算，两行起步、到上限改滚动） */
+        resize: none;
+        overflow-y: auto;
       }
       .dgp-commit-input:focus { outline: none; background: var(--dsw-alias-bg-layer-3); }
       .dgp-commit-generate {
@@ -6407,11 +6409,26 @@ window.__ModuleLoader__.load({
        * 设计要点：
        *  - **状态只有一行**，按「结果 > 生成中 > 提交中 > 无法提交的原因」取一个显示，
        *    所以成功/失败/进度都不会把下面的变更列表顶下去，也不会并排堆三条提示。
-       *  - 提交按钮不可用时，状态行会说清**为什么**（没暂存 / 没写说明），不做无声禁用。
+       *  - 提交按钮不可用时，状态行会说清**为什么**（没改动 / 没写说明），不做无声禁用。
        *  - 生成期间输入框禁用：模型结果会直接写进输入框，边等边打字再被覆盖是最糟的体验。
+       *  - 输入框随内容长高：生成的说明常常有好几行，固定两行会让用户只能看到尾巴；
+       *    长到上限就停止长高、改为滚动，不会把下面的列表挤没。
        */
-      const { h } = __m("./platform.js");
+      const { h, useEffect, useRef } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
+
+      /** 输入框的最小高度（两行）与最大高度（约七行）：到上限就不再长高，改成内部滚动。 */
+      const COMMIT_INPUT_MIN_HEIGHT = 52
+      const COMMIT_INPUT_MAX_HEIGHT = 160
+
+      /**
+       * 由内容的实际高度（`scrollHeight`）算出输入框该有多高：
+       * 不低于两行、不高于上限。拿不到有效数字时按最小高度处理。
+       */
+      function commitInputHeight(scrollHeight) {
+        const measured = typeof scrollHeight === 'number' && Number.isFinite(scrollHeight) ? scrollHeight : 0
+        return Math.min(COMMIT_INPUT_MAX_HEIGHT, Math.max(COMMIT_INPUT_MIN_HEIGHT, Math.ceil(measured)))
+      }
 
       function CommitBox(props) {
         const source = props === null || props === undefined ? {} : props
@@ -6423,6 +6440,15 @@ window.__ModuleLoader__.load({
         const generating = source.generating === true
         const elapsedMs = typeof source.elapsedMs === 'number' && source.elapsedMs > 0 ? source.elapsedMs : 0
         const note = source.note === null || source.note === undefined ? null : source.note
+
+        // 内容变了就重新量一次高度（生成填充、手动输入、清空都走这里）
+        const inputRef = useRef(null)
+        useEffect(() => {
+          const element = inputRef.current
+          if (element === null || element === undefined) return
+          element.style.height = 'auto'
+          element.style.height = commitInputHeight(element.scrollHeight) + 'px'
+        }, [message])
 
         const hasMessage = message.trim() !== ''
         const hasChanges = changeCount > 0
@@ -6455,6 +6481,7 @@ window.__ModuleLoader__.load({
         return h('div', { className: 'dgp-commit' },
           h('div', { className: 'dgp-commit-input-wrap' },
             h('textarea', {
+              ref: inputRef,
               className: 'dgp-commit-input',
               'data-dgp-commit': 'input',
               rows: 2,
@@ -6512,7 +6539,7 @@ window.__ModuleLoader__.load({
             }, translate(busy ? 'commit.submitting' : 'commit.submit'))))
       }
 
-      Object.assign(exports, { CommitBox });
+      Object.assign(exports, { COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT, commitInputHeight, CommitBox });
 
     });
     __define("./components/SettingsView.js", (exports, module) => {

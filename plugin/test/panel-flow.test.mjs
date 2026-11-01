@@ -1480,6 +1480,67 @@ test('用例 1v：多仓库时储存库列表列出全部，点另一个仓库�
   })
 })
 
+test('用例 1w：变更列表的列表 / 树形两种显示方式，设置页与 ⋯ 菜单共用同一个偏好', async () => {
+  const nested = {
+    repoRoot: PROJECT,
+    branch: 'main',
+    head: 'abc1234',
+    detached: false,
+    upstream: 'origin/main',
+    ahead: 0,
+    behind: 0,
+    files: [
+      file({ path: 'src/app.js', status: 'M', unstaged: true, adds: 1, dels: 0 }),
+      file({ path: 'src/util.ts', status: 'M', unstaged: true, adds: 1, dels: 0 })
+    ],
+    counts: { total: 2, staged: 0, unstaged: 2, untracked: 0, conflicted: 0 },
+    truncated: false
+  }
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(nested),
+      'models/list': () => sayOk({ models: [], failed: [] }),
+      'settings/get': () => sayOk({ commitModel: null })
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    // 默认列表模式：两个文件各自一行（没有目录行）
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-row') === 'file').length, 2, '列表模式两个文件行')
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-row') === 'dir').length, 0, '列表模式没有目录行')
+    const row = panel.fileRow('src/app.js')
+    assert(row !== null, '列表模式要能按路径找到行')
+    assert(textOf(row).includes('app.js'), '文件名是主体：' + textOf(row))
+    assert(textOf(row).includes('src'), '路径在行内弱化显示：' + textOf(row))
+
+    // 设置页切成树形
+    click(panel.one((node) => isHost(node) && attr(node, 'data-action') === 'open-settings'))
+    await panel.flush()
+    const select = panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'changes-view')
+    assert(select !== null, '设置页应有显示方式选项')
+    eq(attr(select, 'value'), 'list', '默认是列表')
+    select.props.onChange({ target: { value: 'tree' } })
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'back'))
+    await panel.flush()
+
+    // 树形：出现目录行，文件行收在折叠的目录里
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-row') === 'dir').length, 1, '树形模式应有 src 目录行')
+    eq(panel.fileRow('src/app.js'), null, '目录折叠时看不到文件行')
+
+    // ⋯ 菜单切回列表（同一个偏好）
+    const more = panel.one((node) => isHost(node) && node.type === 'button' && attr(node, 'title') === panel.t('toolbar.more'))
+    click(more)
+    await panel.flush()
+    const toggle = panel.one((node) => isHost(node) && node.type === 'button' && textOf(node).includes('以列表显示'))
+    assert(toggle !== null, '树形模式下菜单项应提示「以列表显示」')
+    click(toggle)
+    await panel.flush()
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-row') === 'file').length, 2, '切回列表后又是两个文件行')
+  })
+})
+
 test('用例 2a：点未暂存文件 → diff 载荷', async () => {
   const status = statusWithBoth()
   await withPanel({

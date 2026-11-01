@@ -368,6 +368,8 @@ export const CSS = `
   color: var(--dsw-alias-label-primary);
 }
 .dgp-name-dir { color: var(--dsw-alias-label-secondary); }
+/* 列表模式：文件名优先，父路径吃掉剩余宽度并截断（树形里路径只是补充说明） */
+.dgp-list[data-view="list"] .dgp-sub { flex: 1 1 auto; }
 .dgp-sub {
   flex: 0 1 auto;
   min-width: 0;

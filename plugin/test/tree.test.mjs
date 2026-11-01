@@ -15,6 +15,7 @@ import {
   GROUP_ORDER,
   ancestorsFor,
   buildGroupRows,
+  buildListRows,
   childPath,
   countFilesUnder,
   filterEntries,
@@ -339,6 +340,26 @@ test('rowActionOf：行尾按钮只由所在分组决定', () => {
   assert.equal(rowActionOf('conflicted'), null, '冲突行不给一键操作')
   assert.equal(rowActionOf('whatever'), null, '未知分组不渲染按钮')
   assert.equal(rowActionOf(undefined), null)
+})
+
+test('buildListRows：一行一个文件、没有目录行，按完整路径自然序', () => {
+  const entries = [
+    { path: 'src/b.js' },
+    { path: 'README.md' },
+    { path: 'src/app.js' },
+    { path: 'src/a/b.js' }
+  ]
+  const rows = buildListRows(entries)
+  assert.equal(rows.length, 4, '每个文件一行')
+  assert.equal(rows.every((row) => row.kind === 'file'), true, '不造目录行')
+  assert.equal(rows.every((row) => row.depth === 0), true, '深度一律 0')
+  assert.deepEqual(rows.map((row) => row.path), ['README.md', 'src/a/b.js', 'src/app.js', 'src/b.js'], '按完整路径排序')
+  assert.equal(rows[0].displayName, 'README.md', 'displayName 是文件名')
+  assert.equal(rows[1].displayName, 'b.js', '深层文件也只显示文件名，路径由行内弱化显示')
+
+  // 防御空入参
+  assert.deepEqual(buildListRows(null), [])
+  assert.deepEqual(buildListRows([null, { path: '' }]), [])
 })
 
 test('groupActionOf：分组头的批量按钮只由分组决定', () => {

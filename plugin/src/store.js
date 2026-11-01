@@ -23,8 +23,13 @@ const DEFAULTS = {
   leftWidth: 264,
   collapsedGroups: {},
   /** 「储存库」区域的展开状态（只在有多个仓库时出现）。 */
-  repositoriesOpen: true
+  repositoriesOpen: true,
+  /** 变更列表显示方式：list = 一行一个文件（文件名 + 弱化路径），tree = 按文件夹展开。 */
+  changesView: 'list'
 }
+
+/** 变更列表的两种显示方式（设置页与 ⋯ 菜单共用）。 */
+export const CHANGES_VIEWS = ['list', 'tree']
 
 const GROUPS = ['conflicted', 'staged', 'unstaged', 'untracked']
 
@@ -43,6 +48,7 @@ function sanitize(input) {
     out.leftWidth = Math.min(720, Math.max(180, Math.round(input.leftWidth)))
   }
   if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
+  if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
   if (input.collapsedGroups && typeof input.collapsedGroups === 'object') {
     const groups = {}
     for (const key of GROUPS) if (input.collapsedGroups[key] === true) groups[key] = true

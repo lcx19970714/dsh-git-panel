@@ -550,6 +550,8 @@ window.__ModuleLoader__.load({
         color: var(--dsw-alias-label-primary);
       }
       .dgp-name-dir { color: var(--dsw-alias-label-secondary); }
+      /* 列表模式：文件名优先，父路径吃掉剩余宽度并截断（树形里路径只是补充说明） */
+      .dgp-list[data-view="list"] .dgp-sub { flex: 1 1 auto; }
       .dgp-sub {
         flex: 0 1 auto;
         min-width: 0;
@@ -1243,6 +1245,8 @@ window.__ModuleLoader__.load({
         'toolbar.autorefresh': '自动刷新',
         'toolbar.autoRefreshOn': '自动刷新：开',
         'toolbar.autoRefreshOff': '自动刷新：关',
+        'toolbar.viewAsList': '以列表显示',
+        'toolbar.viewAsTree': '以树形显示',
         'toolbar.wrap': '自动换行',
         'toolbar.unified': '统一视图',
         'toolbar.wrapUnavailable': '并排视图下不支持自动换行' ,
@@ -1304,6 +1308,9 @@ window.__ModuleLoader__.load({
         'settings.title': '设置',
         'settings.back': '返回',
         'settings.open': '设置',
+        'settings.viewLabel': '变更文件的显示方式',
+        'settings.viewList': '列表：一行一个文件，文件名在前、路径在后',
+        'settings.viewTree': '树形：按文件夹展开/折叠',
         'settings.modelLabel': '生成提交说明的模型',
         'settings.modelHint': '模型来自 DeepSeek Harness 当前配置的模型目录。',
         'settings.modelNone': '未选择',
@@ -1393,6 +1400,8 @@ window.__ModuleLoader__.load({
         'toolbar.autorefresh': 'Auto refresh',
         'toolbar.autoRefreshOn': 'Auto refresh: on',
         'toolbar.autoRefreshOff': 'Auto refresh: off',
+        'toolbar.viewAsList': 'View as list',
+        'toolbar.viewAsTree': 'View as tree',
         'toolbar.wrap': 'Wrap lines',
         'toolbar.unified': 'Unified view',
         'toolbar.wrapUnavailable': 'Wrapping is off in split view',
@@ -1454,6 +1463,9 @@ window.__ModuleLoader__.load({
         'settings.title': 'Settings',
         'settings.back': 'Back',
         'settings.open': 'Settings',
+        'settings.viewLabel': 'Changes list layout',
+        'settings.viewList': 'List: one file per row, name first then its folder',
+        'settings.viewTree': 'Tree: files grouped by folder',
         'settings.modelLabel': 'Model for commit messages',
         'settings.modelHint': 'Models come from the catalog configured in DeepSeek Harness.',
         'settings.modelNone': 'None selected',
@@ -1602,6 +1614,7 @@ window.__ModuleLoader__.load({
         const [leftWidth, setLeftWidth] = usePref('leftWidth')
         const [collapsedGroups, setCollapsedGroups] = usePref('collapsedGroups')
         const [repositoriesOpen, setRepositoriesOpen] = usePref('repositoriesOpen')
+        const [changesView, setChangesView] = usePref('changesView')
 
         /* ------------------------------- 根 ------------------------------- */
         const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -2556,6 +2569,7 @@ window.__ModuleLoader__.load({
                 status,
                 loading: statusLoading && status === null,
                 error: null,
+                view: changesView,
                 selectedPath,
                 onSelect: selectEntry,
                 filter,
@@ -2710,6 +2724,15 @@ window.__ModuleLoader__.load({
           onClick: () => setAutoRefresh(!autoRefresh)
         }),
         h(MenuItem, {
+          icon: changesView === 'tree' ? 'file' : 'folder',
+          label: changesView === 'tree' ? t('toolbar.viewAsList') : t('toolbar.viewAsTree'),
+          'data-action': 'toggle-changes-view',
+          onClick: () => {
+            setChangesView(changesView === 'tree' ? 'list' : 'tree')
+            setMoreOpen(false)
+          }
+        }),
+        h(MenuItem, {
           icon: 'minus',
           label: t('toolbar.collapseAll'),
           onClick: () => {
@@ -2788,6 +2811,8 @@ window.__ModuleLoader__.load({
             error: settingsState.error,
             saved: settingsState.saved,
             onChangeModel: changeCommitModel,
+            changesView,
+            onChangeChangesView: setChangesView,
             onBack: () => setShowSettings(false),
             t
           })
@@ -3413,7 +3438,7 @@ window.__ModuleLoader__.load({
       const { h, useEffect, useMemo, useRef, useState } = __m("./platform.js");
       const { Icon, StatusLetter } = __m("./ui/Icon.js");
       const { basename, dirname, formatCount } = __m("./util/paths.js");
-      const { ancestorsFor, buildGroupRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } = __m("./util/changes.js");
+      const { ancestorsFor, buildGroupRows, buildListRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } = __m("./util/changes.js");
       const { EmptyState, InlineNote, SkeletonRows } = __m("./components/States.js");
 
       /** props.t 缺失时的兜底（本地字典，永不返回 undefined）。 */
@@ -3447,6 +3472,8 @@ window.__ModuleLoader__.load({
         const pendingGroup = typeof source.pendingGroup === 'string' && source.pendingGroup !== ''
           ? source.pendingGroup
           : null
+        /** 显示方式：list = 一行一个文件（文件名 + 弱化路径）；tree = 按文件夹展开。 */
+        const view = source.view === 'tree' ? 'tree' : 'list'
         const translate = source.t
         // 注意：`onFilterChange` 归 Panel 管（它渲染筛选输入框），这里只消费 `filter`。
 
@@ -3469,12 +3496,17 @@ window.__ModuleLoader__.load({
           let offset = 0
           for (const group of groups) {
             const open = !(collapsedGroups !== null && collapsedGroups[group.key] === true)
-            const rows = open ? buildGroupRows(group.entries, (dirPath) => expanded.has(dirPath)) : []
+            let rows = []
+            if (open) {
+              rows = view === 'tree'
+                ? buildGroupRows(group.entries, (dirPath) => expanded.has(dirPath))
+                : buildListRows(group.entries)
+            }
             out.push({ key: group.key, entries: group.entries, open, rows, offset })
             if (open) offset += rows.length
           }
           return out
-        }, [groups, collapsedGroups, expanded])
+        }, [groups, collapsedGroups, expanded, view])
 
         /** 键盘光标走查的扁平行序列（跨分组：冲突 → 已暂存 → 未暂存 → 未跟踪）。 */
         const flatRows = useMemo(() => {
@@ -3491,7 +3523,9 @@ window.__ModuleLoader__.load({
         /* ------------------------------ 副作用 ------------------------------ */
 
         // 把选中文件的目录链自动展开，保证选中项可见（Panel 可能在外部改 selectedPath）。
+        // 列表模式没有目录行，不需要展开任何东西。
         useEffect(() => {
+          if (view !== 'tree') return
           if (selectedPath === null) return
           setExpanded((previous) => {
             let next = null
@@ -3504,7 +3538,7 @@ window.__ModuleLoader__.load({
             }
             return next === null ? previous : next
           })
-        }, [selectedPath, groups])
+        }, [selectedPath, groups, view])
 
         // 外部（Panel / 鼠标）改了选中项时，键盘光标跟随它。
         useEffect(() => {
@@ -3796,6 +3830,7 @@ window.__ModuleLoader__.load({
           tabIndex: 0,
           'aria-label': translate('mode.changes'),
           'data-dgp-list': 'changes',
+          'data-view': view,
           onKeyDown: handleKeyDown
         }, children)
 
@@ -4178,6 +4213,26 @@ window.__ModuleLoader__.load({
       }
 
       /**
+       * 把一个分组的条目压成**扁平行**（列表模式：不造目录行，一行一个文件）。
+       *
+       * 文件名是主体，父路径在行内弱化显示（VS Code 的 List 视图）。
+       * 排序按完整路径的自然序，同一目录的文件相邻。
+       *
+       * @param {object[]} entries
+       * @returns {Array<{kind:'file', path: string, depth: number, displayName: string}>}
+       */
+      function buildListRows(entries) {
+        const list = Array.isArray(entries) ? entries : []
+        const rows = []
+        for (const entry of list) {
+          if (entry === null || entry === undefined || typeof entry.path !== 'string' || entry.path === '') continue
+          rows.push(fileRow(entry, 0))
+        }
+        rows.sort((left, right) => naturalCompare(left.path, right.path))
+        return rows
+      }
+
+      /**
        * 选中文件所在分组里，需要展开的目录链（用于「自动展开到选中项」）。
        * 分组只有 1 个条目时没有目录行，返回空数组。
        *
@@ -4249,7 +4304,7 @@ window.__ModuleLoader__.load({
         if (entry === undefined) return null
         return { path: entry.path, entry, side: selection.side }
       }
-      Object.assign(exports, { GROUP_ORDER, groupsOfFile, groupChanges, rowActionOf, groupActionOf, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection });
+      Object.assign(exports, { GROUP_ORDER, groupsOfFile, groupChanges, rowActionOf, groupActionOf, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, buildListRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection });
 
     });
     __define("./components/States.js", (exports, module) => {
@@ -6344,7 +6399,19 @@ window.__ModuleLoader__.load({
               models.map((model) => h('option', { key: model.ref, value: model.ref },
                 model.providerLabel + ' · ' + model.modelLabel))),
               h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint')),
-              saved ? h(InlineNote, { tone: 'info' }, translate('settings.saved')) : null))
+              saved ? h(InlineNote, { tone: 'info' }, translate('settings.saved')) : null),
+          h('div', { className: 'dgp-settings-field' },
+            h('label', { className: 'dgp-settings-label' }, translate('settings.viewLabel')),
+            h('select', {
+              className: 'dgp-select',
+              'data-dgp-settings': 'changes-view',
+              value: source.changesView === 'tree' ? 'tree' : 'list',
+              onChange: (event) => {
+                if (typeof source.onChangeChangesView === 'function') source.onChangeChangesView(event.target.value)
+              }
+            },
+            h('option', { value: 'list' }, translate('settings.viewList')),
+            h('option', { value: 'tree' }, translate('settings.viewTree')))))
       }
 
       Object.assign(exports, { SettingsView });
@@ -6376,8 +6443,13 @@ window.__ModuleLoader__.load({
         leftWidth: 264,
         collapsedGroups: {},
         /** 「储存库」区域的展开状态（只在有多个仓库时出现）。 */
-        repositoriesOpen: true
+        repositoriesOpen: true,
+        /** 变更列表显示方式：list = 一行一个文件（文件名 + 弱化路径），tree = 按文件夹展开。 */
+        changesView: 'list'
       }
+
+      /** 变更列表的两种显示方式（设置页与 ⋯ 菜单共用）。 */
+      const CHANGES_VIEWS = ['list', 'tree']
 
       const GROUPS = ['conflicted', 'staged', 'unstaged', 'untracked']
 
@@ -6396,6 +6468,7 @@ window.__ModuleLoader__.load({
           out.leftWidth = Math.min(720, Math.max(180, Math.round(input.leftWidth)))
         }
         if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
+        if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
         if (input.collapsedGroups && typeof input.collapsedGroups === 'object') {
           const groups = {}
           for (const key of GROUPS) if (input.collapsedGroups[key] === true) groups[key] = true
@@ -6461,7 +6534,7 @@ window.__ModuleLoader__.load({
         return useMemo(() => ({ begin, isLatest }), [begin, isLatest])
       }
 
-      Object.assign(exports, { MODE, usePref, useLatestGuard });
+      Object.assign(exports, { MODE, CHANGES_VIEWS, usePref, useLatestGuard });
 
     });
     __define("./util/remote.js", (exports, module) => {

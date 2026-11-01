@@ -20,7 +20,7 @@
 import { h, useEffect, useMemo, useRef, useState } from '../platform.js'
 import { Icon, StatusLetter } from '../ui/Icon.js'
 import { basename, dirname, formatCount } from '../util/paths.js'
-import { ancestorsFor, buildGroupRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } from '../util/changes.js'
+import { ancestorsFor, buildGroupRows, buildListRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } from '../util/changes.js'
 import { EmptyState, InlineNote, SkeletonRows } from './States.js'
 
 /** props.t 缺失时的兜底（本地字典，永不返回 undefined）。 */
@@ -54,6 +54,8 @@ export function ChangesList(props) {
   const pendingGroup = typeof source.pendingGroup === 'string' && source.pendingGroup !== ''
     ? source.pendingGroup
     : null
+  /** 显示方式：list = 一行一个文件（文件名 + 弱化路径）；tree = 按文件夹展开。 */
+  const view = source.view === 'tree' ? 'tree' : 'list'
   const translate = source.t
   // 注意：`onFilterChange` 归 Panel 管（它渲染筛选输入框），这里只消费 `filter`。
 
@@ -76,12 +78,17 @@ export function ChangesList(props) {
     let offset = 0
     for (const group of groups) {
       const open = !(collapsedGroups !== null && collapsedGroups[group.key] === true)
-      const rows = open ? buildGroupRows(group.entries, (dirPath) => expanded.has(dirPath)) : []
+      let rows = []
+      if (open) {
+        rows = view === 'tree'
+          ? buildGroupRows(group.entries, (dirPath) => expanded.has(dirPath))
+          : buildListRows(group.entries)
+      }
       out.push({ key: group.key, entries: group.entries, open, rows, offset })
       if (open) offset += rows.length
     }
     return out
-  }, [groups, collapsedGroups, expanded])
+  }, [groups, collapsedGroups, expanded, view])
 
   /** 键盘光标走查的扁平行序列（跨分组：冲突 → 已暂存 → 未暂存 → 未跟踪）。 */
   const flatRows = useMemo(() => {
@@ -98,7 +105,9 @@ export function ChangesList(props) {
   /* ------------------------------ 副作用 ------------------------------ */
 
   // 把选中文件的目录链自动展开，保证选中项可见（Panel 可能在外部改 selectedPath）。
+  // 列表模式没有目录行，不需要展开任何东西。
   useEffect(() => {
+    if (view !== 'tree') return
     if (selectedPath === null) return
     setExpanded((previous) => {
       let next = null
@@ -111,7 +120,7 @@ export function ChangesList(props) {
       }
       return next === null ? previous : next
     })
-  }, [selectedPath, groups])
+  }, [selectedPath, groups, view])
 
   // 外部（Panel / 鼠标）改了选中项时，键盘光标跟随它。
   useEffect(() => {
@@ -403,6 +412,7 @@ export function ChangesList(props) {
     tabIndex: 0,
     'aria-label': translate('mode.changes'),
     'data-dgp-list': 'changes',
+    'data-view': view,
     onKeyDown: handleKeyDown
   }, children)
 

@@ -408,25 +408,54 @@ test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行
   eq(busy.props['data-busy'], 'true', '忙状态钩子')
 })
 
-test('CommitBox：生成中显示进度与已等待时间，并禁用提交', () => {
+test('CommitBox：状态只占一行，按 结果 > 生成中 > 提交中 > 原因 取一个显示', () => {
   const { CommitBox } = loadModule('./components/CommitBox.js')
   const byMark = (tree, mark) => collect(tree, (node) => node.$$host === true && node.props['data-dgp-commit'] === mark)[0] ?? null
+  const status = (tree) => byMark(tree, 'status')
   const base = {
-    message: 'feat: x', stagedCount: 1, busy: false, generating: false, elapsedMs: 0,
+    message: 'feat: x', stagedCount: 1, busy: false, generating: false, elapsedMs: 0, note: null,
     onChange: () => {}, onCommit: () => {}, onGenerate: () => {}, t: tKey
   }
 
-  const idle = renderComponent(CommitBox, base)
-  eq(byMark(idle, 'progress'), null, '空闲时没有进度行')
-  eq(byMark(idle, 'submit').props.disabled, false, '空闲可提交')
+  // 就绪：没有状态行，提交可用
+  const ready = renderComponent(CommitBox, base)
+  eq(status(ready), null, '就绪时状态行不占位')
+  eq(byMark(ready, 'submit').props.disabled, false, '就绪可提交')
 
-  const busy = renderComponent(CommitBox, { ...base, generating: true, elapsedMs: 3200 })
-  const bar = byMark(busy, 'progress')
-  assert(bar !== null, '生成中应有进度行')
-  assert(textOf(bar).includes('3.2'), '应显示已等待秒数，实际：' + textOf(bar))
-  eq(collect(busy, (node) => node.$$host === true && classOf(node).split(' ').includes('dgp-spinner')).length, 1,
-    '生成中按钮里应换成转圈')
-  eq(byMark(busy, 'submit').props.disabled, true, '生成中禁止提交')
+  // 没有已暂存内容：说清原因，而不是无声禁用
+  const noStaged = renderComponent(CommitBox, { ...base, stagedCount: 0 })
+  eq(status(noStaged).props['data-kind'], 'hint', '没有暂存时给提示')
+  eq(textOf(status(noStaged)), 'commit.hintNoStaged', '提示内容')
+  eq(byMark(noStaged, 'submit').props.disabled, true, '没有暂存时不可提交')
+
+  // 有暂存但没写说明
+  const noMessage = renderComponent(CommitBox, { ...base, message: '   ' })
+  eq(textOf(status(noMessage)), 'commit.hintNoMessage', '缺说明时的提示')
+  eq(byMark(noMessage, 'submit').props.disabled, true)
+
+  // 生成中：转圈 + 已等待秒数，提交禁用
+  const generating = renderComponent(CommitBox, { ...base, generating: true, elapsedMs: 3200 })
+  eq(status(generating).props['data-kind'], 'progress', '生成中给进度')
+  assert(textOf(status(generating)).includes('3.2'), '应显示已等待秒数，实际：' + textOf(status(generating)))
+  eq(collect(generating, (node) => node.$$host === true && classOf(node).split(' ').includes('dgp-spinner')).length, 2,
+    '生成按钮与状态行各有一个转圈')
+  eq(byMark(generating, 'submit').props.disabled, true, '生成中禁止提交')
+  eq(byMark(generating, 'input').props.disabled, true, '生成中输入框也要禁用，避免结果覆盖刚打的字')
+
+  // 提交中
+  const committing = renderComponent(CommitBox, { ...base, busy: true })
+  eq(textOf(status(committing)), 'commit.submitting', '提交中显示进度文案')
+
+  // 结果优先于其它状态
+  const done = renderComponent(CommitBox, {
+    ...base, message: '', stagedCount: 0, note: { tone: 'info', text: '已提交 abc1234 · feat: x' }
+  })
+  eq(status(done).props['data-kind'], 'note', '结果优先显示')
+  eq(status(done).props['data-tone'], 'info', '结果色调')
+  eq(textOf(status(done)), '已提交 abc1234 · feat: x')
+
+  const failed = renderComponent(CommitBox, { ...base, note: { tone: 'error', text: '额度不足' } })
+  eq(status(failed).props['data-tone'], 'error', '错误色调')
 })
 
 test('RepoList：列出全部仓库、当前仓库高亮、外部仓库可移除、折叠后不渲染行', () => {

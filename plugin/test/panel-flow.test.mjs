@@ -1396,6 +1396,23 @@ test('用例 1t：提交框在有暂存且有说明时可提交，生成按钮�
     eq(commits[0].message, 'feat: add panel', '提交说明')
     eq(commits[0].rootPath, PROJECT, '提交的仓库')
 
+    // 提交成功：同一条状态行显示结果（短 SHA + 主题），输入框清空
+    const statusEl = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'status')
+    const done = statusEl()
+    eq(attr(done, 'data-kind'), 'note', '成功后状态行显示结果')
+    eq(attr(done, 'data-tone'), 'info', '成功用 info 色调')
+    const doneText = textOf(done)
+    assert(doneText.includes('def5678'), '结果里要带新提交的短 SHA：' + doneText)
+    assert(doneText.includes('feat: add panel'), '结果里要带提交主题：' + doneText)
+    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input'), 'value'), '',
+      '提交后输入框清空')
+
+    // 开始写新说明时结果提示立刻让位：有说明 + 有暂存时可以提交，状态行整行消失
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input')
+      .props.onChange({ target: { value: 'feat: next' } })
+    await panel.flush()
+    eq(statusEl(), null, '输入后结果提示消失，状态行不再占位')
+
     const generate = panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'generate')
     click(generate)
     await panel.flush()
@@ -1605,15 +1622,15 @@ test('用例 1y：生成提交说明时显示进度，失败时把真实原因�
   }, async (panel) => {
     await panel.flush()
     const generate = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'generate')
-    const progress = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'progress')
+    const statusEl = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'status')
 
-    eq(progress(), null, '没在生成时不应有进度条')
+    eq(attr(statusEl(), 'data-kind'), 'hint', '空闲时是提示行')
 
     click(generate())
     await panel.flush()
-    const bar = progress()
-    assert(bar !== null, '生成中应显示进度')
-    assert(textOf(bar).includes('正在生成'), '进度条应带说明文字：' + textOf(bar))
+    const running = statusEl()
+    eq(attr(running, 'data-kind'), 'progress', '生成中状态行切到进度')
+    assert(textOf(running).includes('正在生成'), '进度行应带说明文字：' + textOf(running))
     eq(findAll(generate(), (node) => isHost(node) && hasClass(node, 'dgp-spinner')).length, 1,
       '生成按钮里应换成转圈')
     eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit'), 'disabled'), true,
@@ -1623,10 +1640,10 @@ test('用例 1y：生成提交说明时显示进度，失败时把真实原因�
     assert(pending !== null, '请求没有挂住')
     pending(sayFail('model-failed', '额度不足，请稍后再试'))
     await panel.flush()
-    eq(progress(), null, '失败后进度条应消失')
-    const note = panel.one((node) => isHost(node) && attr(node, 'data-commit-note') === 'error')
-    assert(note !== null, '失败时应有错误提示')
-    const noteText = textOf(note)
+    const failed = statusEl()
+    eq(attr(failed, 'data-kind'), 'note', '失败后同一条状态行显示结果')
+    eq(attr(failed, 'data-tone'), 'error', '错误色调')
+    const noteText = textOf(failed)
     assert(noteText.includes('额度不足'), '错误提示要带上真实原因，实际：' + noteText)
     assert(!noteText.includes('{message}'), '占位符不能被原样显示：' + noteText)
 

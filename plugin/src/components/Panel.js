@@ -33,6 +33,8 @@ import { webUrlOf } from '../util/remote.js'
 import { formatClock } from '../util/time.js'
 
 const POLL_INTERVAL_MS = 8000
+/** 提交成功提示的存活时间：看一眼就够，别一直占着位置。 */
+const COMMIT_NOTE_TTL_MS = 8000
 const MIN_LEFT = 180
 const MIN_RIGHT = 280
 
@@ -607,7 +609,13 @@ export function Panel(props) {
     try {
       const result = await api.commitChanges({ rootPath: activeRoot.path, message })
       setCommitMessage('')
-      setCommitNote({ tone: 'info', text: tRef.current('commit.done', { head: result.head }) })
+      const subject = typeof result.subject === 'string' ? result.subject.trim() : ''
+      setCommitNote({
+        tone: 'info',
+        text: subject === ''
+          ? tRef.current('commit.done', { head: result.head })
+          : tRef.current('commit.doneSubject', { head: result.head, subject })
+      })
       await refreshStatus()
       setDiffNonce((previous) => previous + 1)
     } catch (error) {
@@ -616,6 +624,21 @@ export function Panel(props) {
       setCommitBusy(false)
     }
   }, [activeRoot, commitMessage, commitBusy, refreshStatus])
+
+  /** 改输入就清掉上一次的结果提示：用户已经在写新的说明了。 */
+  const changeCommitMessage = useCallback((text) => {
+    setCommitMessage(text)
+    setCommitNote(null)
+  }, [])
+
+  /**
+   * 提交成功的提示会自己消失（8s）；错误提示留着，用户读完自己动手再试。
+   */
+  useEffect(() => {
+    if (commitNote === null || commitNote.tone === 'error') return undefined
+    const timer = setTimeout(() => setCommitNote(null), COMMIT_NOTE_TTL_MS)
+    return () => clearTimeout(timer)
+  }, [commitNote])
 
   // 生成期间每 200ms 刷新一次已等待时间；结束（成功或失败）立刻归零。
   useEffect(() => {
@@ -1027,15 +1050,12 @@ function buildUpdateNote(updateState, t) {
           busy: commitBusy,
           generating: commitGenerating,
           elapsedMs: generateElapsed,
-          onChange: setCommitMessage,
+          note: commitNote,
+          onChange: changeCommitMessage,
           onCommit: commitStaged,
           onGenerate: generateMessage,
           t
         }),
-        commitNote === null
-          ? null
-          : h('div', { className: 'dgp-notebar', 'data-commit-note': commitNote.tone },
-            h(InlineNote, { tone: commitNote.tone }, commitNote.text)),
         h(ChangesList, {
           status,
           loading: statusLoading && status === null,

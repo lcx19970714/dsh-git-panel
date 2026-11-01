@@ -1013,6 +1013,10 @@ function buildUpdateNote(updateState, t) {
   const stagedCount = status !== null && status.counts !== null && status.counts !== undefined
     ? status.counts.staged
     : 0
+  /** 只要有改动就能提交（没有暂存时提交会先把全部改动暂存）。 */
+  const changeCount = status !== null && status.counts !== null && status.counts !== undefined
+    ? status.counts.total
+    : 0
 
   let leftPane
   if (mode === MODE.changes) {
@@ -1047,6 +1051,7 @@ function buildUpdateNote(updateState, t) {
         h(CommitBox, {
           message: commitMessage,
           stagedCount,
+          changeCount,
           busy: commitBusy,
           generating: commitGenerating,
           elapsedMs: generateElapsed,

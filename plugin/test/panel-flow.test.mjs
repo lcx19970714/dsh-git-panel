@@ -1422,6 +1422,47 @@ test('用例 1t：提交框在有暂存且有说明时可提交，生成按钮�
   })
 })
 
+test('用例 1z：只有未暂存改动也能提交（按钮可用，提交时先暂存全部）', async () => {
+  const commits = []
+  const onlyUnstaged = {
+    ...statusThree(),
+    files: [
+      file({ path: 'app.js', status: 'M', unstaged: true, adds: 3, dels: 1 }),
+      file({ path: 'notes.txt', status: '?', untracked: true })
+    ],
+    counts: { total: 2, staged: 0, unstaged: 1, untracked: 1, conflicted: 0 }
+  }
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(onlyUnstaged),
+      commit: (payload) => {
+        commits.push(payload)
+        return sayOk({ head: 'abc9999', subject: payload.message, includedUnstaged: true })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const statusEl = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'status')
+    const submitEl = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit')
+
+    // 有改动但都没暂存：按钮不可用时是因为还没写说明
+    eq(textOf(statusEl()), '填写提交说明后提交')
+    eq(attr(submitEl(), 'disabled'), true)
+
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input')
+      .props.onChange({ target: { value: 'feat: 全部提交' } })
+    await panel.flush()
+    eq(attr(submitEl(), 'disabled'), false, '只有未暂存改动 + 有说明时也能提交')
+    eq(textOf(statusEl()), '没有已暂存的改动，提交时会先暂存全部', '提示说明会发生什么')
+
+    click(submitEl())
+    await panel.flush()
+    eq(commits.length, 1, '应提交一次')
+    eq(commits[0].message, 'feat: 全部提交')
+  })
+})
+
 test('用例 1u：设置按钮打开设置页，选择模型即保存', async () => {
   const saved = []
   await withPanel({

@@ -95,7 +95,7 @@ node plugin/scripts/install-profile.mjs --uninstall
 | 添加外部仓库 | 「储存库」标题行的 `+`，或文件模式下的根选择器 |
 | 变更列表样式 | 设置 →「变更文件的显示方式」，或 `⋯` 菜单一键切换：**列表**（一行一个文件，文件名在前、路径在后）/ **树形**（按文件夹展开） |
 | 未跟踪文件 | 设置 →「未跟踪文件的分组」：**并进未暂存**（默认，与 VS Code 一致）/ **单列一组** |
-| 提交 | 写提交说明 → `提交`（或 `Ctrl/Cmd+Enter`）；结果「已提交 abc1234 · 主题」显示在同一行，8 秒后自动消失 |
+| 提交 | 写提交说明 → `提交`（或 `Ctrl/Cmd+Enter`）；有暂存只提交暂存，**没有暂存也能提交**（会先暂存全部）。结果「已提交 abc1234 · 主题」显示在同一行，8 秒后自动消失 |
 | 生成提交说明 | 输入框右上角的 ✦：按设置里的模型生成，生成中显示「正在生成… 3.2s」 |
 | 查看 diff | 变更模式点文件行；工具条可切统一/并排、调上下文行数、忽略空白 |
 | 编辑并保存 | 文件模式点文件 → 直接改 → `Ctrl/Cmd+S` |
@@ -164,7 +164,7 @@ node plugin/scripts/install-profile.mjs --uninstall
 | `file/write` | `{rootPath, path, text, expectedHash, eol, bom}` / `{…, force:true}` | `{size, mtimeMs, hash}`；哈希不匹配 → `conflict` |
 | `index/stage` | `{rootPath, path, action}` | `{path, action}`；`stage` = `git add --`，`unstage` = `git restore --staged --` |
 | `index/stage-group` | `{rootPath, scope}` | `{scope}`；整组暂存 / 取消暂存 |
-| `commit` | `{rootPath, message}` | `{head, subject}`；只提交已暂存内容 |
+| `commit` | `{rootPath, message}` | `{head, subject, includedUnstaged}`；有暂存只提交暂存，没有则先 `git add -A` 再提交 |
 | `commit/message` | `{rootPath}` | `{message, model, source}`；有暂存看暂存，否则看未暂存 |
 | `models/list` | `{}` | `{models[], failed[]}`；模型来自 DSH 的 `llm` 服务（`listProviders` / `listModels`） |
 | `settings/get` / `settings/set` | `{commitModel?}` | `{commitModel: {provider, model} \| null}`；生成提交说明所用的模型 |
@@ -217,7 +217,7 @@ npm run check    # 语法检查 + 产物可复现性检查
 
 ## 已知边界
 
-- **提交只提交已暂存内容**：未暂存的改动不会被自动带上；不做 discard / 分支操作
+- **提交是 smart commit**：有暂存就只提交暂存；没有暂存但工作区有改动时，会把全部改动（含未跟踪文件）暂存后提交；不做 discard / 分支操作
 - 编辑器不开语法着色：浏览器里要「可编辑 + 高亮」得自己写编辑器内核或做透明层叠加，那套东西脆弱且难维护，
   所以这里明确不做半套。diff 视图的词级高亮不受影响
 - 编辑器行号最多画 5000 行（再多只保留输入框，避免几万个 DOM 节点）

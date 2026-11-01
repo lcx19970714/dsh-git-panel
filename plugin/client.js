@@ -1318,8 +1318,9 @@ window.__ModuleLoader__.load({
         'commit.generatingElapsed': '正在生成… {seconds}s',
         'commit.done': '已提交 {head}',
         'commit.doneSubject': '已提交 {head} · {subject}',
-        'commit.hintNoStaged': '没有已暂存的改动',
+        'commit.hintNoChanges': '没有可提交的改动',
         'commit.hintNoMessage': '填写提交说明后提交',
+        'commit.hintStageAll': '没有已暂存的改动，提交时会先暂存全部',
         'commit.noModel': '还没有配置生成提交说明的模型，先到右上角的设置里选一个',
         'commit.nothing': '没有可提交的改动',
         'commit.generateFailed': '生成提交说明失败：{message}',
@@ -1480,8 +1481,9 @@ window.__ModuleLoader__.load({
         'commit.generatingElapsed': 'Generating… {seconds}s',
         'commit.done': 'Committed {head}',
         'commit.doneSubject': 'Committed {head} · {subject}',
-        'commit.hintNoStaged': 'No staged changes',
+        'commit.hintNoChanges': 'Nothing to commit',
         'commit.hintNoMessage': 'Write a message to commit',
+        'commit.hintStageAll': 'Nothing staged — all changes will be staged when you commit',
         'commit.noModel': 'No model is configured for commit messages. Pick one in Settings.',
         'commit.nothing': 'Nothing to commit',
         'commit.generateFailed': 'Could not generate a commit message: {message}',
@@ -2587,6 +2589,10 @@ window.__ModuleLoader__.load({
         const stagedCount = status !== null && status.counts !== null && status.counts !== undefined
           ? status.counts.staged
           : 0
+        /** 只要有改动就能提交（没有暂存时提交会先把全部改动暂存）。 */
+        const changeCount = status !== null && status.counts !== null && status.counts !== undefined
+          ? status.counts.total
+          : 0
 
         let leftPane
         if (mode === MODE.changes) {
@@ -2621,6 +2627,7 @@ window.__ModuleLoader__.load({
               h(CommitBox, {
                 message: commitMessage,
                 stagedCount,
+                changeCount,
                 busy: commitBusy,
                 generating: commitGenerating,
                 elapsedMs: generateElapsed,
@@ -6393,14 +6400,16 @@ window.__ModuleLoader__.load({
         const translate = source.t
         const message = typeof source.message === 'string' ? source.message : ''
         const stagedCount = typeof source.stagedCount === 'number' ? source.stagedCount : 0
+        const changeCount = typeof source.changeCount === 'number' ? source.changeCount : stagedCount
         const busy = source.busy === true
         const generating = source.generating === true
         const elapsedMs = typeof source.elapsedMs === 'number' && source.elapsedMs > 0 ? source.elapsedMs : 0
         const note = source.note === null || source.note === undefined ? null : source.note
 
         const hasMessage = message.trim() !== ''
-        const hasStaged = stagedCount > 0
-        const canCommit = hasMessage && hasStaged && busy !== true && generating !== true
+        const hasChanges = changeCount > 0
+        // 有改动 + 有说明就能提交：没有暂存时，提交会先把全部改动暂存（smart commit）
+        const canCommit = hasMessage && hasChanges && busy !== true && generating !== true
 
         // 状态行只显示一件事：结果 > 生成中 > 提交中 > 不能提交的原因
         let statusKind = null
@@ -6414,12 +6423,15 @@ window.__ModuleLoader__.load({
         } else if (busy) {
           statusKind = 'busy'
           statusText = translate('commit.submitting')
-        } else if (!hasStaged) {
+        } else if (!hasChanges) {
           statusKind = 'hint'
-          statusText = translate('commit.hintNoStaged')
+          statusText = translate('commit.hintNoChanges')
         } else if (!hasMessage) {
           statusKind = 'hint'
           statusText = translate('commit.hintNoMessage')
+        } else if (stagedCount === 0) {
+          statusKind = 'hint'
+          statusText = translate('commit.hintStageAll')
         }
 
         return h('div', { className: 'dgp-commit' },
@@ -6475,7 +6487,7 @@ window.__ModuleLoader__.load({
               'data-size': 'sm',
               'data-dgp-commit': 'submit',
               disabled: canCommit !== true,
-              title: canCommit ? translate('commit.submit') : translate(hasStaged ? 'commit.hintNoMessage' : 'commit.hintNoStaged'),
+              title: canCommit ? translate('commit.submit') : translate(hasChanges ? 'commit.hintNoMessage' : 'commit.hintNoChanges'),
               onClick: () => {
                 if (typeof source.onCommit === 'function') source.onCommit()
               }

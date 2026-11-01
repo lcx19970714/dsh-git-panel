@@ -20,14 +20,16 @@ export function CommitBox(props) {
   const translate = source.t
   const message = typeof source.message === 'string' ? source.message : ''
   const stagedCount = typeof source.stagedCount === 'number' ? source.stagedCount : 0
+  const changeCount = typeof source.changeCount === 'number' ? source.changeCount : stagedCount
   const busy = source.busy === true
   const generating = source.generating === true
   const elapsedMs = typeof source.elapsedMs === 'number' && source.elapsedMs > 0 ? source.elapsedMs : 0
   const note = source.note === null || source.note === undefined ? null : source.note
 
   const hasMessage = message.trim() !== ''
-  const hasStaged = stagedCount > 0
-  const canCommit = hasMessage && hasStaged && busy !== true && generating !== true
+  const hasChanges = changeCount > 0
+  // 有改动 + 有说明就能提交：没有暂存时，提交会先把全部改动暂存（smart commit）
+  const canCommit = hasMessage && hasChanges && busy !== true && generating !== true
 
   // 状态行只显示一件事：结果 > 生成中 > 提交中 > 不能提交的原因
   let statusKind = null
@@ -41,12 +43,15 @@ export function CommitBox(props) {
   } else if (busy) {
     statusKind = 'busy'
     statusText = translate('commit.submitting')
-  } else if (!hasStaged) {
+  } else if (!hasChanges) {
     statusKind = 'hint'
-    statusText = translate('commit.hintNoStaged')
+    statusText = translate('commit.hintNoChanges')
   } else if (!hasMessage) {
     statusKind = 'hint'
     statusText = translate('commit.hintNoMessage')
+  } else if (stagedCount === 0) {
+    statusKind = 'hint'
+    statusText = translate('commit.hintStageAll')
   }
 
   return h('div', { className: 'dgp-commit' },
@@ -102,7 +107,7 @@ export function CommitBox(props) {
         'data-size': 'sm',
         'data-dgp-commit': 'submit',
         disabled: canCommit !== true,
-        title: canCommit ? translate('commit.submit') : translate(hasStaged ? 'commit.hintNoMessage' : 'commit.hintNoStaged'),
+        title: canCommit ? translate('commit.submit') : translate(hasChanges ? 'commit.hintNoMessage' : 'commit.hintNoChanges'),
         onClick: () => {
           if (typeof source.onCommit === 'function') source.onCommit()
         }

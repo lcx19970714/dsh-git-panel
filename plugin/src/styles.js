@@ -520,7 +520,9 @@ export const CSS = `
   font: inherit;
   font-size: 12px;
   line-height: 1.5;
-  resize: vertical;
+  /* 高度由内容决定（CommitBox 里按 scrollHeight 算，两行起步、到上限改滚动） */
+  resize: none;
+  overflow-y: auto;
 }
 .dgp-commit-input:focus { outline: none; background: var(--dsw-alias-bg-layer-3); }
 .dgp-commit-generate {

@@ -408,6 +408,16 @@ test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行
   eq(busy.props['data-busy'], 'true', '忙状态钩子')
 })
 
+test('CommitBox：输入框高度随内容增长，但夹在两行与上限之间', () => {
+  const { commitInputHeight, COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT } = loadModule('./components/CommitBox.js')
+  eq(commitInputHeight(0), COMMIT_INPUT_MIN_HEIGHT, '空内容按最小高度')
+  eq(commitInputHeight(-5), COMMIT_INPUT_MIN_HEIGHT, '异常小值夹到最小高度')
+  eq(commitInputHeight(72.4), 73, '往上取整，避免最后一行被截')
+  eq(commitInputHeight(COMMIT_INPUT_MAX_HEIGHT + 200), COMMIT_INPUT_MAX_HEIGHT, '超过上限就封顶（改为内部滚动）')
+  eq(commitInputHeight(undefined), COMMIT_INPUT_MIN_HEIGHT, '量不到时回到最小高度')
+  eq(commitInputHeight(Number.NaN), COMMIT_INPUT_MIN_HEIGHT, 'NaN 也要收敛')
+})
+
 test('CommitBox：状态只占一行，按 结果 > 生成中 > 提交中 > 原因 取一个显示', () => {
   const { CommitBox } = loadModule('./components/CommitBox.js')
   const byMark = (tree, mark) => collect(tree, (node) => node.$$host === true && node.props['data-dgp-commit'] === mark)[0] ?? null

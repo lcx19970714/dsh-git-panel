@@ -19,7 +19,9 @@ import { GitError } from './git.js'
 
 const SETTINGS_FILE = 'settings.json'
 const DIFF_PROMPT_LIMIT = 60_000
-const MAX_OUTPUT_TOKENS = 512
+/** 输出上限：推理型模型会先花 token 思考，给太小就会「没有返回文本」。 */
+const MAX_OUTPUT_TOKENS = 1024
+const DEFAULT_TIMEOUT_MS = 60_000
 
 const SYSTEM_PROMPT = [
   '你是 Git 提交说明生成器。',
@@ -109,9 +111,25 @@ export async function requireModel(llm, pair) {
 
 /* --------------------------------------------------------------- 生成 */
 
+/** 失败既可能是 Error，也可能是适配器给的 `{ message }` 普通对象，两种都要能读出原因。 */
+function messageOf(error) {
+  if (error instanceof Error) return error.message === '' ? error.name : error.message
+  if (error !== null && typeof error === 'object' && typeof error.message === 'string' && error.message !== '') {
+    return error.message
+  }
+  return String(error)
+}
+
 /**
  * 用指定模型为这段 diff 生成提交说明。
- * 失败一律抛 GitError：模型没返回文本、finish 是错误/取消，都算失败，不伪造内容。
+ *
+ * 失败一律抛 GitError，且**把原因写进 message**：上层文案是
+ * 「生成提交说明失败：{message}」，只有这里说清楚，用户才知道是额度、网络还是模型问题。
+ *
+ * 两个容易被忽略的失败点：
+ *  - 推理型模型会先花 token 思考，输出上限给太小就会「没有返回文本」——
+ *    这里显式取该模型最低档 reasoning effort，并把上限放到 1024。
+ *  - 有的 provider 会一直挂着不回：这里用一条独立超时把请求掐断，报 timeout 而不是无限等。
  */
 export async function generateCommitMessage(llm, pair, diffText, options = {}) {
   if (typeof diffText !== 'string' || diffText.trim() === '') {
@@ -121,35 +139,78 @@ export async function generateCommitMessage(llm, pair, diffText, options = {}) {
   const input = diffText.length > DIFF_PROMPT_LIMIT
     ? diffText.slice(0, DIFF_PROMPT_LIMIT) + '\n\n[diff 已截断，只保留前 ' + DIFF_PROMPT_LIMIT + ' 个字符]'
     : diffText
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? options.timeoutMs
+    : DEFAULT_TIMEOUT_MS
 
-  const call = await llm.prepareCall(
-    { provider: pair.provider, model: pair.model, maxTokens: MAX_OUTPUT_TOKENS },
-    options.signal,
-    (controls) => controls
-  )
+  const controller = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  const forward = () => controller.abort()
+  if (options.signal !== undefined) {
+    if (options.signal.aborted === true) {
+      clearTimeout(timer)
+      throw new GitError('aborted', '操作已取消')
+    }
+    options.signal.addEventListener('abort', forward, { once: true })
+  }
 
   let text = ''
   let failure = null
-  const stream = call.stream({
-    ...call.config,
-    messages: [{ role: 'user', content: [{ type: 'text', text: input }] }],
-    system: SYSTEM_PROMPT,
-    purpose: 'dsh-git-panel/commit-message',
-    signal: options.signal
-  })
-  for await (const chunk of stream) {
-    if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') {
-      text += chunk.text
-    } else if (chunk?.type === 'finish') {
-      const kind = chunk.reason === null || chunk.reason === undefined ? null : chunk.reason.kind
-      if (kind === 'error' || kind === 'aborted') {
-        failure = chunk.reason.failure?.message ?? kind
+  try {
+    const call = await llm.prepareCall(
+      { provider: pair.provider, model: pair.model, maxTokens: MAX_OUTPUT_TOKENS },
+      controller.signal,
+      (controls, info) => {
+        // 提交说明不需要深思：有可用档位就取最低一档，把 token 留给正文
+        const effort = info?.reasoning?.efforts?.[0]?.id
+        return effort === undefined ? controls : { ...controls, reasoningEffort: effort }
+      }
+    )
+
+    const stream = call.stream({
+      ...call.config,
+      messages: [{ role: 'user', content: [{ type: 'text', text: input }] }],
+      system: SYSTEM_PROMPT,
+      purpose: 'dsh-git-panel/commit-message',
+      signal: controller.signal
+    })
+    for await (const chunk of stream) {
+      if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') {
+        text += chunk.text
+      } else if (chunk?.type === 'finish') {
+        const kind = chunk.reason === null || chunk.reason === undefined ? null : chunk.reason.kind
+        if (kind === 'error' || kind === 'aborted') {
+          failure = chunk.reason.failure === undefined || chunk.reason.failure === null
+            ? kind
+            : messageOf(chunk.reason.failure)
+        }
       }
     }
+  } catch (error) {
+    if (timedOut) {
+      throw new GitError('timeout', `模型 ${Math.round(timeoutMs / 1000)} 秒内没有返回（${target.ref}）`)
+    }
+    if (options.signal !== undefined && options.signal.aborted === true) {
+      throw new GitError('aborted', '操作已取消')
+    }
+    if (error instanceof GitError) throw error
+    throw new GitError('model-failed', `模型调用失败（${target.ref}）：${messageOf(error)}`)
+  } finally {
+    clearTimeout(timer)
+    if (options.signal !== undefined) options.signal.removeEventListener('abort', forward)
   }
-  if (failure !== null) throw new GitError('model-failed', '模型调用失败：' + failure)
+
+  if (failure !== null) {
+    throw new GitError('model-failed', `模型返回了错误（${target.ref}）：${failure}`)
+  }
   const message = text.trim()
-  if (message === '') throw new GitError('model-failed', '模型没有返回提交说明')
+  if (message === '') {
+    throw new GitError('model-failed', `模型没有返回任何文本（${target.ref}），可能被输出上限截断或该模型不支持此用法`)
+  }
   return { message, model: target.ref, providerLabel: target.providerLabel, modelLabel: target.modelLabel }
 }
 

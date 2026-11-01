@@ -724,6 +724,37 @@ window.__ModuleLoader__.load({
       .dgp-commit-generate:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
       .dgp-commit-generate[data-busy='true'] { opacity: .5; cursor: default; }
       .dgp-commit-submit { align-self: flex-end; min-width: 72px; }
+      /* 生成中的进度：一条走动的不确定进度条 + 已等待秒数 */
+      .dgp-commit-progress { display: flex; align-items: center; gap: 8px; }
+      .dgp-progress {
+        position: relative;
+        flex: 1 1 auto;
+        height: 2px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: var(--dsw-alias-bg-module-platform);
+      }
+      .dgp-progress::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 40%;
+        border-radius: 2px;
+        background: var(--dsw-alias-state-business-primary);
+        animation: dgp-indeterminate 1.2s ease-in-out infinite;
+      }
+      @keyframes dgp-indeterminate {
+        from { transform: translateX(-100%); }
+        to { transform: translateX(250%); }
+      }
+      .dgp-commit-progress-text {
+        flex: none;
+        color: var(--dsw-alias-label-tertiary);
+        font-family: var(--ds-font-family-code);
+        font-size: 11px;
+        white-space: nowrap;
+      }
 
       /* 设置页 */
       .dgp-settings { display: flex; flex-direction: column; gap: 14px; padding: 14px 12px; max-width: 520px; }
@@ -1300,6 +1331,7 @@ window.__ModuleLoader__.load({
         'commit.submitting': '正在提交…',
         'commit.generate': '生成提交说明',
         'commit.generating': '正在生成提交说明…',
+        'commit.generatingElapsed': '正在生成… {seconds}s',
         'commit.done': '已提交 {head}',
         'commit.noModel': '还没有配置生成提交说明的模型，先到右上角的设置里选一个',
         'commit.nothing': '没有可提交的改动',
@@ -1458,6 +1490,7 @@ window.__ModuleLoader__.load({
         'commit.submitting': 'Committing…',
         'commit.generate': 'Generate commit message',
         'commit.generating': 'Generating commit message…',
+        'commit.generatingElapsed': 'Generating… {seconds}s',
         'commit.done': 'Committed {head}',
         'commit.noModel': 'No model is configured for commit messages. Pick one in Settings.',
         'commit.nothing': 'Nothing to commit',
@@ -1697,6 +1730,8 @@ window.__ModuleLoader__.load({
         const [commitMessage, setCommitMessage] = useState('')
         const [commitBusy, setCommitBusy] = useState(false)
         const [commitGenerating, setCommitGenerating] = useState(false)
+        /** 生成中的已等待毫秒数：每 200ms 刷新一次，让用户看得见它在跑。 */
+        const [generateElapsed, setGenerateElapsed] = useState(0)
         const [commitNote, setCommitNote] = useState(null)
         const [showSettings, setShowSettings] = useState(false)
         const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, error: null, saved: false })
@@ -2166,6 +2201,18 @@ window.__ModuleLoader__.load({
           }
         }, [activeRoot, commitMessage, commitBusy, refreshStatus])
 
+        // 生成期间每 200ms 刷新一次已等待时间；结束（成功或失败）立刻归零。
+        useEffect(() => {
+          if (commitGenerating !== true) {
+            setGenerateElapsed(0)
+            return undefined
+          }
+          const started = Date.now()
+          setGenerateElapsed(0)
+          const timer = setInterval(() => setGenerateElapsed(Date.now() - started), 200)
+          return () => clearInterval(timer)
+        }, [commitGenerating])
+
         /** 生成提交说明：有暂存看暂存，否则看未暂存，由宿主决定。 */
         const generateMessage = useCallback(async () => {
           if (activeRoot === null || activeRoot.isGit === false || commitGenerating) return
@@ -2563,6 +2610,7 @@ window.__ModuleLoader__.load({
                 stagedCount,
                 busy: commitBusy,
                 generating: commitGenerating,
+                elapsedMs: generateElapsed,
                 onChange: setCommitMessage,
                 onCommit: commitStaged,
                 onGenerate: generateMessage,
@@ -5148,11 +5196,19 @@ window.__ModuleLoader__.load({
         return call('roots/remove', payload, options)
       }
 
-      /** 把错误渲染成一句用户能懂的话。 */
+      /**
+       * 把错误渲染成一句用户能懂的话。
+       *
+       * `message` 必须传下去：像「生成提交说明失败：{message}」这种带占位符的文案，
+       * 不传就只剩字面的 `{message}`，用户永远看不到真正原因（曾经就是这样）。
+       */
       function describeError(error, t) {
-        const key = MESSAGE_KEYS[error === null || error === undefined ? '' : error.code]
-        if (key !== undefined) return t(key)
-        const message = error instanceof Error ? error.message : String(error)
+        const code = error === null || error === undefined ? '' : error.code
+        const message = error instanceof Error
+          ? error.message
+          : (typeof error === 'string' ? error : String(error ?? ''))
+        const key = MESSAGE_KEYS[code]
+        if (key !== undefined) return t(key, { message })
         return t('error.generic', { message })
       }
 
@@ -6310,6 +6366,9 @@ window.__ModuleLoader__.load({
        *
        * 结构：多行输入框，右上角一颗生成按钮；输入框下方一颗提交按钮。
        * 提交按钮只在「有说明 + 有已暂存改动」时可用，与 VS Code 的提交框一致。
+       *
+       * 生成提交说明是一个要等几秒的模型调用，所以这里必须让用户看得见：
+       * 生成中显示一条走动的不确定进度条 + 转圈 + 已等待秒数（每 200ms 由 Panel 更新）。
        */
       const { h } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
@@ -6321,7 +6380,8 @@ window.__ModuleLoader__.load({
         const stagedCount = typeof source.stagedCount === 'number' ? source.stagedCount : 0
         const busy = source.busy === true
         const generating = source.generating === true
-        const canCommit = message.trim() !== '' && stagedCount > 0 && busy !== true
+        const elapsedMs = typeof source.elapsedMs === 'number' && source.elapsedMs > 0 ? source.elapsedMs : 0
+        const canCommit = message.trim() !== '' && stagedCount > 0 && busy !== true && generating !== true
 
         return h('div', { className: 'dgp-commit' },
           h('div', { className: 'dgp-commit-input-wrap' },
@@ -6329,7 +6389,7 @@ window.__ModuleLoader__.load({
               className: 'dgp-commit-input',
               'data-dgp-commit': 'input',
               rows: 2,
-              placeholder: translate('commit.placeholder'),
+              placeholder: translate(generating ? 'commit.generating' : 'commit.placeholder'),
               value: message,
               disabled: busy,
               onChange: (event) => {
@@ -6353,7 +6413,17 @@ window.__ModuleLoader__.load({
               onClick: () => {
                 if (typeof source.onGenerate === 'function') source.onGenerate()
               }
-            }, h(Icon, { name: 'sparkle', size: 14 }))),
+            },
+            // 生成中把笔形图标换成转圈：一眼就能看出还在跑
+            generating ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'sparkle', size: 14 }))),
+
+          generating
+            ? h('div', { className: 'dgp-commit-progress', 'data-dgp-commit': 'progress' },
+              h('span', { className: 'dgp-progress', 'aria-hidden': 'true' }),
+              h('span', { className: 'dgp-commit-progress-text' },
+                translate('commit.generatingElapsed', { seconds: (elapsedMs / 1000).toFixed(1) })))
+            : null,
+
           h('button', {
             type: 'button',
             className: 'dgp-btn dgp-commit-submit',

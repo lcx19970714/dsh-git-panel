@@ -160,10 +160,18 @@ export function removeRoot(payload, options) {
   return call('roots/remove', payload, options)
 }
 
-/** 把错误渲染成一句用户能懂的话。 */
+/**
+ * 把错误渲染成一句用户能懂的话。
+ *
+ * `message` 必须传下去：像「生成提交说明失败：{message}」这种带占位符的文案，
+ * 不传就只剩字面的 `{message}`，用户永远看不到真正原因（曾经就是这样）。
+ */
 export function describeError(error, t) {
-  const key = MESSAGE_KEYS[error === null || error === undefined ? '' : error.code]
-  if (key !== undefined) return t(key)
-  const message = error instanceof Error ? error.message : String(error)
+  const code = error === null || error === undefined ? '' : error.code
+  const message = error instanceof Error
+    ? error.message
+    : (typeof error === 'string' ? error : String(error ?? ''))
+  const key = MESSAGE_KEYS[code]
+  if (key !== undefined) return t(key, { message })
   return t('error.generic', { message })
 }

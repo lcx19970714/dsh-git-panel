@@ -542,6 +542,37 @@ export const CSS = `
 .dgp-commit-generate:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dgp-commit-generate[data-busy='true'] { opacity: .5; cursor: default; }
 .dgp-commit-submit { align-self: flex-end; min-width: 72px; }
+/* 生成中的进度：一条走动的不确定进度条 + 已等待秒数 */
+.dgp-commit-progress { display: flex; align-items: center; gap: 8px; }
+.dgp-progress {
+  position: relative;
+  flex: 1 1 auto;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dgp-progress::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  border-radius: 2px;
+  background: var(--dsw-alias-state-business-primary);
+  animation: dgp-indeterminate 1.2s ease-in-out infinite;
+}
+@keyframes dgp-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+.dgp-commit-progress-text {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  white-space: nowrap;
+}
 
 /* 设置页 */
 .dgp-settings { display: flex; flex-direction: column; gap: 14px; padding: 14px 12px; max-width: 520px; }

@@ -1303,6 +1303,21 @@ test('commit：有暂存只提交暂存；没有暂存就把全部改动暂存�
   assert.equal(afterSmart.files.length, 0, '全部改动都应被提交走：' + JSON.stringify(afterSmart.files))
 })
 
+test('commit：还没有第一个提交时也能创建初始提交', async () => {
+  const dir = tempDir('dgp-commit-initial-')
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  git('init', '-q', '-b', 'main')
+  git('config', 'user.email', 'test@example.com')
+  git('config', 'user.name', 'Test User')
+  writeFileSync(path.join(dir, 'first.txt'), 'hello\n')
+
+  const result = await callOk('commit', { rootPath: dir, message: 'init' })
+  assert.equal(result.includedUnstaged, true, '初始提交同样是先暂存再提交')
+  const after = await callOk('status', { rootPath: dir })
+  assert.equal(after.files.length, 0, '提交后工作区应干净')
+  assert.equal(typeof after.head, 'string', '应能读出新的 HEAD')
+})
+
 test('commit：已有暂存内容时只提交暂存，未暂存的改动留在工作区', async () => {
   const dir = makeRepo(path.join(tempDir('dgp-commit-staged-'), 'repo'))
   writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
@@ -1323,10 +1338,14 @@ test('commit：已有暂存内容时只提交暂存，未暂存的改动留在�
 function fakeLlm(overrides = {}) {
   const seen = { calls: [], options: null }
   const service = {
-    listProviders: () => overrides.providers ?? [{ id: 'p1', displayName: 'P1' }, { provider: 'p2' }],
+    // 契约：provider 路由是 { id, name }（dsh-llm 的 providerInfo）
+    listProviders: () => overrides.providers ?? [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }],
     listModels: async (provider) => {
       if (overrides.listModels !== undefined) return overrides.listModels(provider)
-      return provider === 'p1' ? [{ id: 'm1', name: 'Model One' }, { id: 'm2' }] : [{ id: 'm3' }]
+      // 契约：模型记录一定有非空的 provider/id/name（llm 运行时校验并重建过）
+      return provider === 'p1'
+        ? [{ provider: 'p1', id: 'm1', name: 'Model One' }, { provider: 'p1', id: 'm2', name: 'Model Two' }]
+        : [{ provider: 'p2', id: 'm3', name: 'Model Three' }]
     },
     prepareCall: async (config, signal, configure) => {
       seen.calls.push(config)
@@ -1360,9 +1379,17 @@ test('models.listModels：目录来自 llm 服务，provider/模型名都取到'
   const catalog = await models.listModels(service)
   assert.deepEqual(catalog.failed, [])
   assert.deepEqual(catalog.models.map((item) => item.ref), ['p1/m1', 'p1/m2', 'p2/m3'])
-  assert.equal(catalog.models[0].providerLabel, 'P1', 'displayName 优先')
-  assert.equal(catalog.models[0].modelLabel, 'Model One', '模型名优先')
-  assert.equal(catalog.models[1].modelLabel, 'm2', '没有名字时退回 id')
+  assert.equal(catalog.models[0].providerLabel, 'P1', 'provider 名来自路由的 name')
+  assert.equal(catalog.models[0].modelLabel, 'Model One', '模型名来自记录本身')
+  assert.equal(catalog.models[1].modelLabel, 'Model Two')
+})
+
+test('models.listModels：provider 路由缺 id/name 是契约违背，直接报错而不是跳过', async () => {
+  const { service } = fakeLlm({ providers: [{ id: 'p1', name: 'P1' }, { provider: 'p2' }] })
+  await assert.rejects(
+    () => models.listModels(service),
+    (error) => error.code === 'bad-provider' && /p2/.test(error.message)
+  )
 })
 
 test('models.listModels：单个 provider 失败要报出来，不能吞掉也不能拖垮其它 provider', async () => {
@@ -1472,6 +1499,22 @@ test('models.generateCommitMessage：模型不在目录里时抛 unknown-model',
     () => models.generateCommitMessage(service, { provider: 'p1', model: 'nope' }, 'diff'),
     (error) => error.code === 'unknown-model'
   )
+})
+
+test('models 设置：结构不对就是坏配置，不静默当成「未设置」', async () => {
+  const file = models.settingsPath()
+  mkdirSync(path.dirname(file), { recursive: true })
+
+  writeFileSync(file, JSON.stringify({ version: 1, commitModel: { provider: 'p1' } }), 'utf8')
+  await assert.rejects(() => models.readSettings(), (error) => error.code === 'bad-config')
+
+  writeFileSync(file, '[]', 'utf8')
+  await assert.rejects(() => models.readSettings(), (error) => error.code === 'bad-config')
+
+  writeFileSync(file, '{oops', 'utf8')
+  await assert.rejects(() => models.readSettings(), (error) => error.code === 'bad-config')
+
+  await models.writeCommitModel(null) // 还原成合法状态，避免影响后续用例
 })
 
 test('models 设置：存的是 provider/model 对，读回来一致，null 表示清空', async () => {

@@ -152,14 +152,15 @@ export function runGit(cwd, args, options = {}) {
         finish(resolve, { stdout, stderr, code: code ?? -1, truncated })
         return
       }
-      // 失败原因可能在 stdout（commit 的 "nothing to commit"、hook 的输出、push 的进度…）
-      // 也可能在 stderr，两边都要看，否则用户只看到一句「以退出码 N 结束」。
+      // git 把诊断写在哪个流并不固定（commit 的 "nothing to commit"、hook 的 echo 都在 stdout，
+      // fatal 类在 stderr）。失败报告就是「两段输出」，不挑其中一个代替另一个。
       const stdoutText = stdout.toString('utf8').trim()
-      const reason = stderr !== '' ? stderr : stdoutText
-      const notARepo = code === 128 && /not a git repository/i.test(reason)
+      const reason = [stderr, stdoutText].filter((part) => part !== '').join('\n').slice(0, DETAIL_LIMIT)
+      // 这里不做任何错误码再分类：仓库语义由调用方（resolveRepo / notARepositoryError）判定，
+      // 进程封装层只负责把 git 说过的话原样带上去。
       finish(reject, new GitError(
-        notARepo ? 'not-a-repository' : 'git-failed',
-        reason.slice(0, DETAIL_LIMIT) || `git ${args[0]} 以退出码 ${code} 结束`,
+        'git-failed',
+        reason === '' ? `git ${args[0]} 以退出码 ${code} 结束` : reason,
         { args, code, stderr, stdout: stdoutText.slice(0, DETAIL_LIMIT) }
       ))
     })
@@ -1113,9 +1114,10 @@ export async function commitIndex(repoRoot, message, options = {}) {
   }
   const { signal } = options
 
-  // 有未解决的冲突时 git 会以退出码 1 结束，且只说一句英文：提前拦住并说清原因
-  const unmerged = await runGit(repoRoot, ['ls-files', '--unmerged', '-z'], { signal, allowFailure: true })
-  if (unmerged.code === 0 && unmerged.stdout.length > 0) {
+  // 有未解决的冲突时：一是 git 只会以退出码 1 收场，二是下面那句 `git add -A` 会把
+  // 冲突路径「解决」成暂存态。所以必须先确认没有未合并条目，且查不出来就报错，不猜。
+  const unmerged = await runGit(repoRoot, ['ls-files', '--unmerged', '-z'], { signal })
+  if (unmerged.stdout.length > 0) {
     throw new GitError('unmerged', '有未解决的冲突，先把冲突解决掉再提交')
   }
 
@@ -1129,17 +1131,8 @@ export async function commitIndex(repoRoot, message, options = {}) {
     includedUnstaged = true
   }
 
-  let result
-  try {
-    result = await runGit(repoRoot, ['commit', '--file=-'], { signal, input: message })
-  } catch (error) {
-    // 索引看起来有内容、git 却拒绝提交：把 git 的原话透出去（hook 失败、签名失败都在这里）
-    const text = error instanceof GitError ? error.message : ''
-    if (/nothing to commit|no changes added to commit/i.test(text)) {
-      throw new GitError('nothing-to-commit', '没有可提交的改动')
-    }
-    throw error
-  }
+  // 失败就带着 git 的原话抛出去（hook 失败、签名失败都在这里），不按输出文本再改写错误码
+  const result = await runGit(repoRoot, ['commit', '--file=-'], { signal, input: message })
   const head = await readHead(repoRoot)
   return {
     head: head.head,
@@ -1164,12 +1157,14 @@ export async function commitDiffText(repoRoot, options = {}) {
   const stagedText = staged.stdout.toString('utf8')
   if (stagedText.trim() !== '') return { source: 'staged', text: stagedText }
 
-  const working = await runGit(repoRoot, ['diff', 'HEAD', '--stat', '--patch'], { signal, allowFailure: true })
-  const workingText = working.code === 0 ? working.stdout.toString('utf8').trimEnd() : ''
-  const listed = await runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z'], { signal, allowFailure: true })
-  const untracked = listed.code === 0
-    ? listed.stdout.toString('utf8').split('\0').filter((item) => item !== '')
-    : []
+  // 还没有第一个提交时没有 HEAD 可比；那是「全是新文件」的合法状态，不是失败，
+  // 所以先显式问一次 HEAD 在不在，而不是让 `git diff HEAD` 报错再当没看见。
+  const headCheck = await runGit(repoRoot, ['rev-parse', '--verify', '--quiet', 'HEAD'], { signal, allowFailure: true })
+  const workingText = headCheck.code === 0
+    ? (await runGit(repoRoot, ['diff', 'HEAD', '--stat', '--patch'], { signal })).stdout.toString('utf8').trimEnd()
+    : ''
+  const listed = await runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z'], { signal })
+  const untracked = listed.stdout.toString('utf8').split('\0').filter((item) => item !== '')
 
   if (workingText === '' && untracked.length === 0) return null
   const parts = []

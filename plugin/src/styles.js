@@ -541,38 +541,22 @@ export const CSS = `
 }
 .dgp-commit-generate:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dgp-commit-generate[data-busy='true'] { opacity: .5; cursor: default; }
-.dgp-commit-submit { align-self: flex-end; min-width: 72px; }
-/* 生成中的进度：一条走动的不确定进度条 + 已等待秒数 */
-.dgp-commit-progress { display: flex; align-items: center; gap: 8px; }
-.dgp-progress {
-  position: relative;
+/* 动作行：左边一行状态（提示 / 进度 / 结果），右边提交按钮 */
+.dgp-commit-actions { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.dgp-commit-status {
+  display: flex;
   flex: 1 1 auto;
-  height: 2px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: var(--dsw-alias-bg-module-platform);
-}
-.dgp-progress::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 40%;
-  border-radius: 2px;
-  background: var(--dsw-alias-state-business-primary);
-  animation: dgp-indeterminate 1.2s ease-in-out infinite;
-}
-@keyframes dgp-indeterminate {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(250%); }
-}
-.dgp-commit-progress-text {
-  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   color: var(--dsw-alias-label-tertiary);
-  font-family: var(--ds-font-family-code);
   font-size: 11px;
-  white-space: nowrap;
 }
+.dgp-commit-status[data-tone="info"] { color: var(--dsw-alias-label-secondary); }
+.dgp-commit-status[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
+.dgp-commit-status-text { min-width: 0; }
+.dgp-commit-status .dgp-spinner { width: 11px; height: 11px; border-width: 1.2px; }
+.dgp-commit-submit { flex: none; min-width: 64px; }
 
 /* 设置页 */
 .dgp-settings { display: flex; flex-direction: column; gap: 14px; padding: 14px 12px; max-width: 520px; }

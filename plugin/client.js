@@ -723,38 +723,22 @@ window.__ModuleLoader__.load({
       }
       .dgp-commit-generate:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
       .dgp-commit-generate[data-busy='true'] { opacity: .5; cursor: default; }
-      .dgp-commit-submit { align-self: flex-end; min-width: 72px; }
-      /* 生成中的进度：一条走动的不确定进度条 + 已等待秒数 */
-      .dgp-commit-progress { display: flex; align-items: center; gap: 8px; }
-      .dgp-progress {
-        position: relative;
+      /* 动作行：左边一行状态（提示 / 进度 / 结果），右边提交按钮 */
+      .dgp-commit-actions { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+      .dgp-commit-status {
+        display: flex;
         flex: 1 1 auto;
-        height: 2px;
-        overflow: hidden;
-        border-radius: 2px;
-        background: var(--dsw-alias-bg-module-platform);
-      }
-      .dgp-progress::after {
-        content: "";
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        width: 40%;
-        border-radius: 2px;
-        background: var(--dsw-alias-state-business-primary);
-        animation: dgp-indeterminate 1.2s ease-in-out infinite;
-      }
-      @keyframes dgp-indeterminate {
-        from { transform: translateX(-100%); }
-        to { transform: translateX(250%); }
-      }
-      .dgp-commit-progress-text {
-        flex: none;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
         color: var(--dsw-alias-label-tertiary);
-        font-family: var(--ds-font-family-code);
         font-size: 11px;
-        white-space: nowrap;
       }
+      .dgp-commit-status[data-tone="info"] { color: var(--dsw-alias-label-secondary); }
+      .dgp-commit-status[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
+      .dgp-commit-status-text { min-width: 0; }
+      .dgp-commit-status .dgp-spinner { width: 11px; height: 11px; border-width: 1.2px; }
+      .dgp-commit-submit { flex: none; min-width: 64px; }
 
       /* 设置页 */
       .dgp-settings { display: flex; flex-direction: column; gap: 14px; padding: 14px 12px; max-width: 520px; }
@@ -1333,6 +1317,9 @@ window.__ModuleLoader__.load({
         'commit.generating': '正在生成提交说明…',
         'commit.generatingElapsed': '正在生成… {seconds}s',
         'commit.done': '已提交 {head}',
+        'commit.doneSubject': '已提交 {head} · {subject}',
+        'commit.hintNoStaged': '没有已暂存的改动',
+        'commit.hintNoMessage': '填写提交说明后提交',
         'commit.noModel': '还没有配置生成提交说明的模型，先到右上角的设置里选一个',
         'commit.nothing': '没有可提交的改动',
         'commit.generateFailed': '生成提交说明失败：{message}',
@@ -1492,6 +1479,9 @@ window.__ModuleLoader__.load({
         'commit.generating': 'Generating commit message…',
         'commit.generatingElapsed': 'Generating… {seconds}s',
         'commit.done': 'Committed {head}',
+        'commit.doneSubject': 'Committed {head} · {subject}',
+        'commit.hintNoStaged': 'No staged changes',
+        'commit.hintNoMessage': 'Write a message to commit',
         'commit.noModel': 'No model is configured for commit messages. Pick one in Settings.',
         'commit.nothing': 'Nothing to commit',
         'commit.generateFailed': 'Could not generate a commit message: {message}',
@@ -1617,6 +1607,8 @@ window.__ModuleLoader__.load({
       const { formatClock } = __m("./util/time.js");
 
       const POLL_INTERVAL_MS = 8000
+      /** 提交成功提示的存活时间：看一眼就够，别一直占着位置。 */
+      const COMMIT_NOTE_TTL_MS = 8000
       const MIN_LEFT = 180
       const MIN_RIGHT = 280
 
@@ -2191,7 +2183,13 @@ window.__ModuleLoader__.load({
           try {
             const result = await api.commitChanges({ rootPath: activeRoot.path, message })
             setCommitMessage('')
-            setCommitNote({ tone: 'info', text: tRef.current('commit.done', { head: result.head }) })
+            const subject = typeof result.subject === 'string' ? result.subject.trim() : ''
+            setCommitNote({
+              tone: 'info',
+              text: subject === ''
+                ? tRef.current('commit.done', { head: result.head })
+                : tRef.current('commit.doneSubject', { head: result.head, subject })
+            })
             await refreshStatus()
             setDiffNonce((previous) => previous + 1)
           } catch (error) {
@@ -2200,6 +2198,21 @@ window.__ModuleLoader__.load({
             setCommitBusy(false)
           }
         }, [activeRoot, commitMessage, commitBusy, refreshStatus])
+
+        /** 改输入就清掉上一次的结果提示：用户已经在写新的说明了。 */
+        const changeCommitMessage = useCallback((text) => {
+          setCommitMessage(text)
+          setCommitNote(null)
+        }, [])
+
+        /**
+         * 提交成功的提示会自己消失（8s）；错误提示留着，用户读完自己动手再试。
+         */
+        useEffect(() => {
+          if (commitNote === null || commitNote.tone === 'error') return undefined
+          const timer = setTimeout(() => setCommitNote(null), COMMIT_NOTE_TTL_MS)
+          return () => clearTimeout(timer)
+        }, [commitNote])
 
         // 生成期间每 200ms 刷新一次已等待时间；结束（成功或失败）立刻归零。
         useEffect(() => {
@@ -2611,15 +2624,12 @@ window.__ModuleLoader__.load({
                 busy: commitBusy,
                 generating: commitGenerating,
                 elapsedMs: generateElapsed,
-                onChange: setCommitMessage,
+                note: commitNote,
+                onChange: changeCommitMessage,
                 onCommit: commitStaged,
                 onGenerate: generateMessage,
                 t
               }),
-              commitNote === null
-                ? null
-                : h('div', { className: 'dgp-notebar', 'data-commit-note': commitNote.tone },
-                  h(InlineNote, { tone: commitNote.tone }, commitNote.text)),
               h(ChangesList, {
                 status,
                 loading: statusLoading && status === null,
@@ -6364,11 +6374,16 @@ window.__ModuleLoader__.load({
       /**
        * src/components/CommitBox.js —— 变更列表顶部的提交框
        *
-       * 结构：多行输入框，右上角一颗生成按钮；输入框下方一颗提交按钮。
-       * 提交按钮只在「有说明 + 有已暂存改动」时可用，与 VS Code 的提交框一致。
+       * 布局只有三块，纵向紧凑：
        *
-       * 生成提交说明是一个要等几秒的模型调用，所以这里必须让用户看得见：
-       * 生成中显示一条走动的不确定进度条 + 转圈 + 已等待秒数（每 200ms 由 Panel 更新）。
+       *   [ 提交说明（多行）                      ✦ ]
+       *   [ 状态一行（提示 / 进度 / 结果）       提交 ]
+       *
+       * 设计要点：
+       *  - **状态只有一行**，按「结果 > 生成中 > 提交中 > 无法提交的原因」取一个显示，
+       *    所以成功/失败/进度都不会把下面的变更列表顶下去，也不会并排堆三条提示。
+       *  - 提交按钮不可用时，状态行会说清**为什么**（没暂存 / 没写说明），不做无声禁用。
+       *  - 生成期间输入框禁用：模型结果会直接写进输入框，边等边打字再被覆盖是最糟的体验。
        */
       const { h } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
@@ -6381,7 +6396,31 @@ window.__ModuleLoader__.load({
         const busy = source.busy === true
         const generating = source.generating === true
         const elapsedMs = typeof source.elapsedMs === 'number' && source.elapsedMs > 0 ? source.elapsedMs : 0
-        const canCommit = message.trim() !== '' && stagedCount > 0 && busy !== true && generating !== true
+        const note = source.note === null || source.note === undefined ? null : source.note
+
+        const hasMessage = message.trim() !== ''
+        const hasStaged = stagedCount > 0
+        const canCommit = hasMessage && hasStaged && busy !== true && generating !== true
+
+        // 状态行只显示一件事：结果 > 生成中 > 提交中 > 不能提交的原因
+        let statusKind = null
+        let statusText = null
+        if (note !== null) {
+          statusKind = 'note'
+          statusText = note.text
+        } else if (generating) {
+          statusKind = 'progress'
+          statusText = translate('commit.generatingElapsed', { seconds: (elapsedMs / 1000).toFixed(1) })
+        } else if (busy) {
+          statusKind = 'busy'
+          statusText = translate('commit.submitting')
+        } else if (!hasStaged) {
+          statusKind = 'hint'
+          statusText = translate('commit.hintNoStaged')
+        } else if (!hasMessage) {
+          statusKind = 'hint'
+          statusText = translate('commit.hintNoMessage')
+        }
 
         return h('div', { className: 'dgp-commit' },
           h('div', { className: 'dgp-commit-input-wrap' },
@@ -6389,9 +6428,9 @@ window.__ModuleLoader__.load({
               className: 'dgp-commit-input',
               'data-dgp-commit': 'input',
               rows: 2,
-              placeholder: translate(generating ? 'commit.generating' : 'commit.placeholder'),
+              placeholder: translate('commit.placeholder'),
               value: message,
-              disabled: busy,
+              disabled: busy === true || generating === true,
               onChange: (event) => {
                 if (typeof source.onChange === 'function') source.onChange(event.target.value)
               },
@@ -6417,23 +6456,30 @@ window.__ModuleLoader__.load({
             // 生成中把笔形图标换成转圈：一眼就能看出还在跑
             generating ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'sparkle', size: 14 }))),
 
-          generating
-            ? h('div', { className: 'dgp-commit-progress', 'data-dgp-commit': 'progress' },
-              h('span', { className: 'dgp-progress', 'aria-hidden': 'true' }),
-              h('span', { className: 'dgp-commit-progress-text' },
-                translate('commit.generatingElapsed', { seconds: (elapsedMs / 1000).toFixed(1) })))
-            : null,
-
-          h('button', {
-            type: 'button',
-            className: 'dgp-btn dgp-commit-submit',
-            'data-variant': 'primary',
-            'data-dgp-commit': 'submit',
-            disabled: canCommit !== true,
-            onClick: () => {
-              if (typeof source.onCommit === 'function') source.onCommit()
-            }
-          }, translate(busy ? 'commit.submitting' : 'commit.submit')))
+          h('div', { className: 'dgp-commit-actions' },
+            statusKind === null
+              ? null
+              : h('div', {
+                className: 'dgp-commit-status',
+                'data-dgp-commit': 'status',
+                'data-kind': statusKind,
+                'data-tone': note === null ? undefined : (note.tone === 'error' ? 'error' : 'info'),
+                title: statusText
+              },
+              statusKind === 'progress' ? h('span', { className: 'dgp-spinner' }) : null,
+              h('span', { className: 'dgp-commit-status-text dgp-oneline' }, statusText)),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn dgp-commit-submit',
+              'data-variant': 'primary',
+              'data-size': 'sm',
+              'data-dgp-commit': 'submit',
+              disabled: canCommit !== true,
+              title: canCommit ? translate('commit.submit') : translate(hasStaged ? 'commit.hintNoMessage' : 'commit.hintNoStaged'),
+              onClick: () => {
+                if (typeof source.onCommit === 'function') source.onCommit()
+              }
+            }, translate(busy ? 'commit.submitting' : 'commit.submit'))))
       }
 
       Object.assign(exports, { CommitBox });

@@ -21,8 +21,7 @@
  *     **不要**把两个类放在同一个节点上：`.dgp-diff-col{overflow:hidden}` 会把超长列表裁掉，
  *     导致 split 视图无法纵向滚动。
  *   - `.dgp-diff-row` 是 4 列 grid，所以 unified 行的直接子元素必须是
- *     `.dgp-ln` / `.dgp-ln` / `.dgp-marker` / `.dgp-diff-text` —— **不能**再包一层 `.dgp-diff-gutter`，
- *     否则 grid 列会错位（`.dgp-diff-gutter{display:contents}` 只是兜底）。
+ *     `.dgp-ln` / `.dgp-ln` / `.dgp-marker` / `.dgp-diff-text`，不能再包一层容器，否则 grid 列会错位。
  *   - `.dgp-diff-cell` 是 2 列 grid，子元素顺序固定为 `.dgp-ln` + `.dgp-diff-text`。
  *   - `.dgp-hunk-head` 是 flex + 两侧 filler，`.dgp-hunk-section` 必须是它的**子元素**才能同行。
  *   - `+` / `−` 符号由 CSS 的 `::before` 负责，`.dgp-marker` 里只放空内容。
@@ -156,7 +155,7 @@ function hunkNode(row, index, keyBase) {
 
 /**
  * 统一视图的一行。
- * 注意：直接子元素就是 4 列 grid 的 4 个格子，不包 `.dgp-diff-gutter`。
+ * 注意：直接子元素就是 4 列 grid 的 4 个格子。
  */
 function unifiedRowNode(row, index, keyBase, marks) {
   let segments

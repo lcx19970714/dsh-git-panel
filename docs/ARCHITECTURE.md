@@ -122,7 +122,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 
 **通用**
 
-- 变更区顶部是「储存库」列表（VS Code 的 Repositories）：每个仓库一行，点选切换下方变更区，可折叠；外部仓库行尾可移除，标题行 `+` 添加。文件模式的浏览根仍用顶栏 pill 选择
+- 变更区顶部是「储存库」列表（VS Code 的 Repositories）：每个仓库一行，点选切换下方变更区，可折叠；外部仓库行尾可移除，标题行 `+` 添加；行尾的分支名点开即切换分支。文件模式固定浏览项目根，没有根选择器
 - 变更列表有两种显示方式，设置页与 `⋯` 菜单共用同一个偏好：**列表**（一行一个文件，文件名为主体、路径弱化在后，路径先截断）/ **树形**（按文件夹展开折叠）
 - 未跟踪文件有两种归属：**并进未暂存**（默认，VS Code 的 Changes 里同时有改动和新文件）或**单列未跟踪组**。批量按钮跟着分组内容走：合并模式是「全部暂存」（`git add -A`），分开模式才是「暂存已跟踪改动」（`git add -u`）+「只暂存新文件」（逐路径 `git add`）
 - 提交框只有两行：输入框（右上角生成按钮）+ 一行「状态 + 提交按钮」。输入框随内容自动长高（两行起步、约七行封顶，超出改为内部滚动），生成的说明有好几行时不会被压成两行只露一截
@@ -159,7 +159,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 ├─ build/build-client.mjs   零依赖微型打包器（ESM → 经典脚本 __ModuleLoader__）
 ├─ test/                    10 套测试（见下）
 ├─ scripts/install-profile.mjs  本地开发安装：junction + profile package.json
-└─ docs/ARCHITECTURE.md     本文
+└─ docs/                    ARCHITECTURE.md（本文）/ CONTRACT.md（客户端模块契约）
 ```
 
 为什么**没有构建工具**：这台机器上没有 esbuild，而 DSH 的客户端插件必须是**经典脚本**
@@ -199,6 +199,8 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 node build/build-client.mjs          # 构建 client.js（改完 src/ 必跑）
 node test/run.mjs                    # 跑全部测试
 node test/run.mjs --only client      # 只跑某一套
+node scripts/audit-dead-code.mjs     # 死代码体检（CI 也跑：不可达文件 / 没人 import 的导出 / 孤儿样式）
+node scripts/verify-live.mjs --port 52460   # 确认运行中的 DSH 真的加载了插件
 node scripts/install-profile.mjs     # 装进 desktop profile（幂等）
 node scripts/install-profile.mjs --dry-run
 ```
@@ -216,7 +218,7 @@ node scripts/install-profile.mjs --dry-run
 | `remote` | 远端地址 → 网页地址（scp/ssh/https/git 形式）、凭据不入地址栏、本地路径 → null |
 | `build` | 打包器：产物无残留 import/export、能真跑、循环依赖报错 |
 | `git` | git 引擎（需要 `_sandbox/repo` 夹具：`node test/make-fixture.mjs`） |
-| `host` | 16 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
+| `host` | 18 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表与切换、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
 | `client` | 产物装载 + `apply()` 契约 + 用假 react 真渲染 tab body（不需要浏览器）+ 样式表合法性（规则外不得有裸文本行，否则浏览器会吞掉下一条规则） |
 | `components` | 组件渲染契约：编辑器脏/冲突态、不可编辑占位、换行开关下的行号隐藏 |
 | `flow` | 面板端到端数据流：选根→status→diff→文件读→编辑保存→冲突→检测更新（假 fetch，不起服务） |
@@ -279,7 +281,7 @@ export function apply(ctx) {
 | 会话来源 | 两个外壳都是 session 作用域，框架直接给 `sessionId` | 从全局 `sessions` 里猜"主会话"、支持 `cwd` 入参 |
 | 面板外壳 | 一个 `GitPanelSurface` 同时服务两处 | 两套外壳组件 + `layout` 装饰属性 |
 | 宿主路径口径 | `diff` 的 path 相对 **repoRoot**；`file/read`、`tree/list` 的 path 相对 **rootPath** | `outside-root` 时回退到 repoRoot 再解析一次 |
-| 数据形状 | 宿主返回什么就用什么（契约见 `src/CONTRACT.md` §2） | `Array.isArray(x) ? x : []`、`?? []` 之类逐层兜底 |
+| 数据形状 | 宿主返回什么就用什么（契约见 `docs/CONTRACT.md` §2） | `Array.isArray(x) ? x : []`、`?? []` 之类逐层兜底 |
 | 图标 | 未知图标名打印一次错误并返回 null | 静默回落到 `file` 图标 |
 | 安装 | Windows 只走目录联接 | junction 失败再试 dir symlink |
 

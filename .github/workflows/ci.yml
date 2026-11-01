@@ -39,3 +39,7 @@ jobs:
 
       - name: 运行全部测试（10 套）
         run: node test/run.mjs
+
+      # 死代码体检：不可达文件、导出没人 import、样式类没人用
+      - name: 死代码体检
+        run: node scripts/audit-dead-code.mjs

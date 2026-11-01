@@ -34,7 +34,7 @@ const DEFAULTS = {
 export const UNTRACKED_MODES = ['merge', 'separate']
 
 /** 变更列表的两种显示方式（设置页与 ⋯ 菜单共用）。 */
-export const CHANGES_VIEWS = ['list', 'tree']
+const CHANGES_VIEWS = ['list', 'tree']
 
 const GROUPS = ['conflicted', 'staged', 'unstaged', 'untracked']
 

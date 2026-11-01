@@ -73,12 +73,13 @@ node scripts/install-profile.mjs      # 建目录联接装进 default profile
 ## 开发
 
 ```bash
-node build/build-client.mjs   # 构建客户端产物 client.js
-node test/run.mjs             # 全部 10 个测试套件
+node build/build-client.mjs            # 构建客户端产物 client.js
+node test/run.mjs                      # 全部 10 个测试套件
+node scripts/audit-dead-code.mjs       # 死代码体检（CI 也跑）
 node test/make-fixture.mjs _sandbox/repo   # 生成 host 测试用的真实仓库
 ```
 
-架构、协议与设计约束见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+文档：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)（平台约束、端点、反兜底约定）、[docs/CONTRACT.md](docs/CONTRACT.md)（客户端模块契约）。
 
 ## License
 

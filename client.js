@@ -183,7 +183,7 @@ window.__ModuleLoader__.load({
       /**
        * src/styles.js —— 面板全部样式
        *
-       * 规则（见 CONTRACT.md §4/§6）：
+       * 规则（见 docs/CONTRACT.md §4/§6）：
        *  · 颜色/圆角/字体/间距全部取自 DSH 主题令牌（--dsw-* / --dsh-*），**零字面量色值**；
        *  · 深浅色自动跟随（令牌定义在 body 上，暗色由 body[data-ds-dark-theme] 切换），
        *    因此这里不需要写暗色覆写；
@@ -211,7 +211,6 @@ window.__ModuleLoader__.load({
         /* 不设背景：右侧栏 tab 宿主已经是页面地面色 */
       }
       .dgp-root *, .dgp-root *::before, .dgp-root *::after { box-sizing: border-box; }
-      .dgp-mono { font-family: var(--ds-font-family-code); }
       .dgp-oneline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dgp-ico { display: block; flex: none; }
 
@@ -262,7 +261,7 @@ window.__ModuleLoader__.load({
       }
 
       /* 工具按钮（28×28 / 图标 15×15） */
-      .dgp-iconbtn, .dgp-tool {
+      .dgp-iconbtn {
         display: inline-flex;
         flex: none;
         align-items: center;
@@ -277,19 +276,19 @@ window.__ModuleLoader__.load({
         line-height: 1;
         cursor: pointer;
       }
-      .dgp-iconbtn svg, .dgp-tool svg { width: 15px; height: 15px; }
-      .dgp-iconbtn:hover:not(:disabled), .dgp-tool:hover:not(:disabled) {
+      .dgp-iconbtn svg { width: 15px; height: 15px; }
+      .dgp-iconbtn:hover:not(:disabled) {
         color: var(--dsw-alias-label-primary);
         background: var(--dsw-alias-interactive-bg-hover);
       }
       .dgp-iconbtn[data-active="true"], .dgp-iconbtn[aria-pressed="true"],
-      .dgp-tool[data-active="true"], .dgp-tool[aria-pressed="true"] {
+      .dgp-iconbtn[data-active="true"], .dgp-iconbtn[aria-pressed="true"] {
         color: var(--dsw-alias-label-primary);
         background: var(--dsw-alias-interactive-bg-hover);
       }
-      .dgp-iconbtn:disabled, .dgp-tool:disabled { opacity: .4; cursor: default; }
+      .dgp-iconbtn:disabled { opacity: .4; cursor: default; }
       .dgp-iconbtn[data-busy="true"] svg { animation: dgp-spin 1s linear infinite; }
-      .dgp-iconbtn:focus-visible, .dgp-tool:focus-visible, .dgp-btn:focus-visible,
+      .dgp-iconbtn:focus-visible, .dgp-btn:focus-visible,
       .dgp-seg-btn:focus-visible, .dgp-input:focus-visible,
       .dgp-row:focus-visible, .dgp-group-head:focus-visible {
         outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
@@ -362,7 +361,6 @@ window.__ModuleLoader__.load({
       }
       .dgp-search-clear:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
       .dgp-hint { padding: 4px 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
-      .dgp-num { font-family: var(--ds-font-family-code); font-size: 12px; }
 
       /* ===================== 3. 主区：左列 + 分裂条 + 右栏 ===================== */
       .dgp-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
@@ -429,7 +427,7 @@ window.__ModuleLoader__.load({
         overscroll-behavior: contain;
         scrollbar-gutter: stable;
       }
-      .dgp-divider, .dgp-splitter {
+      .dgp-divider {
         position: relative;
         z-index: 1;
         flex: none;
@@ -437,14 +435,14 @@ window.__ModuleLoader__.load({
         cursor: col-resize;
         touch-action: none;
       }
-      .dgp-divider::before, .dgp-splitter::before {
+      .dgp-divider::before {
         content: "";
         position: absolute;
         top: 0; bottom: 0; left: -.25px;
         width: .5px;
         background: var(--dsw-alias-border-l4);
       }
-      .dgp-divider::after, .dgp-splitter::after {
+      .dgp-divider::after {
         content: "";
         position: absolute;
         inset: 0 -4px;
@@ -453,7 +451,6 @@ window.__ModuleLoader__.load({
         transition: opacity .12s ease-out;
       }
       .dgp-divider:hover::after, .dgp-divider[data-dragging="true"]::after,
-      .dgp-splitter:hover::after, .dgp-splitter:active::after, .dgp-splitter:focus-visible::after { opacity: 1; }
       .dgp-divider:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -2px; }
 
       /* ===================== 4. 左列：分组与行 ===================== */
@@ -724,7 +721,6 @@ window.__ModuleLoader__.load({
 
       .dgp-note { margin: 0; padding: 4px 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
       .dgp-note[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
-      .dgp-empty { padding: 6px 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 
       /* ===================== 5. 右栏查看器 ===================== */
       .dgp-viewer { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
@@ -806,7 +802,6 @@ window.__ModuleLoader__.load({
         line-height: 22px;
         white-space: pre;
       }
-      .dgp-diff-gutter { display: contents; }
       .dgp-ln {
         padding: 0 6px 0 0;
         color: var(--dsw-alias-label-tertiary);
@@ -845,7 +840,6 @@ window.__ModuleLoader__.load({
       .dgp-diff-col[data-side="old"] .dgp-diff-mark {
         background: var(--dsw-alias-code-diff-deleted, color-mix(in srgb, var(--dsw-alias-state-error-primary) 28%, transparent));
       }
-      .dgp-diff-note { margin: 0; padding: 4px 16px 8px; color: var(--dsw-alias-label-tertiary); font-family: var(--dsw-font-family); font-size: 12px; }
       .dgp-diff-truncated {
         display: flex;
         align-items: center;
@@ -1005,7 +999,7 @@ window.__ModuleLoader__.load({
       }
       @media (pointer: coarse) {
         .dgp-row, .dgp-group-head { min-height: 40px; }
-        .dgp-iconbtn, .dgp-tool { width: 32px; height: 32px; }
+        .dgp-iconbtn { width: 32px; height: 32px; }
         .dgp-divider::after { inset: 0 -10px; }
         /* 触屏没有悬停，行尾与分组头的按钮必须一直在 */
         .dgp-row-action, .dgp-group-action { opacity: 1; }
@@ -5130,8 +5124,7 @@ window.__ModuleLoader__.load({
        *     **不要**把两个类放在同一个节点上：`.dgp-diff-col{overflow:hidden}` 会把超长列表裁掉，
        *     导致 split 视图无法纵向滚动。
        *   - `.dgp-diff-row` 是 4 列 grid，所以 unified 行的直接子元素必须是
-       *     `.dgp-ln` / `.dgp-ln` / `.dgp-marker` / `.dgp-diff-text` —— **不能**再包一层 `.dgp-diff-gutter`，
-       *     否则 grid 列会错位（`.dgp-diff-gutter{display:contents}` 只是兜底）。
+       *     `.dgp-ln` / `.dgp-ln` / `.dgp-marker` / `.dgp-diff-text`，不能再包一层容器，否则 grid 列会错位。
        *   - `.dgp-diff-cell` 是 2 列 grid，子元素顺序固定为 `.dgp-ln` + `.dgp-diff-text`。
        *   - `.dgp-hunk-head` 是 flex + 两侧 filler，`.dgp-hunk-section` 必须是它的**子元素**才能同行。
        *   - `+` / `−` 符号由 CSS 的 `::before` 负责，`.dgp-marker` 里只放空内容。
@@ -5265,7 +5258,7 @@ window.__ModuleLoader__.load({
 
       /**
        * 统一视图的一行。
-       * 注意：直接子元素就是 4 列 grid 的 4 个格子，不包 `.dgp-diff-gutter`。
+       * 注意：直接子元素就是 4 列 grid 的 4 个格子。
        */
       function unifiedRowNode(row, index, keyBase, marks) {
         let segments
@@ -5931,7 +5924,7 @@ window.__ModuleLoader__.load({
         return { rows: kept, truncatedCount: list.length - kept.length }
       }
 
-      Object.assign(exports, { MAX_DIFF_ROWS, MAX_WORD_DIFF_CHARS, buildUnifiedRows, pairChangedRuns, buildSplitRows, highlightWordDiff, diffStats, budgetRows });
+      Object.assign(exports, { MAX_DIFF_ROWS, buildUnifiedRows, pairChangedRuns, buildSplitRows, highlightWordDiff, diffStats, budgetRows });
 
     });
     __define("./components/FileEditor.js", (exports, module) => {
@@ -6602,7 +6595,7 @@ window.__ModuleLoader__.load({
         return useMemo(() => ({ begin, isLatest }), [begin, isLatest])
       }
 
-      Object.assign(exports, { MODE, UNTRACKED_MODES, CHANGES_VIEWS, usePref, useLatestGuard });
+      Object.assign(exports, { MODE, UNTRACKED_MODES, usePref, useLatestGuard });
 
     });
     __define("./util/remote.js", (exports, module) => {

@@ -15,13 +15,13 @@ import { readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'no
 import path from 'node:path'
 
 export const DEFAULT_TIMEOUT_MS = 15_000
-export const DIFF_TIMEOUT_MS = 30_000
-export const MAX_GIT_OUTPUT = 16 * 1024 * 1024
-export const MAX_TEXT_FILE_BYTES = 1024 * 1024
+const DIFF_TIMEOUT_MS = 30_000
+const MAX_GIT_OUTPUT = 16 * 1024 * 1024
+const MAX_TEXT_FILE_BYTES = 1024 * 1024
 
 /** 错误详情里保留的 git 输出上限：够看清原因，又不会把信封撑爆。 */
 const DETAIL_LIMIT = 4000
-export const MAX_TREE_ENTRIES = 2000
+const MAX_TREE_ENTRIES = 2000
 
 /** 与 git 交互时的统一错误类型。 */
 export class GitError extends Error {
@@ -173,12 +173,6 @@ export function runGit(cwd, args, options = {}) {
   })
 }
 
-/** 运行 git 并以 utf8 拿 stdout。 */
-export async function gitText(cwd, args, options = {}) {
-  const result = await runGit(cwd, args, options)
-  return { text: decodeGitOutput(result.stdout), ...result }
-}
-
 /**
  * git 的 stdout 对路径是原始字节；这里做宽松 utf8 解码。
  * 不走 TextDecoder('utf-8', {fatal:true})，避免个别非 utf8 文件名整段失败。
@@ -208,7 +202,7 @@ export async function resolveRepo(dir) {
 }
 
 /** 目录内部是否有 .git（目录或 gitfile），不向上找祖先。 */
-export function hasOwnGitDir(dir) {
+function hasOwnGitDir(dir) {
   try {
     return existsSync(path.join(dir, '.git'))
   } catch {
@@ -466,7 +460,7 @@ function applyNumstat(byPath, entries, stagedOnly) {
 }
 
 /** 解析 `git diff --numstat -z`；重命名条目把两条路径放在额外 token 里。 */
-export function parseNumstat(text) {
+function parseNumstat(text) {
   const tokens = text.split('\u0000')
   const out = []
   for (let i = 0; i < tokens.length; i += 1) {
@@ -782,7 +776,7 @@ export async function readTextFile(absPath, options = {}) {
 }
 
 /** 原始字节的 sha1（保存时的乐观并发校验用）。 */
-export function hashBytes(buffer) {
+function hashBytes(buffer) {
   return createHash('sha1').update(buffer).digest('hex')
 }
 
@@ -1011,7 +1005,7 @@ export async function discoverRepos(projectRoot, options = {}) {
  * 以 `-` 开头（会被 git 当成选项）以及 `.git` 内部一律拒绝 ——
  * 暂存/取消暂存把这条路径原样放进参数数组，校验必须在拼命令之前完成。
  */
-export function assertRepoPath(relPath) {
+function assertRepoPath(relPath) {
   if (typeof relPath !== 'string' || relPath.trim() === '') {
     throw new GitError('bad-request', '缺少文件路径')
   }
@@ -1087,7 +1081,7 @@ export async function stageGroup(repoRoot, scope, options = {}) {
 }
 
 /** 提交说明的长度上限：超过就不是一条提交说明了。 */
-export const COMMIT_MESSAGE_MAX = 5000
+const COMMIT_MESSAGE_MAX = 5000
 
 /** 索引里有没有已暂存的改动（`git diff --cached --quiet`：有差异时退出码 1）。 */
 async function indexHasChanges(repoRoot, signal) {
@@ -1305,13 +1299,13 @@ export function languageForPath(p) {
 // ---------------------------------------------------------------------------
 
 /** fetch 的默认超时：网络操作比本地 git 慢，给足但必须有上限。 */
-export const FETCH_TIMEOUT_MS = 30_000
+const FETCH_TIMEOUT_MS = 30_000
 
 /**
  * 读 origin 的地址（没有配置返回 null）。
  * 只读本地配置，不联网。
  */
-export async function readRemoteUrl(repoRoot, options = {}) {
+async function readRemoteUrl(repoRoot, options = {}) {
   const { signal } = options
   const result = await runGit(repoRoot, ['config', '--get', 'remote.origin.url'], { signal, allowFailure: true })
   if (result.code !== 0) return null

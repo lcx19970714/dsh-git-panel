@@ -1,7 +1,7 @@
 /**
  * dsh-git-panel —— Host 半体（纯 ESM，只用 node 内置模块 + host/git.js）
  *
- * 注册方式（见 _recon/notes/host-api.md §2.1）：
+ * 注册方式（平台约束见 docs/ARCHITECTURE.md §3.1）：
  *   ctx.inject(['connection'], (c) => c.effect(() => c.connection.rpc.handle('/dsh-git', handler), label))
  * 通道用单段路径 `/dsh-git`（`/api` 保留，注册会抛错）。
  *

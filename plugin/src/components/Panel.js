@@ -925,6 +925,15 @@ function buildUpdateNote(updateState, t) {
           onClick: () => setMode(MODE.files)
         }, t('mode.files'))),
       h('div', { className: 'dgp-spacer' }),
+      // 检测更新的结果贴在版本号左边，不单独占一行（宽度不够时自己截断，全文在 title 里）
+      updateNote === null
+        ? null
+        : h('span', {
+          className: 'dgp-update-note',
+          'data-update-note': updateNote.tone,
+          'data-tone': updateNote.tone,
+          title: updateNote.text
+        }, updateNote.text),
       h('button', {
         type: 'button',
         className: 'dgp-version',
@@ -1325,10 +1334,6 @@ function buildUpdateNote(updateState, t) {
     onKeyDown
   },
   toolbar,
-  updateNote === null
-    ? null
-    : h('div', { className: 'dgp-notebar', 'data-update-note': updateNote.tone },
-      h(InlineNote, { tone: updateNote.tone }, updateNote.text)),
   filterRow,
   warnings.length === 0
     ? null

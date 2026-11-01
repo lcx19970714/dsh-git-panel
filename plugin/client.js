@@ -1128,8 +1128,21 @@ window.__ModuleLoader__.load({
       .dgp-version:disabled { opacity: .45; cursor: default; }
       .dgp-version-text { letter-spacing: .2px; }
 
-      /* 检测更新的一句话结果（在工具条下方） */
-      .dgp-notebar { padding: 0 10px 6px; }
+      /* 检测更新的结果：贴在版本号按钮左边，不单独占一行；空间不够时自己截断 */
+      .dgp-update-note {
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 190px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--dsw-alias-label-tertiary);
+        font-size: 11px;
+        line-height: 16px;
+      }
+      .dgp-update-note[data-tone="info"] { color: var(--dsw-alias-label-secondary); }
+      .dgp-update-note[data-tone="warn"] { color: var(--dsw-alias-state-warn-label); }
+      .dgp-update-note[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
 
 
       /* ==================================================================
@@ -2501,6 +2514,15 @@ window.__ModuleLoader__.load({
                 onClick: () => setMode(MODE.files)
               }, t('mode.files'))),
             h('div', { className: 'dgp-spacer' }),
+            // 检测更新的结果贴在版本号左边，不单独占一行（宽度不够时自己截断，全文在 title 里）
+            updateNote === null
+              ? null
+              : h('span', {
+                className: 'dgp-update-note',
+                'data-update-note': updateNote.tone,
+                'data-tone': updateNote.tone,
+                title: updateNote.text
+              }, updateNote.text),
             h('button', {
               type: 'button',
               className: 'dgp-version',
@@ -2901,10 +2923,6 @@ window.__ModuleLoader__.load({
           onKeyDown
         },
         toolbar,
-        updateNote === null
-          ? null
-          : h('div', { className: 'dgp-notebar', 'data-update-note': updateNote.tone },
-            h(InlineNote, { tone: updateNote.tone }, updateNote.text)),
         filterRow,
         warnings.length === 0
           ? null

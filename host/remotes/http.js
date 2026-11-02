@@ -17,10 +17,25 @@ export function messageOf(error) {
 /** 从 Link 头里取最后一页的页码；没有 Link 就返回 null（不猜总数）。 */
 export function lastPageOf(linkHeader) {
   if (typeof linkHeader !== 'string' || linkHeader === '') return null
-  const match = /[?&]page=(\d+)[^>]*>;\s*rel="last"/.exec(linkHeader)
+  // 引号两家不同：GitHub 用 rel="last"，Gitee 用 rel='last'
+  const match = /[?&]page=(\d+)[^>]*>;\s*rel=['"]last['"]/.exec(linkHeader)
   if (match === null) return null
   const page = Number.parseInt(match[1], 10)
   return Number.isFinite(page) && page > 0 ? page : null
+}
+
+/**
+ * 列表总数：优先 Link 的 last 页（page=N 且 per_page=1 时就是总数），
+ * 其次 `total_count`（Gitee 的响应头、GitHub search 的响应体）。
+ * 两者都没有就返回 null —— 界面显示「数量未知」，不编数字。
+ */
+export function totalOf(linkHeader, body) {
+  const last = lastPageOf(linkHeader)
+  if (last !== null) return last
+  if (body !== null && body !== undefined && typeof body === 'object' && !Array.isArray(body)) {
+    if (typeof body.total_count === 'number' && Number.isFinite(body.total_count)) return body.total_count
+  }
+  return null
 }
 
 /** 带超时的 fetch，失败归一成 GitError（调用方只需要关心「失败了，原因是什么」）。 */

@@ -22,6 +22,7 @@ async function withGlobal(name, value, fn) {
 
 const { openExternalUrl } = await import('../src/util/openUrl.js')
 const { copyText } = await import('../src/util/clipboard.js')
+const { formatDateTime } = await import('../src/util/time.js')
 
 let passed = 0
 async function check(name, fn) {
@@ -78,6 +79,14 @@ await check('copyText：浏览器拒绝时返回 denied', async () => {
     clipboard: { writeText: async () => { throw new Error('NotAllowedError') } }
   }, () => copyText('x'))
   assert.deepEqual(result, { ok: false, reason: 'denied' })
+})
+
+await check('formatDateTime：今天只显示时分，今年带月日，跨年带年份', async () => {
+  const now = new Date(2026, 4, 20, 15, 30, 0).getTime()
+  assert.equal(formatDateTime(new Date(2026, 4, 20, 9, 5, 0).getTime(), now), '09:05', '今天：时分')
+  assert.equal(formatDateTime(new Date(2026, 0, 3, 8, 7, 0).getTime(), now), '01-03 08:07', '今年：月日 + 时分')
+  assert.equal(formatDateTime(new Date(2025, 11, 31, 23, 59, 0).getTime(), now), '2025-12-31 23:59', '跨年：带年份')
+  assert.equal(formatDateTime(Number.NaN, now), '—', '非法时间戳给占位符')
 })
 
 console.log('')

@@ -16,7 +16,7 @@
  */
 import { h, useState } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
-import { formatClock } from '../util/time.js'
+import { formatDateTime } from '../util/time.js'
 import { openExternalUrl } from '../util/openUrl.js'
 
 /** 秒数保留一位小数，避免每次 tick 都跳一大截。 */
@@ -247,7 +247,7 @@ export function RemotePane(props) {
           h('div', { className: 'dgp-remote-meta dgp-oneline' },
             repo.description !== '' ? repo.description + ' · ' : '',
             repo.language !== '' ? repo.language + ' · ' : '',
-            repo.updatedAt !== '' ? translate('remote.updatedAt', { time: formatClock(Date.parse(repo.updatedAt)) }) : ''),
+            repo.updatedAt !== '' ? translate('remote.updatedAt', { time: formatDateTime(Date.parse(repo.updatedAt)) }) : ''),
           folderFor === repo.fullName
             ? h('div', {
               className: 'dgp-remote-cloneform',

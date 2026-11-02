@@ -113,11 +113,14 @@ const github = {
   pullPath: (number) => '/pulls/' + number,
   pullListPath: (pageSize) => '/pulls?state=open&per_page=' + pageSize,
   issueListPath: (pageSize) => '/issues?state=open&per_page=' + pageSize,
-  // /issues 会把 PR 也算进去，所以 issue 总数要减去 PR 总数
-  issuesIncludePulls: true,
   filesPath: (number) => '/pulls/' + number + '/files',
   // PR 在 GitHub 上是 issue，评论走 issues 接口
   commentPath: (number) => '/issues/' + number + '/comments',
+  // 计数：issues 列表是游标分页（没有 rel=last），用 search API 的 total_count 才准；
+  // search 的 type:issue 天然排除 PR，不需要再减。
+  countsPath: (kind, fullName) => (kind === 'issues'
+    ? '/search/issues?q=' + encodeURIComponent('repo:' + fullName + ' type:issue state:open') + '&per_page=1'
+    : '/repos/' + fullName + '/pulls?state=open&per_page=1'),
   normalizeRepo: repoMeta,
   normalizeIssue: issueMeta,
   normalizeDetail: (item, fullName) => ({
@@ -158,9 +161,11 @@ const gitee = {
   pullPath: (number) => '/pulls/' + number,
   pullListPath: (pageSize) => '/pulls?state=open&per_page=' + pageSize,
   issueListPath: (pageSize) => '/issues?state=open&per_page=' + pageSize,
-  issuesIncludePulls: false,
   filesPath: (number) => '/pulls/' + number + '/files',
   commentPath: (number) => '/pulls/' + number + '/comments',
+  // Gitee 的 issues / pulls 是两个独立集合，且响应头带 total_count、Link 带 rel='last'
+  countsPath: (kind, fullName) => '/repos/' + fullName
+    + (kind === 'issues' ? '/issues?state=open&per_page=1' : '/pulls?state=open&per_page=1'),
   normalizeRepo: repoMeta,
   normalizeIssue: issueMeta,
   normalizeDetail: (item, fullName) => ({
@@ -189,7 +194,7 @@ export const PROVIDER_IDS = Object.freeze(['github', 'gitee'])
 const REQUIRED_PROVIDER_KEYS = [
   'id', 'label', 'web', 'apiBase', 'tokenUrl', 'headers', 'authorize',
   'userPath', 'reposPath', 'repoPath', 'pullPath', 'pullListPath', 'issueListPath',
-  'filesPath', 'commentPath',
+  'filesPath', 'commentPath', 'countsPath',
   'normalizeRepo', 'normalizeIssue', 'normalizeDetail'
 ]
 const REQUIRED_PULL_KEYS = [

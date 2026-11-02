@@ -6,7 +6,7 @@
  */
 import { h, useState } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
-import { formatClock } from '../util/time.js'
+import { formatDateTime } from '../util/time.js'
 
 const VERDICT_LABEL = {
   approve: 'pull.approve',
@@ -210,7 +210,7 @@ export function PullDetail(props) {
       h('span', null, '+' + statText(pull.additions) + ' / −' + statText(pull.deletions)),
       h('span', null, t('pull.filesChanged', { count: statText(pull.changedFiles) })),
       h('span', null, t('pull.commits', { count: pull.commits })),
-      pull.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatClock(Date.parse(pull.updatedAt)) }))),
+      pull.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatDateTime(Date.parse(pull.updatedAt)) }))),
 
     pull.body === ''
       ? null
@@ -308,7 +308,7 @@ export function PullDetail(props) {
           data.reviews.map((review, index) => h('li', { key: String(index), className: 'dgp-detail-item' },
             h('span', { className: 'dgp-pull-verdict', 'data-state': review.state }, review.state),
             h('span', { className: 'dgp-detail-meta dgp-oneline' },
-              review.author + (review.submittedAt === '' ? '' : ' · ' + formatClock(Date.parse(review.submittedAt))),
+              review.author + (review.submittedAt === '' ? '' : ' · ' + formatDateTime(Date.parse(review.submittedAt))),
               review.body === '' ? '' : ' · ' + review.body)))),
       canMerge
         ? h('div', { className: 'dgp-pull-actions' },

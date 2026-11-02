@@ -5,7 +5,7 @@ import path from 'node:path'
 import { existsSync, readdirSync } from 'node:fs'
 
 import { GitError, runGit } from '../git.js'
-import { lastPageOf, readArray, readJson as readJsonSafe, readObject, request } from './http.js'
+import { readArray, readObject, readJson as readJsonSafe, request, totalOf } from './http.js'
 import { requireFullName, requireProvider } from './providers.js'
 
 export function createRepos(deps) {
@@ -53,24 +53,23 @@ export function createRepos(deps) {
 
     const detail = await readObject(await send(base), '仓库详情')
 
-    const section = async (listPath, isIssues) => {
+    const section = async (kind, listPath) => {
       const listResponse = await send(base + listPath(pageSize))
       const list = await readArray(listResponse, '条目')
-      const countResponse = await send(base + listPath(1))
-      // 计数请求只要读到分页头，响应体本身是什么都无所谓
-      await readJsonSafe(countResponse)
-      const items = list.filter((item) => (
-        isIssues && activeProvider.issuesIncludePulls ? item.pull_request === undefined : true
-      ))
+      // 计数单独请求：GitHub 的 issues 用 search 的 total_count 才准确，
+      // Gitee 用列表响应里的 Link / total_count。
+      const countUrl = provider.apiBase + provider.countsPath(kind, fullName)
+      const countResponse = await send(countUrl)
+      const countBody = await readJsonSafe(countResponse)
       return {
-        total: lastPageOf(countResponse.headers?.get?.('link')),
-        items: items.slice(0, pageSize).map(activeProvider.normalizeIssue)
+        total: totalOf(countResponse.headers?.get?.('link'), countBody),
+        items: list.slice(0, pageSize).map(activeProvider.normalizeIssue)
       }
     }
 
     const [issuesResult, pullsResult] = await Promise.allSettled([
-      section(provider.issueListPath, true),
-      section(provider.pullListPath, false)
+      section('issues', provider.issueListPath),
+      section('pulls', provider.pullListPath)
     ])
     const failures = []
     const pick = (settled, label) => {
@@ -81,13 +80,9 @@ export function createRepos(deps) {
     const issues = pick(issuesResult, 'issues')
     const pulls = pick(pullsResult, 'pulls')
 
-    const issuesTotal = provider.issuesIncludePulls === true
-      ? (issues.total === null || pulls.total === null ? null : Math.max(0, issues.total - pulls.total))
-      : issues.total
-
     return {
       repo: provider.normalizeDetail(detail, fullName),
-      issues: { total: issuesTotal, items: issues.items },
+      issues: { total: issues.total, items: issues.items },
       pulls: { total: pulls.total, items: pulls.items },
       failures
     }
@@ -120,7 +115,7 @@ export function createRepos(deps) {
       try {
         const response = await request(fetchImpl, url, { headers }, options.signal)
         const list = await readArray(response, '未合并 PR')
-        const total = lastPageOf(response.headers?.get?.('link'))
+        const total = totalOf(response.headers?.get?.('link'), null)
         counts[fullName] = total === null ? list.length : total
       } catch (error) {
         counts[fullName] = null

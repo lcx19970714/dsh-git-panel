@@ -7689,7 +7689,37 @@ window.__ModuleLoader__.load({
           .join(':')
       }
 
-      Object.assign(exports, { formatClock });
+      /**
+       * 显示日期 + 时间。
+       *
+       * 远端数据（PR 更新时间、review 提交时间、issue 创建时间）必须能看出是哪一天，
+       * 只显示 HH:MM:SS 会让人误以为是今天。规则：
+       *  - 今天：HH:MM
+       *  - 今年：MM-DD HH:MM
+       *  - 更早：YYYY-MM-DD HH:MM
+       *
+       * @param {number} timestamp 毫秒时间戳
+       * @param {number} now 参考时间（测试用）
+       */
+      function formatDateTime(timestamp, now = Date.now()) {
+        if (!Number.isFinite(timestamp)) return '—'
+        const date = new Date(timestamp)
+        if (!Number.isFinite(date.getTime())) return '—'
+        const clock = [date.getHours(), date.getMinutes()]
+          .map((value) => String(value).padStart(2, '0'))
+          .join(':')
+        const reference = new Date(now)
+        const sameDay = date.getFullYear() === reference.getFullYear()
+          && date.getMonth() === reference.getMonth()
+          && date.getDate() === reference.getDate()
+        if (sameDay) return clock
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        if (date.getFullYear() === reference.getFullYear()) return month + '-' + day + ' ' + clock
+        return String(date.getFullYear()) + '-' + month + '-' + day + ' ' + clock
+      }
+
+      Object.assign(exports, { formatClock, formatDateTime });
 
     });
     __define("./components/CommitBox.js", (exports, module) => {
@@ -8246,7 +8276,7 @@ window.__ModuleLoader__.load({
        */
       const { h, useState } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
-      const { formatClock } = __m("./util/time.js");
+      const { formatDateTime } = __m("./util/time.js");
       const { openExternalUrl } = __m("./util/openUrl.js");
 
       /** 秒数保留一位小数，避免每次 tick 都跳一大截。 */
@@ -8477,7 +8507,7 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'dgp-remote-meta dgp-oneline' },
                   repo.description !== '' ? repo.description + ' · ' : '',
                   repo.language !== '' ? repo.language + ' · ' : '',
-                  repo.updatedAt !== '' ? translate('remote.updatedAt', { time: formatClock(Date.parse(repo.updatedAt)) }) : ''),
+                  repo.updatedAt !== '' ? translate('remote.updatedAt', { time: formatDateTime(Date.parse(repo.updatedAt)) }) : ''),
                 folderFor === repo.fullName
                   ? h('div', {
                     className: 'dgp-remote-cloneform',
@@ -8588,7 +8618,7 @@ window.__ModuleLoader__.load({
        */
       const { h } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
-      const { formatClock } = __m("./util/time.js");
+      const { formatDateTime } = __m("./util/time.js");
 
       function Section(props) {
         const { title, total, itemsTheLabel, items, emptyLabel, openLabel, onOpen, t, kind } = props
@@ -8624,7 +8654,7 @@ window.__ModuleLoader__.load({
                 }, (item.number === null ? '' : '#' + item.number + ' ') + item.title),
                 h('span', { className: 'dgp-detail-meta dgp-oneline' },
                   item.author === '' ? '' : item.author + ' · ',
-                  item.createdAt === '' ? '' : formatClock(Date.parse(item.createdAt)))))))
+                  item.createdAt === '' ? '' : formatDateTime(Date.parse(item.createdAt)))))))
       }
 
       function RemoteDetail(props) {
@@ -8700,7 +8730,7 @@ window.__ModuleLoader__.load({
             meta === '' ? null : h('span', null, meta),
             h('span', null, t('detail.stars', { count: repo.stars })),
             h('span', null, t('detail.forks', { count: repo.forks })),
-            repo.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatClock(Date.parse(repo.updatedAt)) }))),
+            repo.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatDateTime(Date.parse(repo.updatedAt)) }))),
 
           (Array.isArray(data.failures) ? data.failures : []).map((failure) => h('p', {
             key: failure.section,
@@ -8752,7 +8782,7 @@ window.__ModuleLoader__.load({
        */
       const { h, useState } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
-      const { formatClock } = __m("./util/time.js");
+      const { formatDateTime } = __m("./util/time.js");
 
       const VERDICT_LABEL = {
         approve: 'pull.approve',
@@ -8956,7 +8986,7 @@ window.__ModuleLoader__.load({
             h('span', null, '+' + statText(pull.additions) + ' / −' + statText(pull.deletions)),
             h('span', null, t('pull.filesChanged', { count: statText(pull.changedFiles) })),
             h('span', null, t('pull.commits', { count: pull.commits })),
-            pull.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatClock(Date.parse(pull.updatedAt)) }))),
+            pull.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatDateTime(Date.parse(pull.updatedAt)) }))),
 
           pull.body === ''
             ? null
@@ -9054,7 +9084,7 @@ window.__ModuleLoader__.load({
                 data.reviews.map((review, index) => h('li', { key: String(index), className: 'dgp-detail-item' },
                   h('span', { className: 'dgp-pull-verdict', 'data-state': review.state }, review.state),
                   h('span', { className: 'dgp-detail-meta dgp-oneline' },
-                    review.author + (review.submittedAt === '' ? '' : ' · ' + formatClock(Date.parse(review.submittedAt))),
+                    review.author + (review.submittedAt === '' ? '' : ' · ' + formatDateTime(Date.parse(review.submittedAt))),
                     review.body === '' ? '' : ' · ' + review.body)))),
             canMerge
               ? h('div', { className: 'dgp-pull-actions' },

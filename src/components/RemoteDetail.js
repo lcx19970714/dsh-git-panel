@@ -6,7 +6,7 @@
  */
 import { h } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
-import { formatClock } from '../util/time.js'
+import { formatDateTime } from '../util/time.js'
 
 function Section(props) {
   const { title, total, itemsTheLabel, items, emptyLabel, openLabel, onOpen, t, kind } = props
@@ -42,7 +42,7 @@ function Section(props) {
           }, (item.number === null ? '' : '#' + item.number + ' ') + item.title),
           h('span', { className: 'dgp-detail-meta dgp-oneline' },
             item.author === '' ? '' : item.author + ' · ',
-            item.createdAt === '' ? '' : formatClock(Date.parse(item.createdAt)))))))
+            item.createdAt === '' ? '' : formatDateTime(Date.parse(item.createdAt)))))))
 }
 
 export function RemoteDetail(props) {
@@ -118,7 +118,7 @@ export function RemoteDetail(props) {
       meta === '' ? null : h('span', null, meta),
       h('span', null, t('detail.stars', { count: repo.stars })),
       h('span', null, t('detail.forks', { count: repo.forks })),
-      repo.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatClock(Date.parse(repo.updatedAt)) }))),
+      repo.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatDateTime(Date.parse(repo.updatedAt)) }))),
 
     (Array.isArray(data.failures) ? data.failures : []).map((failure) => h('p', {
       key: failure.section,

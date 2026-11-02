@@ -295,13 +295,12 @@ await test('批量 PR 数量：非法仓库名直接跳过并报出来', async (
   assert.equal(result.failures.length, 1)
 })
 
-await test('仓库详情：GitHub 的 issue 数要减掉 PR，总数来自 Link 最后一页', async () => {
+await test('仓库详情：issue 数走 search 的 total_count，PR 数走 Link 末页（Gitee 的 Link 是单引号）', async () => {
   const credentials = fakeCredentials()
-  const link = (page) => `<https://api.github.com/x?page=${page}>; rel="last"`
   const fetchImpl = fakeFetch([
     [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
-    [/\/repos\/alice\/app\/issues\?.*per_page=1$/, { json: [], headers: { link: link(12) } }],
-    [/\/repos\/alice\/app\/pulls\?.*per_page=1$/, { json: [], headers: { link: link(5) } }],
+    [/api\.github\.com\/search\/issues\?/, { json: { total_count: 7, items: [] } }],
+    [/\/repos\/alice\/app\/pulls\?.*per_page=1$/, { json: [], headers: { link: '<x?page=5>; rel="last"' } }],
     [/\/repos\/alice\/app\/issues\?/, {
       json: [
         { number: 7, title: 'issue A', html_url: 'https://github.com/alice/app/issues/7', user: { login: 'bob' }, created_at: '2026-01-01T00:00:00Z' },
@@ -325,13 +324,35 @@ await test('仓库详情：GitHub 的 issue 数要减掉 PR，总数来自 Link 
   const detail = await remotes.repoDetail({ accountId: 'github:alice', fullName: 'alice/app' })
   assert.equal(detail.repo.language, 'TypeScript')
   assert.equal(detail.repo.stars, 9)
-  assert.equal(detail.repo.issuesUrl, 'https://github.com/alice/app/issues')
   assert.equal(detail.pulls.total, 5, 'PR 总数 = Link 最后一页')
-  assert.equal(detail.issues.total, 7, 'issue 数 = 12 - 5')
-  assert.equal(detail.issues.items.length, 1, 'issues 列表里要过滤掉 PR')
-  assert.equal(detail.issues.items[0].title, 'issue A')
+  assert.equal(detail.issues.total, 7, 'issue 数 = search 的 total_count（search type:issue 已排除 PR）')
+  assert.equal(detail.issues.items.length, 2, '列表原样返回（GitHub 列表里含 PR，由界面按条目展示）')
   assert.equal(detail.pulls.items[0].number, 3)
   assert.deepEqual(detail.failures, [])
+})
+
+await test('计数：Gitee 的 Link 用单引号 rel=\'last\' 也能读出总数（之前永远是「数量未知」）', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/repos\/bob\/tool\/pulls\?state=open&per_page=1&access_token=/, {
+      json: [{ number: 1, title: 'PR', html_url: 'x', user: { login: 'bob' } }],
+      headers: { link: "<https://gitee.com/x?page=283>; rel='last'" }
+    }],
+    [/\/repos\/bob\/tool\/issues\?state=open&per_page=1&access_token=/, {
+      json: [],
+      headers: { total_count: '220', link: "<https://gitee.com/x?page=220>; rel='last'" }
+    }],
+    [/\/repos\/bob\/tool\/issues\?/, { json: [] }],
+    [/\/repos\/bob\/tool\/pulls\?/, { json: [] }],
+    [/\/repos\/bob\/tool\?/, { json: { full_name: 'bob/tool', language: 'Go', html_url: 'https://gitee.com/bob/tool' } }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+
+  const detail = await remotes.repoDetail({ accountId: 'gitee:bob', fullName: 'bob/tool' })
+  assert.equal(detail.pulls.total, 283, '单引号的 rel=last 必须能解析')
+  assert.equal(detail.issues.total, 220)
 })
 
 await test('Gitee：详情/列表/取用户都带 access_token，GitHub 的 URL 里不带 token', async () => {
@@ -397,10 +418,9 @@ await test('仓库详情：某一块失败只标记那一块，其余照常返�
   const credentials = fakeCredentials()
   const fetchImpl = fakeFetch([
     [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
-    [/\/repos\/alice\/app\/issues\?.*per_page=1$/, { json: [], headers: { link: '<x?page=4>; rel="last"' } }],
-    [/\/repos\/alice\/app\/pulls\?.*per_page=1$/, { status: 500, json: {} }],
-    [/\/repos\/alice\/app\/issues\?/, { json: [] }],
+    [/api\.github\.com\/search\/issues\?/, { json: { total_count: 4, items: [] } }],
     [/\/repos\/alice\/app\/pulls\?/, { status: 500, json: {} }],
+    [/\/repos\/alice\/app\/issues\?/, { json: [] }],
     [/\/repos\/alice\/app$/, { json: { full_name: 'alice/app', language: 'Go', html_url: 'https://github.com/alice/app' } }]
   ])
   const remotes = createRemotes({ credentials, fetchImpl })

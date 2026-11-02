@@ -208,6 +208,12 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not supported."}`。
 不要手写 `body: JSON.stringify(...)`。
 
+**计数与时间约定**：分页总数统一走 `totalOf(link, body)` —— 优先 Link 的 last 页
+（GitHub 用双引号 `rel="last"`，Gitee 用单引号 `rel='last'`，两种都要认），其次 `total_count`
+（Gitee 响应头 / GitHub search 响应体）。两者都没有时返回 `null`，界面显示「数量未知」而不是编数字。
+远端时间一律用 `formatDateTime`：今天 = HH:MM，今年 = MM-DD HH:MM，跨年 = YYYY-MM-DD HH:MM
+（只显示时分秒会让人误以为是当天）。
+
 **AI 审阅约定**：`remote/pull/ai-review` 由宿主取 `pulls/{n}/files` 的 patch，拼成
 PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 JSON（summary / verdict / findings[] / comment）。
 
@@ -236,7 +242,7 @@ PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 J
 `authorize()`**：Gitee 对「无权访问的私有仓库」返回 404 `{"message":"Not Found Project"}`，
 漏掉 token 会表现为「仓库不存在」，而不是 401。
 
-| `remote/detail` | `{accountId, fullName, pageSize?}` | `{repo, issues:{total,items}, pulls:{total,items}, failures}`；总数取分页 Link 最后一页，GitHub 的 issue 数会减掉 PR |
+| `remote/detail` | `{accountId, fullName, pageSize?}` | `{repo, issues:{total,items}, pulls:{total,items}, failures}`；总数由 provider 的 `countsPath` 单独取：GitHub 的 issues 走 search 的 `total_count`（`type:issue` 天然排除 PR），pulls 与 Gitee 两者都用列表的 Link 末页 / `total_count`；拿不到就是 `null`（界面显示「数量未知」） |
 | `remote/pr-counts` | `{accountId, fullNames[]}` | `{counts: {fullName: number\|null}, failures}`；每个仓库一次 per_page=1 请求，上限 50 个、并发 6 |
 | `remote/pull` | `{accountId, fullName, number}` | `{pull, reviews, capabilities}`；capabilities 说明平台支持哪些审查结论与合并方式 |
 | `remote/pull/review` | `{accountId, fullName, number, verdict, body?}` | `{verdict, bodyPosted}`；GitHub 三种结论，Gitee 只有 approve（说明走评论接口） |

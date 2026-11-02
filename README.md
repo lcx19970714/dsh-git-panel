@@ -63,7 +63,16 @@ node scripts/install-profile.mjs      # 建目录联接装进 default profile
 - **生成提交说明的模型** — 列出 DSH 当前可用的模型，选中即保存；未配置时生成会提示
 - **变更文件的显示方式** — 列表 / 树形
 - **未跟踪文件的分组** — 并进「未暂存」（与 VS Code 一致）或单列一组
-- **代码托管账号** — 添加 GitHub / Gitee 账号：粘贴一个只读访问令牌，插件先用它调一次 `/user` 验证，通过后把令牌存进 DSH 凭据服务（`credentialKey('dsh-git-panel', '<provider>')` 的 grant 记录）。插件不读明文配置、也不把令牌下发给客户端
+- **代码托管账号** — 添加 GitHub / Gitee 账号。设置页里给了跟着平台走的三步引导和「打开令牌页面」按钮（GitHub 会预填 `repo` scope），复制令牌粘进去即可；插件先用它调一次 `/user` 验证，通过后才存进 DSH 凭据服务（`credentialKey('dsh-git-panel', '<provider>')` 的 grant 记录）。插件不读明文配置、也不把令牌下发给客户端
+
+### 第一次添加账号（GitHub 例）
+
+1. 设置 → 最下面「代码托管账号」，平台选 GitHub
+2. 点「打开令牌页面」→ 浏览器打开 GitHub 新建令牌页，`repo` scope 已预填、描述写着 dsh-git-panel → 拉到最下面点 Generate token
+3. 复制那串 `ghp_…`（只显示一次）→ 回到面板粘贴 → 「添加账号」
+4. 成功会显示「已连接：<你的登录名>」，切到「远端」页签就能看到全部仓库
+
+Gitee 同理，第三步勾 `projects` 即可，其余一致。
 
 ## 限制
 

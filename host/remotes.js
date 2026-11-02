@@ -28,6 +28,8 @@ const github = {
   label: 'GitHub',
   web: 'https://github.com',
   apiBase: 'https://api.github.com',
+  // 预填 scope 与用途说明，用户点一下就能生成令牌
+  tokenUrl: 'https://github.com/settings/tokens/new?description=dsh-git-panel&scopes=repo',
   gitUser: 'x-access-token',
   headers: (token) => ({
     Authorization: 'Bearer ' + token,
@@ -57,6 +59,7 @@ const gitee = {
   label: 'Gitee',
   web: 'https://gitee.com',
   apiBase: 'https://gitee.com/api/v5',
+  tokenUrl: 'https://gitee.com/profile/personal_access_tokens',
   gitUser: null, // 用账号自己的 login
   headers: () => ({ Accept: 'application/json' }),
   userPath: (token) => '/user?access_token=' + encodeURIComponent(token),
@@ -201,7 +204,11 @@ export function createRemotes(deps) {
     }
     return {
       accounts: result,
-      providers: PROVIDER_IDS.map((providerId) => ({ id: providerId, label: PROVIDERS[providerId].label }))
+      providers: PROVIDER_IDS.map((providerId) => ({
+        id: providerId,
+        label: PROVIDERS[providerId].label,
+        tokenUrl: PROVIDERS[providerId].tokenUrl
+      }))
     }
   }
 

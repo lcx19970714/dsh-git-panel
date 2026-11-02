@@ -88,6 +88,7 @@ export function Panel(props) {
   const [providers, setProviders] = useState([])
   const [accountsBusy, setAccountsBusy] = useState(false)
   const [accountsError, setAccountsError] = useState(null)
+  const [accountsNotice, setAccountsNotice] = useState(null)
 
   /* ------------------------------- 根 ------------------------------- */
   const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -895,8 +896,10 @@ export function Panel(props) {
   const addAccount = useCallback(async (input) => {
     setAccountsBusy(true)
     setAccountsError(null)
+    setAccountsNotice(null)
     try {
-      await api.addAccount(input)
+      const value = await api.addAccount(input)
+      setAccountsNotice(tRef.current('accounts.success', { login: value.account.login }))
       await reloadAccounts()
     } catch (error) {
       setAccountsError(api.describeError(error, tRef.current))
@@ -1513,6 +1516,7 @@ function buildUpdateNote(updateState, t) {
       providers,
       accountsBusy,
       accountsError,
+      accountsNotice,
       onAddAccount: addAccount,
       onRemoveAccount: removeAccount,
       onBack: () => setShowSettings(false),

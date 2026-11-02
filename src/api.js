@@ -169,6 +169,11 @@ export function remotePullTest(payload, options) {
   return call('remote/pull/test', payload, options)
 }
 
+/** 一键「审查与测试都通过」（按平台能力执行）。 */
+export function remotePullPass(payload, options) {
+  return call('remote/pull/pass', payload, options)
+}
+
 /** 合并 PR。 */
 export function remotePullMerge(payload, options) {
   return call('remote/pull/merge', payload, options)

@@ -102,6 +102,8 @@ export const ENDPOINTS = Object.freeze([
   'branch/switch',
   'accounts/list',
   'accounts/add',
+  'accounts/update',
+  'accounts/token',
   'accounts/remove',
   'remote/repos',
   'remote/clone',
@@ -445,6 +447,18 @@ function createDispatcher(ctx) {
     }, { signal })
   }
 
+  async function accountsUpdate(request, signal) {
+    return remotesOf().updateAccount({
+      id: requireString(request.id, 'id'),
+      label: typeof request.label === 'string' ? request.label : undefined,
+      token: typeof request.token === 'string' ? request.token : undefined
+    }, { signal })
+  }
+
+  async function accountsToken(request) {
+    return remotesOf().readToken({ id: requireString(request.id, 'id') })
+  }
+
   async function accountsRemove(request) {
     return remotesOf().removeAccount({ id: requireString(request.id, 'id') })
   }
@@ -610,6 +624,10 @@ function createDispatcher(ctx) {
         return accountsList()
       case 'accounts/add':
         return accountsAdd(request, signal)
+      case 'accounts/update':
+        return accountsUpdate(request, signal)
+      case 'accounts/token':
+        return accountsToken(request)
       case 'accounts/remove':
         return accountsRemove(request)
       case 'remote/repos':

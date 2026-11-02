@@ -236,6 +236,54 @@ export function createRemotes(deps) {
     return { account: { id, provider: provider.id, login, label, providerLabel: provider.label } }
   }
 
+  /**
+   * 改账号：备注名随时可改；令牌可以换，但**换之前必须验证**（与添加同一套流程），
+   * 不把没验证过的令牌写进凭据服务。
+   */
+  async function updateAccount(input, options = {}) {
+    const { provider, account } = await findAccount(input.id)
+    const patch = {}
+
+    if (typeof input.label === 'string') {
+      patch.label = input.label.trim()
+    }
+
+    const nextToken = typeof input.token === 'string' ? input.token.trim() : ''
+    if (nextToken !== '') {
+      const response = await request(fetchImpl, provider.apiBase + provider.userPath(nextToken), { headers: provider.headers(nextToken) }, options.signal)
+      const data = await readJson(response)
+      const login = typeof data.login === 'string' ? data.login : ''
+      if (login === '') throw new GitError('remote-api-failed', '接口没有返回登录名，无法确认这个令牌')
+      if (login !== account.login) {
+        throw new GitError('token-mismatch', `这个令牌属于 ${login}，与当前账号 ${account.login} 不符`)
+      }
+      patch.token = nextToken
+    }
+
+    if (Object.keys(patch).length === 0) throw new GitError('bad-request', '没有要修改的内容')
+
+    await writeAccounts(provider.id, (accounts) => accounts.map((item) => (
+      item.id === account.id ? { ...item, ...patch } : item
+    )))
+
+    const stored = (await readAccounts(provider.id)).find((item) => item.id === account.id)
+    return {
+      account: {
+        id: stored.id,
+        provider: provider.id,
+        login: stored.login,
+        label: stored.label !== '' ? stored.label : stored.login,
+        providerLabel: provider.label
+      }
+    }
+  }
+
+  /** 取某个账号的令牌原文（只在用户主动点「显示」时调用，列表接口永远不含它）。 */
+  async function readToken(input) {
+    const { account } = await findAccount(input.id)
+    return { id: account.id, token: account.token }
+  }
+
   async function removeAccount(input) {
     const id = typeof input.id === 'string' ? input.id : ''
     const providerId = id.split(':')[0]
@@ -315,5 +363,5 @@ export function createRemotes(deps) {
     return { path: targetPath, name: targetName, fullName }
   }
 
-  return { listAccounts, addAccount, removeAccount, listRepos, cloneRepo }
+  return { listAccounts, addAccount, updateAccount, readToken, removeAccount, listRepos, cloneRepo }
 }

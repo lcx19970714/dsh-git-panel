@@ -1760,6 +1760,65 @@ test('用例 1G：已有账号时点 ＋ 也能就地添加', async () => {
   })
 })
 
+test('用例 1I：账号可以改备注名、显示并复制令牌', async () => {
+  const updates = []
+  const tokenReads = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'models/list': () => sayOk({ models: [], failed: [] }),
+      'settings/get': () => sayOk({ commitModel: null }),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'accounts/token': (payload) => {
+        tokenReads.push(payload)
+        return sayOk({ id: payload.id, token: 'ghp_secret_value' })
+      },
+      'accounts/update': (payload) => {
+        updates.push(payload)
+        return sayOk({
+          account: { id: payload.id, provider: 'github', login: 'alice', label: payload.label, providerLabel: 'GitHub' }
+        })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-action') === 'open-settings'))
+    await panel.flush()
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-account-edit') === 'github:alice'))
+    await panel.flush()
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'editor') !== null,
+      '应展开编辑区')
+
+    eq(tokenReads.length, 0, '没点显示之前不应读取令牌')
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'reveal-token'))
+    await panel.flush()
+    eq(tokenReads.length, 1, '点显示后应读取一次令牌')
+    eq(tokenReads[0], { id: 'github:alice' })
+    const tokenNode = panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'token-value')
+    assert(tokenNode !== null, '应显示令牌原文')
+    assert(textOf(tokenNode).includes('ghp_secret_value'), '显示的是真实令牌：' + textOf(tokenNode))
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'copy-token'))
+    await panel.flush()
+    const notice = panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'editor-notice')
+    assert(notice !== null, '复制后应有反馈')
+    assert(textOf(notice).includes('剪贴板'), '反馈要提到剪贴板：' + textOf(notice))
+
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'edit-label')
+      .props.onChange({ target: { value: '新名字' } })
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'save-account'))
+    await panel.flush()
+    eq(updates.length, 1, '应调用一次 accounts/update')
+    eq(updates[0], { id: 'github:alice', label: '新名字', token: '' }, '保存载荷')
+  })
+})
+
 test('用例 1H：浏览器拦截新窗口时，把令牌页地址原样显示出来', async () => {
   await withPanel({
     routes: {

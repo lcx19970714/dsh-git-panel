@@ -58,6 +58,8 @@ export function Panel(props) {
   const t = props.t
   const tRef = useRef(t)
   tRef.current = t
+  /** loadAccounts 定义在 openSettings 之后，这里留一个最新引用供打开设置时调用。 */
+  const loadAccountsRef = useRef(null)
 
   const sessionId = props.sessionId
 
@@ -696,6 +698,8 @@ export function Panel(props) {
   const openSettings = useCallback(async () => {
     setShowSettings(true)
     setSettingsState({ loading: true, models: [], commitModel: null, error: null, saved: false })
+    // 设置页也管理账号：进来就确保账号列表是最新的（只读列表接口，很便宜）
+    loadAccountsRef.current?.()
     try {
       const [catalog, settings] = await Promise.all([api.listModels({}), api.readSettings({})])
       const modelError = Array.isArray(catalog.failed) && catalog.failed.length > 0
@@ -821,6 +825,7 @@ export function Panel(props) {
       setRemoteError(api.describeError(error, tRef.current))
     }
   }, [])
+  loadAccountsRef.current = loadAccounts
 
   /** 读某个账号的仓库；append 用于「加载更多」。 */
   const loadRepos = useCallback(async (accountId, page, append) => {
@@ -911,6 +916,31 @@ export function Panel(props) {
       setAccountsBusy(false)
     }
   }, [reloadAccounts])
+
+  const updateAccount = useCallback(async (input) => {
+    setAccountsError(null)
+    setAccountsNotice(null)
+    try {
+      const value = await api.updateAccount(input)
+      setAccountsNotice(tRef.current('accounts.updated'))
+      await reloadAccounts()
+      return { ok: true, account: value.account }
+    } catch (error) {
+      const message = api.describeError(error, tRef.current)
+      setAccountsError(message)
+      return { ok: false, error: message }
+    }
+  }, [reloadAccounts])
+
+  /** 只在用户点「显示令牌」时取原文；列表接口永远不含 token。 */
+  const readAccountToken = useCallback(async (id) => {
+    try {
+      const value = await api.readAccountToken({ id })
+      return { ok: true, token: value.token }
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current) }
+    }
+  }, [])
 
   const removeAccount = useCallback(async (id) => {
     setAccountsBusy(true)
@@ -1524,6 +1554,8 @@ function buildUpdateNote(updateState, t) {
       accountsError,
       accountsNotice,
       onAddAccount: addAccount,
+      onUpdateAccount: updateAccount,
+      onReadToken: readAccountToken,
       onRemoveAccount: removeAccount,
       onBack: () => setShowSettings(false),
       t

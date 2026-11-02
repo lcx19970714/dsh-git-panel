@@ -1052,6 +1052,16 @@ export const CSS = `
 }
 .dgp-account-inline-head { display: flex; align-items: center; gap: 8px; }
 .dgp-account-inline .dgp-account-form { margin-top: 0; }
+/* 令牌原文：等宽展示，长了横向滚动（复制按钮在它上面） */
+.dgp-account-token {
+  overflow-x: auto;
+  padding: 4px 6px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+}
 .dgp-account-form .dgp-btn { flex: 0 0 auto; white-space: nowrap; }
 /* 设置页：获取令牌的三步引导 */
 .dgp-account-guide {

@@ -184,6 +184,11 @@ export function remotePullAiReview(payload, options) {
   return call('remote/pull/ai-review', payload, options)
 }
 
+/** 深度审阅：宿主拉取 PR head 到临时 worktree，读完整文件后再让模型审。 */
+export function remotePullDeepReview(payload, options) {
+  return call('remote/pull/deep-review', payload, options)
+}
+
 /** 提交用户确认过的 PR 评论。 */
 export function remotePullComment(payload, options) {
   return call('remote/pull/comment', payload, options)

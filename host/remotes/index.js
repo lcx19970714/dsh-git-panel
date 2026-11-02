@@ -152,6 +152,7 @@ export function createRemotes(deps) {
     cloneRepo: repos.cloneRepo,
     pullDetail: pulls.pullDetail,
     pullDiff: pulls.pullDiff,
+    reviewSource: pulls.reviewSource,
     reviewPull: pulls.reviewPull,
     testPull: pulls.testPull,
     passPull: pulls.passPull,

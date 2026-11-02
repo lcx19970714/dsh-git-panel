@@ -118,6 +118,9 @@ const github = {
   filesPath: (number) => '/pulls/' + number + '/files',
   // PR 在 GitHub 上是 issue，评论走 issues 接口
   commentPath: (number) => '/issues/' + number + '/comments',
+  // 深度审阅：GitHub 有标准的 refs/pull/N/head，链接到 fork 也能取到
+  gitUrl: (fullName) => 'https://github.com/' + fullName + '.git',
+  reviewRef: (number) => 'refs/pull/' + number + '/head',
   // 计数：issues 列表是游标分页（没有 rel=last），用 search API 的 total_count 才准；
   // search 的 type:issue 天然排除 PR，不需要再减。
   countsPath: (kind, fullName) => (kind === 'issues'
@@ -165,6 +168,15 @@ const gitee = {
   issueListPath: (pageSize) => '/issues?state=open&per_page=' + pageSize,
   filesPath: (number) => '/pulls/' + number + '/files',
   commentPath: (number) => '/pulls/' + number + '/comments',
+  // Gitee 没有公开的 pull refs，用 PR 的 head 分支拉取
+  gitUrl: (fullName) => 'https://gitee.com/' + fullName + '.git',
+  reviewRef: (number, pull) => {
+    const branch = pull === null || pull === undefined ? '' : pull.headBranch
+    if (typeof branch !== 'string' || branch === '') {
+      throw new GitError('bad-request', 'Gitee 的深度审阅需要 PR 的 head 分支名，但平台没有给出')
+    }
+    return 'refs/heads/' + branch
+  },
   // Gitee 的 issues / pulls 是两个独立集合，且响应头带 total_count、Link 带 rel='last'
   countsPath: (kind, fullName) => '/repos/' + fullName
     + (kind === 'issues' ? '/issues?state=open&per_page=1' : '/pulls?state=open&per_page=1'),
@@ -196,7 +208,7 @@ export const PROVIDER_IDS = Object.freeze(['github', 'gitee'])
 const REQUIRED_PROVIDER_KEYS = [
   'id', 'label', 'web', 'apiBase', 'tokenUrl', 'headers', 'authorize',
   'userPath', 'reposPath', 'repoPath', 'pullPath', 'pullListPath', 'issueListPath',
-  'filesPath', 'commentPath', 'countsPath',
+  'filesPath', 'commentPath', 'countsPath', 'gitUrl', 'reviewRef',
   'normalizeRepo', 'normalizeIssue', 'normalizeDetail'
 ]
 const REQUIRED_PULL_KEYS = [

@@ -13,6 +13,9 @@ import { GitError } from './git.js'
 
 /** 一次审阅最多喂进提示词的字符数（含文件头）。比提交说明的 60k 高很多。 */
 export const REVIEW_DIFF_LIMIT = 200_000
+/** 深度审阅：额外带上改动文件的完整内容，总量与单文件都另设上限。 */
+export const DEEP_INPUT_LIMIT = 600_000
+export const DEEP_FILE_LIMIT = 80_000
 /** 输出上限：审阅要列出多条问题 + 评论草稿，留足空间。 */
 export const MAX_OUTPUT_TOKENS = 8192
 const DEFAULT_TIMEOUT_MS = 180_000
@@ -47,8 +50,22 @@ const SYSTEM_PROMPT = [
   '7) 某些文件平台没有返回 patch（二进制或改动过大）：不要推测它们的内容；如果它们与本 PR 的目标相关，在 summary 里点明「这几个文件未被审阅」。'
 ].join('\n')
 
+/** 深度审阅：在通用规则之外，要求结合完整文件内容做上下文检查。 */
+const DEEP_SYSTEM_PROMPT = SYSTEM_PROMPT + '\n' + [
+  '',
+  '【深度审阅】你还能看到改动文件的完整内容。请额外检查：',
+  '- 改动与该文件其余部分是否自相矛盾（命名、错误处理、返回值约定、状态更新顺序）；',
+  '- 是否遗漏了必须同步修改的相邻逻辑（调用方、类型、默认值、清理逻辑）；',
+  '- 边界条件：空值、错误分支、并发/重入、资源释放；',
+  '- 与仓库既有风格/约定是否冲突。',
+  '仍然只输出前面规定的 JSON。'
+].join('\n')
+
 /** 把 PR 与文件列表拼成提示词正文，并在超限时明确写出截断。 */
-export function buildReviewInput(input) {
+export function buildReviewInput(input, options = {}) {
+  const deep = options.mode === 'deep'
+  const fullFiles = deep && Array.isArray(options.fullFiles) ? options.fullFiles : []
+  const limit = deep ? DEEP_INPUT_LIMIT : REVIEW_DIFF_LIMIT
   const pull = input.pull ?? {}
   const files = Array.isArray(input.files) ? input.files : []
   const head = [
@@ -86,13 +103,36 @@ export function buildReviewInput(input) {
         ? '(平台没有返回这个文件的 patch：可能是二进制文件，或该文件的 diff 过大。本文件 ' + lines + '，内容未被审阅。)'
         : file.patch
     ].join('\n')
-    if (used + block.length > REVIEW_DIFF_LIMIT) {
+    if (used + block.length > limit) {
       return { text: head + blocks.join(''), truncated: true, filesIncluded: blocks.length, skippedFiles }
     }
     blocks.push(block)
     used += block.length
   }
-  return { text: head + blocks.join(''), truncated: false, filesIncluded: blocks.length, skippedFiles }
+
+  // 深度模式：追加完整文件内容（单文件与总量都有上限）
+  if (deep) {
+    const names = new Set(files.map((file) => file.filename))
+    for (const full of fullFiles) {
+      if (!names.has(full.filename)) continue
+      const content = String(full.text ?? '')
+      const clipped = content.length > DEEP_FILE_LIMIT
+        ? content.slice(0, DEEP_FILE_LIMIT) + '\n[文件内容已截断：只保留前 ' + DEEP_FILE_LIMIT + ' 个字符]'
+        : content
+      const block = [
+        '',
+        '### 完整文件：' + full.filename + '（' + content.length + ' 字符）',
+        clipped === '' ? '(空文件)' : clipped
+      ].join('\n')
+      if (used + block.length > limit) {
+        return { text: head + blocks.join(''), truncated: true, filesIncluded: blocks.length, skippedFiles, deep: true }
+      }
+      blocks.push(block)
+      used += block.length
+    }
+  }
+
+  return { text: head + blocks.join(''), truncated: false, filesIncluded: blocks.length, skippedFiles, deep }
 }
 
 /** 严格校验模型输出：缺字段/类型不对/枚举越界都直接报，不修补。 */
@@ -160,10 +200,14 @@ function messageOf(error) {
  * 但输出上限更高、超时更长、推理档位不主动压低。
  */
 export async function generateReview(llm, pair, input, options = {}) {
+  const deep = options.mode === 'deep'
   if (llm === null || llm === undefined) {
     throw new GitError('no-llm', '当前 profile 没有挂载 LLM 服务，无法做 AI 审阅')
   }
-  const { text, truncated, filesIncluded, skippedFiles } = buildReviewInput(input)
+  const { text, truncated, filesIncluded, skippedFiles } = buildReviewInput(input, {
+    mode: deep ? 'deep' : 'diff',
+    fullFiles: options.fullFiles
+  })
   const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
     ? options.timeoutMs
     : DEFAULT_TIMEOUT_MS
@@ -194,7 +238,7 @@ export async function generateReview(llm, pair, input, options = {}) {
     const stream = call.stream({
       ...call.config,
       messages: [{ role: 'user', content: [{ type: 'text', text }] }],
-      system: SYSTEM_PROMPT,
+      system: deep ? DEEP_SYSTEM_PROMPT : SYSTEM_PROMPT,
       purpose: 'dsh-git-panel/pr-review',
       signal: controller.signal
     })

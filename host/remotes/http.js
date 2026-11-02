@@ -41,6 +41,22 @@ export async function request(fetchImpl, url, options, signal) {
 }
 
 /**
+ * 发送 JSON 请求体。
+ *
+ * 必须显式设置 Content-Type：fetch 对字符串 body 默认 text/plain，
+ * Gitee 会以 406 拒绝（The requested content-type 'text/plain' is not supported）。
+ * 所有 POST/PUT 都走这里，别再手写 body。
+ */
+export async function requestJson(fetchImpl, url, init, signal) {
+  const headers = { ...init.headers, 'Content-Type': 'application/json;charset=UTF-8' }
+  return request(fetchImpl, url, {
+    method: init.method,
+    headers,
+    body: JSON.stringify(init.json === undefined ? {} : init.json)
+  }, signal)
+}
+
+/**
  * 读 JSON，并把「失败」说清楚。
  *
  * **空响应是合法的成功**：`204 No Content` / 长度为 0 的 200 在 REST 里表示

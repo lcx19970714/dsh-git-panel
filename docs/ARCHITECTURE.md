@@ -199,6 +199,11 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 | `accounts/token` | `{id}` | `{id, token}`；只在用户点「显示令牌」时调用，列表接口不含令牌 |
 | `accounts/remove` | `{id}` | `{accounts}` |
 | `remote/repos` | `{accountId, page?}` | `{repos[], page, hasMore}`；GitHub/Gitee 字段归一成同一形状 |
+**写请求约定**：所有带 body 的请求都走 `requestJson()`，它固定设置
+`Content-Type: application/json;charset=UTF-8`。fetch 对字符串 body 默认 `text/plain`，
+Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not supported."}`。
+不要手写 `body: JSON.stringify(...)`。
+
 **空响应约定**：`readJson()` 对 `204` / 空体返回 `null`（成功但没有响应体）——Gitee 的审查通过接口就是这样。
 需要对象/数组的调用方用 `readObject()` / `readArray()`（空体直接报「平台没有返回 X」），
 纯写接口直接忽略返回值。任何写操作都不要假设「成功必有 JSON 回包」。

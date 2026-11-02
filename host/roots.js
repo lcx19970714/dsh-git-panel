@@ -59,6 +59,15 @@ function toPosix(target) {
   return normalizeSlashes(path.resolve(target))
 }
 
+/** 路径的规范形式：realpath 成功就用它，失败（目录已删除）就用 path.resolve 的结果。 */
+async function canonicalDir(target) {
+  try {
+    return toPosix(await realpath(target))
+  } catch {
+    return toPosix(path.resolve(target))
+  }
+}
+
 async function statOrNull(target) {
   try {
     return await stat(target)
@@ -377,13 +386,15 @@ export async function addExtraRoot(projectRoot, dir, options = {}) {
   if (!info) throw new GitError('not-found', `目录不存在：${normalizeSlashes(target)}`)
   if (!info.isDirectory()) throw new GitError('not-a-repository', `不是目录：${normalizeSlashes(target)}`)
 
-  // 只认这个目录本身：含 .git 才算仓库。不向上找祖先仓库（否则用户加的子目录
-  // 会被悄悄换成上层仓库），也不向下扫描子仓库。
-  if (!hasOwnGitDir(target)) {
-    throw new GitError('not-a-repository', `这个路径不是 Git 仓库（缺少 .git）：${normalizeSlashes(target)}`)
+  // 先规范化（8.3 短名 / 目录联接 / 符号链接 → 同一个身份），再校验。
+  // 只认这个目录本身：含 .git 才算仓库。不向上找祖先仓库（否则加子目录会被悄悄换成上层仓库），
+  // 也不向下扫描子仓库。
+  const canonical = await canonicalDir(target)
+  if (!hasOwnGitDir(canonical)) {
+    throw new GitError('not-a-repository', `这个路径不是 Git 仓库（缺少 .git）：${canonical}`)
   }
 
-  await addExtra(projectDir, toPosix(target), { logger: options.logger })
+  await addExtra(projectDir, canonical, { logger: options.logger })
   return resolveRoots(projectDir, options)
 }
 
@@ -434,10 +445,14 @@ export async function unhideRoot(projectRoot, dir, options = {}) {
   return resolveRoots(projectDir, options)
 }
 
-/** 移除外部根：存的与传的是同一个路径，按它删一次即可（目录已被删除也要能删）。 */
+/**
+ * 移除外部根：先规范化成与 add 相同的身份再删一次。
+ * 目录已被删除时 realpath 会失败，此时用 path.resolve 的字符串 —— UI 传回来的
+ * 正是当初存下的规范路径，因此仍然命中。
+ */
 export async function removeExtraRoot(projectRoot, dir, options = {}) {
   const projectDir = requireAbsolute(projectRoot, 'projectRoot')
   const target = requireAbsolute(dir, 'path')
-  await removeExtra(projectDir, toPosix(target), { logger: options.logger })
+  await removeExtra(projectDir, await canonicalDir(target), { logger: options.logger })
   return resolveRoots(projectDir, options)
 }

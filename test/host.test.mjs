@@ -857,7 +857,8 @@ test('失效的外部根：仍在结果里（isGit:false + error）且可移除'
     '应有中文告警：' + JSON.stringify(resolved.warnings)
   )
 
-  const removed = await callOk('roots/remove', { projectRoot: FIXTURE, path: doomed })
+  // UI 移除时传的是解析结果里的 root.path（规范路径），不是用户当初输入的写法
+  const removed = await callOk('roots/remove', { projectRoot: FIXTURE, path: stale.path })
   assert.equal(removed.roots.some((root) => root.kind === 'extra'), false)
   assert.deepEqual(await config.listExtras(FIXTURE), [])
 })
@@ -1105,9 +1106,9 @@ test('project/resolve：项目子目录里的仓库都要被发现（深层 / ve
   )
 })
 
-test('外部根：存的就是用户给的路径，按同一路径移除一定命中', async () => {
-  // 不变量：add 存什么，remove 就按什么删 —— 两侧同一个键，不会留下删不掉的僵尸根。
-  // 不再做 realpath 归一：不同写法视为不同根（更简单，也不会把用户给的路径换成别的）。
+test('外部根：存规范化路径，联接写法添加/移除都命中同一条记录', async () => {
+  // 不变量：add 与 remove 都先把路径规范化（realpath），因此联接写法、8.3 短名、
+  // 真实路径指向同一个目录时，永远是同一条记录 —— 不会留下删不掉的僵尸根。
   const realRepo = makeRepo(path.join(tempDir('dgp-link-'), 'real-repo'))
   const linkPath = path.join(tempDir('dgp-link-home-'), 'linked-repo')
   symlinkSync(realRepo, linkPath, process.platform === 'win32' ? 'junction' : 'dir')
@@ -1116,13 +1117,13 @@ test('外部根：存的就是用户给的路径，按同一路径移除一定�
 
   const stored = (await config.listExtras(FIXTURE)).filter((item) => eqPath(item, linkPath))
   assert.equal(stored.length, 1, '应只有一条外部根记录')
-  assert.equal(stored[0], toPosix(path.resolve(linkPath)), '入库键就是用户给的路径，实际 ' + stored[0])
+  assert.equal(stored[0], toPosix(realpathSync.native(realRepo)), '入库键应是规范化后的真实路径，实际 ' + stored[0])
 
   const listed = await callOk('project/resolve', { cwd: FIXTURE })
   const extra = listed.roots.find((root) => root.kind === 'extra')
   assert.ok(extra, '应出现 extra 根')
   assert.equal(extra.isGit, true, '联接指向真实仓库，应识别为仓库')
-  assert.equal(extra.path, toPosix(path.resolve(linkPath)), '展示路径也是用户给的那一个')
+  assert.equal(extra.path, toPosix(realpathSync.native(realRepo)), '展示路径也是规范化后的真实路径')
 
   // 同一路径重复添加不产生第二条
   await callOk('roots/add', { projectRoot: FIXTURE, path: linkPath })

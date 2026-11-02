@@ -50,11 +50,22 @@ for (const suite of SUITES) {
     const lines = output.trim().split('\n')
     // 失败时先把「失败的用例名」捞出来：套件的尾部 14 行往往全是通过项，
     // 真正有用的信息（哪条挂了）会被截掉，导致只能靠猜或重跑。
-    const failures = lines.filter((line) => /\u2717|FAIL |not ok/.test(line)).map((line) => line.trim())
-    const tail = lines.slice(-14)
+    // 失败行 + 它后面属于该用例的缩进信息（断言详情），一起打出来
+    const failed = []
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!/^\s*\u2717/.test(lines[index])) continue
+      failed.push(lines[index].trim())
+      for (let next = index + 1; next < lines.length; next += 1) {
+        const line = lines[next]
+        if (/^\s*(\u2713|\u2717)/.test(line)) break
+        if (line.trim() === '') break
+        failed.push('    ' + line.trim())
+      }
+      failed.push('')
+    }
     const detail = [
-      ...(failures.length > 0 ? ['失败用例：', ...failures.map((line) => '  ' + line), ''] : []),
-      ...tail
+      ...(failed.length > 0 ? ['失败用例：', ...failed] : []),
+      ...lines.slice(-10)
     ].join('\n')
     results.push({ name: suite.name, status: 'fail', detail, ms: Date.now() - started })
   }

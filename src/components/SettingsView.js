@@ -6,6 +6,7 @@
  * 不给一个假的默认项。
  */
 import { h, useState } from '../platform.js'
+import { openExternalUrl } from '../util/openUrl.js'
 import { Icon } from '../ui/Icon.js'
 import { InlineNote } from './States.js'
 
@@ -26,6 +27,8 @@ export function SettingsView(props) {
   const [provider, setProvider] = useState(providers.length > 0 ? providers[0].id : 'github')
   const [label, setLabel] = useState('')
   const [token, setToken] = useState('')
+  // 点过「获取令牌」之后给什么提示：'opened' 或拦截时的地址
+  const [tokenHint, setTokenHint] = useState(null)
 
   const selected = providers.find((item) => item.id === provider) ?? { id: provider, label: provider }
   // 每个平台的三步都不同（菜单路径、scope 名都不一样），文案按平台 id 取
@@ -139,9 +142,10 @@ export function SettingsView(props) {
               'data-size': 'sm',
               'data-dgp-accounts': 'open-token-page',
               onClick: () => {
-                window.open(selected.tokenUrl, '_blank', 'noopener,noreferrer')
+                const result = openExternalUrl(selected.tokenUrl)
+                setTokenHint(result.opened ? 'opened' : selected.tokenUrl)
               }
-            }, translate('accounts.openTokenPage'), h(Icon, { name: 'external', size: 12 }))),
+            }, translate('accounts.getToken'), h(Icon, { name: 'external', size: 12 }))),
         h('ol', { className: 'dgp-account-steps' },
           steps.map((step, index) => h('li', { key: String(index) }, step))),
         h('p', { className: 'dgp-settings-hint' }, translate('accounts.verifyHint'))),
@@ -180,5 +184,12 @@ export function SettingsView(props) {
           'data-dgp-accounts': 'add',
           disabled: accountsBusy || token.trim() === '',
           onClick: submitAccount
-        }, translate(accountsBusy ? 'accounts.adding' : 'accounts.add')))))
+        }, translate(accountsBusy ? 'accounts.adding' : 'accounts.add'))),
+
+      tokenHint === null
+        ? null
+        : h('p', { className: 'dgp-settings-hint', 'data-dgp-accounts': 'token-hint' },
+          tokenHint === 'opened'
+            ? translate('accounts.openedPage')
+            : translate('accounts.blockedPage') + ' ' + tokenHint)))
 }

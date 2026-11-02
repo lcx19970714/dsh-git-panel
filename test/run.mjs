@@ -20,6 +20,7 @@ const SUITES = [
   { name: 'client', file: 'client.test.mjs', args: [] },
   { name: 'components', file: 'components.test.mjs', args: [] },
   { name: 'remotes', file: 'remotes.test.mjs', args: [] },
+  { name: 'openUrl', file: 'open-url.test.mjs', args: [] },
   { name: 'flow', file: 'panel-flow.test.mjs', args: [] }
 ]
 

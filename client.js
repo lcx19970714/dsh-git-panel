@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 26 个 */
+/* 模块: 27 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -1395,12 +1395,15 @@ window.__ModuleLoader__.load({
         'commit.generateFailed': '生成提交说明失败：{message}',
 
         'accounts.guideTitle': '怎么拿到令牌',
-        'accounts.guideGithub1': '点右上角「打开令牌页面」，Scope 已预填 repo',
+        'accounts.guideGithub1': '点右上角「获取令牌」，会打开已预填 repo 的令牌创建页',
         'accounts.guideGithub2': '只需要浏览公开仓库的话，public_repo 就够；组织仓库还需要 SSO 授权',
         'accounts.guideGithub3': '生成后复制整串令牌（ghp_ 或 github_pat_ 开头），粘贴到输入框',
-        'accounts.guideGitee1': '点右上角「打开令牌页面」，再点「生成新令牌」',
+        'accounts.guideGitee1': '点右上角「获取令牌」，打开私人令牌页后点「生成新令牌」',
         'accounts.guideGitee2': '勾选 projects（读取仓库列表足够）',
         'accounts.guideGitee3': '生成后复制令牌，粘贴到输入框',
+        'accounts.getToken': '获取令牌',
+        'accounts.openedPage': '已在浏览器打开，生成后复制粘贴到下面（回车提交）',
+        'accounts.blockedPage': '浏览器拦截了新窗口，请手动打开这个地址：',
         'accounts.openTokenPage': '打开令牌页面',
         'accounts.tokenPlaceholder': '粘贴访问令牌',
         'accounts.success': '已连接：{login}',
@@ -1590,12 +1593,15 @@ window.__ModuleLoader__.load({
         'commit.generateFailed': 'Could not generate a commit message: {message}',
 
         'accounts.guideTitle': 'How to get a token',
-        'accounts.guideGithub1': 'Click "Open token page" at the top right; the repo scope is pre-filled',
+        'accounts.guideGithub1': 'Click "Get a token" at the top right; the page opens with the repo scope pre-filled',
         'accounts.guideGithub2': 'For public repositories only, public_repo is enough; organization repositories also need SSO',
         'accounts.guideGithub3': 'Copy the whole token (starts with ghp_ or github_pat_) and paste it below',
-        'accounts.guideGitee1': 'Click "Open token page" at the top right, then create a new token',
+        'accounts.guideGitee1': 'Click "Get a token" at the top right, then create a new token',
         'accounts.guideGitee2': 'Select the projects scope (enough to list repositories)',
         'accounts.guideGitee3': 'Copy the token and paste it below',
+        'accounts.getToken': 'Get a token',
+        'accounts.openedPage': 'Opened in your browser — copy the token here and press Enter',
+        'accounts.blockedPage': 'The browser blocked the new window; open this address manually:',
         'accounts.openTokenPage': 'Open token page',
         'accounts.tokenPlaceholder': 'Paste access token',
         'accounts.success': 'Connected: {login}',
@@ -6808,6 +6814,7 @@ window.__ModuleLoader__.load({
        * 不给一个假的默认项。
        */
       const { h, useState } = __m("./platform.js");
+      const { openExternalUrl } = __m("./util/openUrl.js");
       const { Icon } = __m("./ui/Icon.js");
       const { InlineNote } = __m("./components/States.js");
 
@@ -6828,6 +6835,8 @@ window.__ModuleLoader__.load({
         const [provider, setProvider] = useState(providers.length > 0 ? providers[0].id : 'github')
         const [label, setLabel] = useState('')
         const [token, setToken] = useState('')
+        // 点过「获取令牌」之后给什么提示：'opened' 或拦截时的地址
+        const [tokenHint, setTokenHint] = useState(null)
 
         const selected = providers.find((item) => item.id === provider) ?? { id: provider, label: provider }
         // 每个平台的三步都不同（菜单路径、scope 名都不一样），文案按平台 id 取
@@ -6941,9 +6950,10 @@ window.__ModuleLoader__.load({
                     'data-size': 'sm',
                     'data-dgp-accounts': 'open-token-page',
                     onClick: () => {
-                      window.open(selected.tokenUrl, '_blank', 'noopener,noreferrer')
+                      const result = openExternalUrl(selected.tokenUrl)
+                      setTokenHint(result.opened ? 'opened' : selected.tokenUrl)
                     }
-                  }, translate('accounts.openTokenPage'), h(Icon, { name: 'external', size: 12 }))),
+                  }, translate('accounts.getToken'), h(Icon, { name: 'external', size: 12 }))),
               h('ol', { className: 'dgp-account-steps' },
                 steps.map((step, index) => h('li', { key: String(index) }, step))),
               h('p', { className: 'dgp-settings-hint' }, translate('accounts.verifyHint'))),
@@ -6982,10 +6992,38 @@ window.__ModuleLoader__.load({
                 'data-dgp-accounts': 'add',
                 disabled: accountsBusy || token.trim() === '',
                 onClick: submitAccount
-              }, translate(accountsBusy ? 'accounts.adding' : 'accounts.add')))))
+              }, translate(accountsBusy ? 'accounts.adding' : 'accounts.add'))),
+
+            tokenHint === null
+              ? null
+              : h('p', { className: 'dgp-settings-hint', 'data-dgp-accounts': 'token-hint' },
+                tokenHint === 'opened'
+                  ? translate('accounts.openedPage')
+                  : translate('accounts.blockedPage') + ' ' + tokenHint)))
       }
 
       Object.assign(exports, { SettingsView });
+
+    });
+    __define("./util/openUrl.js", (exports, module) => {
+      /**
+       * src/util/openUrl.js —— 在新标签打开外部链接
+       *
+       * DSH 桌面端与 Web 端都是浏览器环境，`window.open` 是唯一可靠的入口。
+       * 它有两个可观测的失败：不存在（非浏览器环境）、被拦截（返回 null）。
+       * 这里把「打开成功没有」如实告诉调用方，让界面能给出可操作提示，
+       * 而不是点了没反应。
+       */
+      function openExternalUrl(url) {
+        if (typeof window === 'undefined' || typeof window.open !== 'function') {
+          return { opened: false, reason: 'unsupported' }
+        }
+        const handle = window.open(url, '_blank', 'noopener,noreferrer')
+        if (handle === null || handle === undefined) return { opened: false, reason: 'blocked' }
+        return { opened: true, reason: null }
+      }
+
+      Object.assign(exports, { openExternalUrl });
 
     });
     __define("./components/RemotePane.js", (exports, module) => {
@@ -7008,6 +7046,7 @@ window.__ModuleLoader__.load({
       const { h, useState } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
       const { formatClock } = __m("./util/time.js");
+      const { openExternalUrl } = __m("./util/openUrl.js");
 
       /** 秒数保留一位小数，避免每次 tick 都跳一大截。 */
       function secondsOf(startedAt, now) {
@@ -7031,6 +7070,8 @@ window.__ModuleLoader__.load({
         const [folderName, setFolderName] = useState('')
         // 添加账号的行内表单：{ provider, label, token, busy, error }
         const [form, setForm] = useState(null)
+        // 点过「获取令牌」后的提示：'opened' 或拦截时的地址
+        const [tokenHint, setTokenHint] = useState(null)
 
         const providers = Array.isArray(source.providers) ? source.providers : []
         const providerOf = (id) => providers.find((item) => item.id === id) ?? { id, label: id }
@@ -7039,6 +7080,7 @@ window.__ModuleLoader__.load({
           const id = typeof providerId === 'string' && providerId !== ''
             ? providerId
             : (providers.length > 0 ? providers[0].id : 'github')
+          setTokenHint(null)
           setForm({ provider: id, label: '', token: '', busy: false, error: null })
         }
 
@@ -7089,8 +7131,11 @@ window.__ModuleLoader__.load({
                   className: 'dgp-btn',
                   'data-size': 'sm',
                   'data-dgp-remote': 'open-token-page',
-                  onClick: () => window.open(providerOf(form.provider).tokenUrl, '_blank', 'noopener,noreferrer')
-                }, translate('accounts.openTokenPage'), h(Icon, { name: 'external', size: 12 }))),
+                  onClick: () => {
+                    const result = openExternalUrl(providerOf(form.provider).tokenUrl)
+                    setTokenHint(result.opened ? 'opened' : providerOf(form.provider).tokenUrl)
+                  }
+                }, translate('accounts.getToken'), h(Icon, { name: 'external', size: 12 }))),
             h('div', { className: 'dgp-account-form' },
               h('select', {
                 className: 'dgp-select dgp-account-provider',
@@ -7133,6 +7178,12 @@ window.__ModuleLoader__.load({
                 'data-dgp-remote': 'account-cancel',
                 onClick: closeForm
               }, translate('remote.cloneCancel'))),
+            tokenHint === null
+              ? null
+              : h('div', { className: 'dgp-remote-status', 'data-dgp-remote': 'token-hint' },
+                h('span', null, tokenHint === 'opened'
+                  ? translate('accounts.openedPage')
+                  : translate('accounts.blockedPage') + ' ' + tokenHint)),
             form.error === null
               ? null
               : h('div', { className: 'dgp-remote-status', 'data-tone': 'error' },

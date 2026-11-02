@@ -802,8 +802,10 @@ function loadBundle() {
     removeEventListener() {},
     /** 「打开 Git 仓库」按钮走 window.open；测试里只记录，不真的开窗 */
     opened: [],
+    openReturns: {}, // 置 null 可模拟「弹窗被拦截」
     open(url, target, features) {
       fakeWindow.opened.push({ url, target, features })
+      return fakeWindow.openReturns
     },
     innerWidth: 1280,
     innerHeight: 800,
@@ -1710,6 +1712,11 @@ test('用例 1F：没账号时远端页签就地添加账号，不用跳设置�
     eq(panel.window.opened.length, 1, '应打开令牌页面')
     assert(panel.window.opened[0].url.includes('github.com/settings/tokens'), '打开的是 GitHub 令牌页')
 
+    // 打开成功后要告诉用户下一步做什么
+    const hint = panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'token-hint')
+    assert(hint !== null, '点过获取令牌后应有提示')
+    assert(textOf(hint).includes('已在浏览器打开'), '提示文案：' + textOf(hint))
+
     panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-token')
       .props.onChange({ target: { value: 'ghp_zzz' } })
     await panel.flush()
@@ -1750,6 +1757,36 @@ test('用例 1G：已有账号时点 ＋ 也能就地添加', async () => {
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-cancel'))
     await panel.flush()
     eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-form'), null, '取消应收起')
+  })
+})
+
+test('用例 1H：浏览器拦截新窗口时，把令牌页地址原样显示出来', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new?scopes=repo' }]
+      }),
+      'remote/repos': () => sayOk({ repos: [], page: 1, hasMore: false })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    panel.window.openReturns = null // 模拟弹窗被拦截
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'add-account'))
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'open-token-page'))
+    await panel.flush()
+
+    const hint = panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'token-hint')
+    assert(hint !== null, '被拦截时应有提示')
+    const hintText = textOf(hint)
+    assert(hintText.includes('拦截'), '要说明被拦截：' + hintText)
+    assert(hintText.includes('https://github.com/settings/tokens/new'), '要把地址显示出来：' + hintText)
+    eq(panel.window.opened.length, 1, '仍然尝试打开过')
   })
 })
 

@@ -107,6 +107,9 @@ export const ENDPOINTS = Object.freeze([
   'accounts/remove',
   'remote/repos',
   'remote/detail',
+  'remote/pull',
+  'remote/pull/review',
+  'remote/pull/merge',
   'remote/clone',
   'commit',
   'commit/message',
@@ -479,6 +482,34 @@ function createDispatcher(ctx) {
     }, { signal })
   }
 
+  async function remotePull(request, signal) {
+    return remotesOf().pullDetail({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullName: requireString(request.fullName, 'fullName'),
+      number: request.number
+    }, { signal })
+  }
+
+  async function remotePullReview(request, signal) {
+    return remotesOf().reviewPull({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullName: requireString(request.fullName, 'fullName'),
+      number: request.number,
+      verdict: requireString(request.verdict, 'verdict'),
+      body: typeof request.body === 'string' ? request.body : ''
+    }, { signal })
+  }
+
+  async function remotePullMerge(request, signal) {
+    return remotesOf().mergePull({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullName: requireString(request.fullName, 'fullName'),
+      number: request.number,
+      method: typeof request.method === 'string' ? request.method : 'merge',
+      deleteBranch: request.deleteBranch === true
+    }, { signal })
+  }
+
   async function remoteClone(request, signal) {
     return remotesOf().cloneRepo({
       accountId: requireString(request.accountId, 'accountId'),
@@ -643,6 +674,12 @@ function createDispatcher(ctx) {
         return remoteRepos(request, signal)
       case 'remote/detail':
         return remoteDetail(request, signal)
+      case 'remote/pull':
+        return remotePull(request, signal)
+      case 'remote/pull/review':
+        return remotePullReview(request, signal)
+      case 'remote/pull/merge':
+        return remotePullMerge(request, signal)
       case 'remote/clone':
         return remoteClone(request, signal)
       case 'branches/list':

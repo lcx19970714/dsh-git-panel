@@ -27,6 +27,7 @@ import { CommitBox } from './CommitBox.js'
 import { SettingsView } from './SettingsView.js'
 import { RemotePane } from './RemotePane.js'
 import { RemoteDetail } from './RemoteDetail.js'
+import { PullDetail } from './PullDetail.js'
 import { MODE, usePref, useLatestGuard } from '../store.js'
 import * as api from '../api.js'
 import { openExternalUrl } from '../util/openUrl.js'
@@ -93,6 +94,9 @@ export function Panel(props) {
   // 右侧详情：选中的仓库与它的数据
   const [remoteSelection, setRemoteSelection] = useState(null)
   const [remoteDetail, setRemoteDetail] = useState(null)
+  // 面板内打开的 PR：{ number } + 它的详情
+  const [openPull, setOpenPull] = useState(null)
+  const [pullDetail, setPullDetail] = useState(null)
   const [accountsBusy, setAccountsBusy] = useState(false)
   const [accountsError, setAccountsError] = useState(null)
   const [accountsNotice, setAccountsNotice] = useState(null)
@@ -864,6 +868,64 @@ export function Panel(props) {
     }
   }, [])
 
+  /** 读一个 PR 的详情（含平台能力与审查记录）。 */
+  const loadPullDetail = useCallback(async (selection) => {
+    if (selection === null) {
+      setPullDetail(null)
+      return
+    }
+    setPullDetail({ loading: true, error: null, data: null })
+    try {
+      const data = await api.remotePull({
+        accountId: selection.accountId,
+        fullName: selection.fullName,
+        number: selection.number
+      })
+      setPullDetail({ loading: false, error: null, data })
+    } catch (error) {
+      setPullDetail({ loading: false, error: api.describeError(error, tRef.current), data: null })
+    }
+  }, [])
+
+  /** 从仓库详情点开某个 PR。 */
+  const openPullNumber = useCallback((number) => {
+    if (remoteSelection === null) return
+    const selection = {
+      accountId: remoteSelection.accountId,
+      fullName: remoteSelection.fullName,
+      number
+    }
+    setOpenPull(selection)
+    loadPullDetail(selection)
+  }, [remoteSelection, loadPullDetail])
+
+  const closePull = useCallback(() => {
+    setOpenPull(null)
+    setPullDetail(null)
+  }, [])
+
+  /** 审查：统一把失败包成 { ok:false, error }，界面就地显示。 */
+  const reviewPull = useCallback(async (input) => {
+    try {
+      const result = await api.remotePullReview(input)
+      await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+      return { ok: true, message: tRef.current('pull.reviewDone', { verdict: input.verdict }) }
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current) }
+    }
+  }, [loadPullDetail])
+
+  const mergePull = useCallback(async (input) => {
+    try {
+      const result = await api.remotePullMerge(input)
+      await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+      await loadRemoteDetail({ accountId: input.accountId, fullName: input.fullName })
+      return { ok: true, message: tRef.current('pull.mergedDone', { branch: result.headBranch }) }
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current) }
+    }
+  }, [loadPullDetail, loadRemoteDetail])
+
   /** 选中仓库：右侧立刻进入加载态再拉数据。 */
   const selectRemoteRepo = useCallback((repo) => {
     const selection = { accountId: repo.accountId, fullName: repo.fullName, name: repo.name }
@@ -1361,7 +1423,19 @@ function buildUpdateNote(updateState, t) {
   }
 
   let rightPane
-  if (mode === MODE.remote) {
+  if (mode === MODE.remote && openPull !== null) {
+    rightPane = h(PullDetail, {
+      selection: openPull,
+      detail: pullDetail,
+      onBack: closePull,
+      onRetry: () => loadPullDetail(openPull),
+      onReview: reviewPull,
+      onMerge: mergePull,
+      onChanged: () => loadPullDetail(openPull),
+      onOpenUrl: openExternal,
+      t
+    })
+  } else if (mode === MODE.remote) {
     rightPane = h(RemoteDetail, {
       selection: remoteSelection,
       detail: remoteDetail,
@@ -1372,6 +1446,7 @@ function buildUpdateNote(updateState, t) {
         name: selection.name
       }, ''),
       onOpenUrl: openExternal,
+      onOpenPull: openPullNumber,
       t
     })
   } else if (mode === MODE.changes) {

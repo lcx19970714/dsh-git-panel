@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 29 个 */
+/* 模块: 30 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -1169,6 +1169,38 @@ window.__ModuleLoader__.load({
         font-size: 11px;
       }
 
+      /* PR 详情根容器：沿用 .dgp-detail 的排布，这里只补标题行更紧凑的间距 */
+      .dgp-pull { gap: 8px; }
+      /* PR 详情：正文与操作区 */
+      .dgp-pull-body {
+        margin: 0;
+        max-height: 240px;
+        padding: 8px 10px;
+        overflow: auto;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+        color: var(--dsw-alias-label-secondary);
+        font-family: var(--ds-font-family-code);
+        font-size: 11px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+      }
+      .dgp-pull-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+      .dgp-pull-note { flex: 1 1 200px; min-width: 0; height: 26px; }
+      .dgp-pull-method { flex: none; width: 132px; height: 24px; }
+      .dgp-pull-check { display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+      .dgp-pull-verdict {
+        flex: none;
+        padding: 0 5px;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+        color: var(--dsw-alias-label-tertiary);
+        font-size: 10px;
+        line-height: 15px;
+      }
+      .dgp-pull-verdict[data-state="APPROVED"] { color: var(--dsw-alias-state-success-primary); }
+      .dgp-pull-verdict[data-state="CHANGES_REQUESTED"] { color: var(--dsw-alias-state-error-primary); }
+      .dgp-detail-notice { margin: 0; color: var(--dsw-alias-state-success-primary); font-size: 11px; }
       /* 远端仓库详情（右侧） */
       .dgp-detail { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 12px 14px; overflow: auto; }
       .dgp-detail-top { display: flex; align-items: flex-start; gap: 10px; }
@@ -1373,6 +1405,35 @@ window.__ModuleLoader__.load({
         'branch.empty': '这个仓库还没有任何分支',
         'branch.switching': '正在切换到 {name}…',
         'branch.failed': '切换失败：{message}',
+        'pull.loading': '正在读取 PR #{number}…',
+        'pull.failed': '读取 PR 失败',
+        'pull.back': '返回仓库',
+        'pull.review': '审查',
+        'pull.reviewCount': '{count} 条审查记录',
+        'pull.reviewUnsupported': '该平台不提供审查记录接口',
+        'pull.approve': '通过',
+        'pull.requestChanges': '请求修改',
+        'pull.comment': '评论',
+        'pull.notePlaceholder': '说明（请求修改时必填）',
+        'pull.merge': '合并',
+        'pull.mergeable': '可以合并',
+        'pull.notMergeable': '当前不可合并（冲突或缺少审查）',
+        'pull.method.merge': '普通合并',
+        'pull.method.squash': '压缩为一个提交',
+        'pull.method.rebase': '变基合并',
+        'pull.deleteBranch': '合并后删除分支 {branch}',
+        'pull.mergeRun': '合并 PR',
+        'pull.merging': '正在合并…',
+        'pull.working': '正在提交…',
+        'pull.merged': '已合并',
+        'pull.reviewDone': '已提交审查（{verdict}）',
+        'pull.mergedDone': '已合并，源分支 {branch}',
+        'pull.filesChanged': '{count} 个文件',
+        'pull.commits': '{count} 个提交',
+        'pull.state.open': '打开',
+        'pull.state.closed': '已关闭',
+        'pull.state.merged': '已合并',
+        'pull.state.unknown': '状态未知',
         'detail.pickRepo': '从左侧选一个仓库',
         'detail.pickRepoHint': '右侧会显示它的代码概况、Issues 与 PR',
         'detail.loading': '正在读取 {name}…',
@@ -1601,6 +1662,35 @@ window.__ModuleLoader__.load({
         'branch.empty': 'This repository has no branches yet',
         'branch.switching': 'Switching to {name}…',
         'branch.failed': 'Could not switch: {message}',
+        'pull.loading': 'Loading pull request #{number}…',
+        'pull.failed': 'Could not load the pull request',
+        'pull.back': 'Back to repository',
+        'pull.review': 'Review',
+        'pull.reviewCount': '{count} reviews',
+        'pull.reviewUnsupported': 'This platform exposes no review list',
+        'pull.approve': 'Approve',
+        'pull.requestChanges': 'Request changes',
+        'pull.comment': 'Comment',
+        'pull.notePlaceholder': 'Note (required when requesting changes)',
+        'pull.merge': 'Merge',
+        'pull.mergeable': 'Ready to merge',
+        'pull.notMergeable': 'Not mergeable right now (conflicts or missing reviews)',
+        'pull.method.merge': 'Merge commit',
+        'pull.method.squash': 'Squash and merge',
+        'pull.method.rebase': 'Rebase and merge',
+        'pull.deleteBranch': 'Delete branch {branch} after merging',
+        'pull.mergeRun': 'Merge pull request',
+        'pull.merging': 'Merging…',
+        'pull.working': 'Submitting…',
+        'pull.merged': 'Merged',
+        'pull.reviewDone': 'Review submitted ({verdict})',
+        'pull.mergedDone': 'Merged, source branch {branch}',
+        'pull.filesChanged': '{count} files',
+        'pull.commits': '{count} commits',
+        'pull.state.open': 'Open',
+        'pull.state.closed': 'Closed',
+        'pull.state.merged': 'Merged',
+        'pull.state.unknown': 'Unknown state',
         'detail.pickRepo': 'Pick a repository on the left',
         'detail.pickRepoHint': 'Its code overview, issues and pull requests show up here',
         'detail.loading': 'Loading {name}…',
@@ -1820,6 +1910,7 @@ window.__ModuleLoader__.load({
       const { SettingsView } = __m("./components/SettingsView.js");
       const { RemotePane } = __m("./components/RemotePane.js");
       const { RemoteDetail } = __m("./components/RemoteDetail.js");
+      const { PullDetail } = __m("./components/PullDetail.js");
       const { MODE, usePref, useLatestGuard } = __m("./store.js");
       const api = __m("./api.js");
       const { openExternalUrl } = __m("./util/openUrl.js");
@@ -1886,6 +1977,9 @@ window.__ModuleLoader__.load({
         // 右侧详情：选中的仓库与它的数据
         const [remoteSelection, setRemoteSelection] = useState(null)
         const [remoteDetail, setRemoteDetail] = useState(null)
+        // 面板内打开的 PR：{ number } + 它的详情
+        const [openPull, setOpenPull] = useState(null)
+        const [pullDetail, setPullDetail] = useState(null)
         const [accountsBusy, setAccountsBusy] = useState(false)
         const [accountsError, setAccountsError] = useState(null)
         const [accountsNotice, setAccountsNotice] = useState(null)
@@ -2657,6 +2751,64 @@ window.__ModuleLoader__.load({
           }
         }, [])
 
+        /** 读一个 PR 的详情（含平台能力与审查记录）。 */
+        const loadPullDetail = useCallback(async (selection) => {
+          if (selection === null) {
+            setPullDetail(null)
+            return
+          }
+          setPullDetail({ loading: true, error: null, data: null })
+          try {
+            const data = await api.remotePull({
+              accountId: selection.accountId,
+              fullName: selection.fullName,
+              number: selection.number
+            })
+            setPullDetail({ loading: false, error: null, data })
+          } catch (error) {
+            setPullDetail({ loading: false, error: api.describeError(error, tRef.current), data: null })
+          }
+        }, [])
+
+        /** 从仓库详情点开某个 PR。 */
+        const openPullNumber = useCallback((number) => {
+          if (remoteSelection === null) return
+          const selection = {
+            accountId: remoteSelection.accountId,
+            fullName: remoteSelection.fullName,
+            number
+          }
+          setOpenPull(selection)
+          loadPullDetail(selection)
+        }, [remoteSelection, loadPullDetail])
+
+        const closePull = useCallback(() => {
+          setOpenPull(null)
+          setPullDetail(null)
+        }, [])
+
+        /** 审查：统一把失败包成 { ok:false, error }，界面就地显示。 */
+        const reviewPull = useCallback(async (input) => {
+          try {
+            const result = await api.remotePullReview(input)
+            await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+            return { ok: true, message: tRef.current('pull.reviewDone', { verdict: input.verdict }) }
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current) }
+          }
+        }, [loadPullDetail])
+
+        const mergePull = useCallback(async (input) => {
+          try {
+            const result = await api.remotePullMerge(input)
+            await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+            await loadRemoteDetail({ accountId: input.accountId, fullName: input.fullName })
+            return { ok: true, message: tRef.current('pull.mergedDone', { branch: result.headBranch }) }
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current) }
+          }
+        }, [loadPullDetail, loadRemoteDetail])
+
         /** 选中仓库：右侧立刻进入加载态再拉数据。 */
         const selectRemoteRepo = useCallback((repo) => {
           const selection = { accountId: repo.accountId, fullName: repo.fullName, name: repo.name }
@@ -3154,7 +3306,19 @@ window.__ModuleLoader__.load({
         }
 
         let rightPane
-        if (mode === MODE.remote) {
+        if (mode === MODE.remote && openPull !== null) {
+          rightPane = h(PullDetail, {
+            selection: openPull,
+            detail: pullDetail,
+            onBack: closePull,
+            onRetry: () => loadPullDetail(openPull),
+            onReview: reviewPull,
+            onMerge: mergePull,
+            onChanged: () => loadPullDetail(openPull),
+            onOpenUrl: openExternal,
+            t
+          })
+        } else if (mode === MODE.remote) {
           rightPane = h(RemoteDetail, {
             selection: remoteSelection,
             detail: remoteDetail,
@@ -3165,6 +3329,7 @@ window.__ModuleLoader__.load({
               name: selection.name
             }, ''),
             onOpenUrl: openExternal,
+            onOpenPull: openPullNumber,
             t
           })
         } else if (mode === MODE.changes) {
@@ -5625,6 +5790,21 @@ window.__ModuleLoader__.load({
         return call('remote/detail', payload, options)
       }
 
+      /** 一个 PR 的详情（含平台能力与审查记录）。 */
+      function remotePull(payload, options) {
+        return call('remote/pull', payload, options)
+      }
+
+      /** 提交审查结论。 */
+      function remotePullReview(payload, options) {
+        return call('remote/pull/review', payload, options)
+      }
+
+      /** 合并 PR。 */
+      function remotePullMerge(payload, options) {
+        return call('remote/pull/merge', payload, options)
+      }
+
       /** 把远端仓库克隆到项目根下的子目录。 */
       function cloneRemoteRepo(payload, options) {
         return call('remote/clone', payload, options)
@@ -5696,7 +5876,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePull, remotePullReview, remotePullMerge, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -7743,7 +7923,13 @@ window.__ModuleLoader__.load({
                   className: 'dgp-detail-link dgp-oneline',
                   title: item.title,
                   'data-dgp-item': kind,
-                  onClick: () => onOpen(item.url)
+                  onClick: () => {
+                    if (kind === 'pulls' && item.number !== null && typeof props.onOpenPull === 'function') {
+                      props.onOpenPull(item.number)
+                      return
+                    }
+                    onOpen(item.url)
+                  }
                 }, (item.number === null ? '' : '#' + item.number + ' ') + item.title),
                 h('span', { className: 'dgp-detail-meta dgp-oneline' },
                   item.author === '' ? '' : item.author + ' · ',
@@ -7858,11 +8044,227 @@ window.__ModuleLoader__.load({
             onOpen: (url) => {
               if (typeof source.onOpenUrl === 'function') source.onOpenUrl(url ?? repo.pullsUrl)
             },
+            onOpenPull: typeof source.onOpenPull === 'function' ? source.onOpenPull : undefined,
             t
           }))
       }
 
       Object.assign(exports, { RemoteDetail });
+
+    });
+    __define("./components/PullDetail.js", (exports, module) => {
+      /**
+       * src/components/PullDetail.js —— 单个 PR 的详情与操作（审查 / 合并）
+       *
+       * 能力来自宿主返回的 capabilities：Gitee 只有「通过」一种结论、合并方式两种，
+       * GitHub 三种都有。界面只渲染平台真正支持的动作，不做「点了才发现不支持」。
+       */
+      const { h, useState } = __m("./platform.js");
+      const { Icon } = __m("./ui/Icon.js");
+      const { formatClock } = __m("./util/time.js");
+
+      const VERDICT_LABEL = {
+        approve: 'pull.approve',
+        'request-changes': 'pull.requestChanges',
+        comment: 'pull.comment'
+      }
+
+      function PullDetail(props) {
+        const source = props === null || props === undefined ? {} : props
+        const t = source.t
+        const selection = source.selection === null || source.selection === undefined ? null : source.selection
+        const detail = source.detail === null || source.detail === undefined ? null : source.detail
+        const [note, setNote] = useState('')
+        const [mergeMethod, setMergeMethod] = useState('merge')
+        const [deleteBranch, setDeleteBranch] = useState(true)
+        const [busy, setBusy] = useState(null)
+        const [error, setError] = useState(null)
+        const [notice, setNotice] = useState(null)
+
+        if (selection === null) return null
+
+        const back = () => {
+          if (typeof source.onBack === 'function') source.onBack()
+        }
+
+        if (detail === null || detail.loading === true) {
+          return h('div', { className: 'dgp-viewer' },
+            h('div', { className: 'dgp-state', 'data-dgp-pull': 'loading' },
+              h('div', { className: 'dgp-state-icon' }, h('span', { className: 'dgp-spinner' })),
+              h('div', { className: 'dgp-state-title' }, t('pull.loading', { number: selection.number }))))
+        }
+
+        if (detail.error !== null) {
+          return h('div', { className: 'dgp-viewer' },
+            h('div', { className: 'dgp-state', 'data-dgp-pull': 'error' },
+              h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+              h('div', { className: 'dgp-state-title' }, t('pull.failed')),
+              h('div', { className: 'dgp-state-desc' }, detail.error),
+              h('div', { className: 'dgp-state-actions' },
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  onClick: () => {
+                    if (typeof source.onRetry === 'function') source.onRetry()
+                  }
+                }, t('action.retry')),
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-variant': 'ghost',
+                  onClick: back
+                }, t('pull.back')))))
+        }
+
+        const data = detail.data
+        const pull = data.pull
+        const caps = data.capabilities
+        const canMerge = pull.state === 'open' && pull.merged !== true
+
+        const run = async (kind, action) => {
+          setBusy(kind)
+          setError(null)
+          setNotice(null)
+          const result = await action()
+          setBusy(null)
+          if (result !== null && result !== undefined && result.ok === true) {
+            setNotice(result.message ?? null)
+            if (typeof source.onChanged === 'function') source.onChanged()
+            return
+          }
+          setError(result === null || result === undefined ? '操作失败' : result.error)
+        }
+
+        const submitReview = (verdict) => run('review', () => source.onReview({
+          accountId: selection.accountId,
+          fullName: selection.fullName,
+          number: pull.number,
+          verdict,
+          body: note
+        }))
+
+        const submitMerge = () => run('merge', () => source.onMerge({
+          accountId: selection.accountId,
+          fullName: selection.fullName,
+          number: pull.number,
+          method: mergeMethod,
+          deleteBranch
+        }))
+
+        return h('div', { className: 'dgp-detail dgp-pull', 'data-dgp-pull': 'detail' },
+          h('div', { className: 'dgp-detail-top' },
+            h('div', { className: 'dgp-detail-name-row' },
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'ghost',
+                'data-dgp-pull': 'back',
+                onClick: back
+              }, t('pull.back')),
+              h('span', { className: 'dgp-detail-name dgp-oneline', title: pull.title },
+                '#' + pull.number + ' ' + pull.title)),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-dgp-pull': 'open-web',
+              onClick: () => {
+                if (typeof source.onOpenUrl === 'function') source.onOpenUrl(pull.htmlUrl)
+              }
+            }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 }))),
+
+          h('div', { className: 'dgp-detail-meta' },
+            h('span', { 'data-dgp-pull-state': pull.state }, t('pull.state.' + pull.state === '' ? 'pull.state.unknown' : 'pull.state.' + pull.state)),
+            pull.merged === true ? h('span', null, t('pull.merged')) : null,
+            h('span', null, pull.author),
+            h('span', null, pull.headBranch + ' → ' + pull.baseBranch),
+            h('span', null, '+' + pull.additions + ' / −' + pull.deletions),
+            h('span', null, t('pull.filesChanged', { count: pull.changedFiles })),
+            h('span', null, t('pull.commits', { count: pull.commits })),
+            pull.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatClock(Date.parse(pull.updatedAt)) }))),
+
+          pull.body === ''
+            ? null
+            : h('pre', { className: 'dgp-pull-body', 'data-dgp-pull': 'body' }, pull.body),
+
+          /* ------------------------------ 审查 ------------------------------ */
+          h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'review' },
+            h('div', { className: 'dgp-detail-head' },
+              h('span', { className: 'dgp-detail-title' }, t('pull.review')),
+              h('span', { className: 'dgp-detail-count' },
+                caps.reviews === true ? t('pull.reviewCount', { count: data.reviews.length }) : t('pull.reviewUnsupported'))),
+            data.reviews.length === 0
+              ? null
+              : h('ul', { className: 'dgp-detail-list' },
+                data.reviews.map((review, index) => h('li', { key: String(index), className: 'dgp-detail-item' },
+                  h('span', { className: 'dgp-pull-verdict', 'data-state': review.state }, review.state),
+                  h('span', { className: 'dgp-detail-meta dgp-oneline' },
+                    review.author + (review.submittedAt === '' ? '' : ' · ' + formatClock(Date.parse(review.submittedAt))),
+                    review.body === '' ? '' : ' · ' + review.body)))),
+            canMerge
+              ? h('div', { className: 'dgp-pull-actions' },
+                h('input', {
+                  className: 'dgp-input dgp-pull-note',
+                  'data-dgp-pull': 'note',
+                  placeholder: t('pull.notePlaceholder'),
+                  value: note,
+                  onChange: (event) => setNote(event.target.value)
+                }),
+                caps.verdicts.map((verdict) => h('button', {
+                  key: verdict,
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-variant': verdict === 'approve' ? 'primary' : undefined,
+                  'data-dgp-pull': 'verdict-' + verdict,
+                  disabled: busy !== null,
+                  onClick: () => submitReview(verdict)
+                }, t(VERDICT_LABEL[verdict]))))
+              : null),
+
+          /* ------------------------------ 合并 ------------------------------ */
+          canMerge
+            ? h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'merge' },
+              h('div', { className: 'dgp-detail-head' },
+                h('span', { className: 'dgp-detail-title' }, t('pull.merge')),
+                h('span', { className: 'dgp-detail-count' },
+                  pull.mergeable === true ? t('pull.mergeable') : t('pull.notMergeable'))),
+              h('div', { className: 'dgp-pull-actions' },
+                h('select', {
+                  className: 'dgp-select dgp-pull-method',
+                  'data-dgp-pull': 'merge-method',
+                  value: mergeMethod,
+                  onChange: (event) => setMergeMethod(event.target.value)
+                },
+                caps.mergeMethods.map((method) => h('option', { key: method, value: method }, t('pull.method.' + method)))),
+                h('label', { className: 'dgp-pull-check' },
+                  h('input', {
+                    type: 'checkbox',
+                    'data-dgp-pull': 'delete-branch',
+                    checked: deleteBranch,
+                    onChange: (event) => setDeleteBranch(event.target.checked)
+                  }),
+                  t('pull.deleteBranch', { branch: pull.headBranch })),
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-variant': 'primary',
+                  'data-dgp-pull': 'merge-run',
+                  disabled: busy !== null || pull.mergeable !== true,
+                  onClick: submitMerge
+                }, t(busy === 'merge' ? 'pull.merging' : 'pull.mergeRun'))))
+            : null,
+
+          busy === null ? null : h('p', { className: 'dgp-detail-meta' }, t('pull.working')),
+          notice === null ? null : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'notice' }, notice),
+          error === null ? null : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'error' }, error))
+      }
+
+      Object.assign(exports, { PullDetail });
 
     });
     __define("./store.js", (exports, module) => {

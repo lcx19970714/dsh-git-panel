@@ -38,6 +38,39 @@ const github = {
   }),
   /** GitHub 用请求头鉴权，URL 保持干净。 */
   authorize: (url) => url,
+  /** PR 能力：三种审查结论、三种合并方式；删源分支要单独调 git refs 接口。 */
+  pull: {
+    verdicts: ['approve', 'request-changes', 'comment'],
+    reviewEvents: { approve: 'APPROVE', 'request-changes': 'REQUEST_CHANGES', comment: 'COMMENT' },
+    reviewsPath: (number) => '/pulls/' + number + '/reviews',
+    mergeMethods: ['merge', 'squash', 'rebase'],
+    mergeDeletesBranch: 'api',
+    normalizePull: (item, fullName) => ({
+      number: Number.isFinite(item.number) ? item.number : null,
+      title: typeof item.title === 'string' ? item.title : '',
+      body: typeof item.body === 'string' ? item.body : '',
+      state: typeof item.state === 'string' ? item.state : '',
+      draft: item.draft === true,
+      merged: item.merged === true,
+      mergeable: item.mergeable === true,
+      author: typeof item.user?.login === 'string' ? item.user.login : '',
+      baseBranch: typeof item.base?.ref === 'string' ? item.base.ref : '',
+      headBranch: typeof item.head?.ref === 'string' ? item.head.ref : '',
+      additions: Number.isFinite(item.additions) ? item.additions : 0,
+      deletions: Number.isFinite(item.deletions) ? item.deletions : 0,
+      changedFiles: Number.isFinite(item.changed_files) ? item.changed_files : 0,
+      commits: Number.isFinite(item.commits) ? item.commits : 0,
+      createdAt: typeof item.created_at === 'string' ? item.created_at : '',
+      updatedAt: typeof item.updated_at === 'string' ? item.updated_at : '',
+      htmlUrl: typeof item.html_url === 'string' ? item.html_url : provider_html(item, fullName)
+    }),
+    normalizeReview: (item) => ({
+      author: typeof item.user?.login === 'string' ? item.user.login : '',
+      state: typeof item.state === 'string' ? item.state : '',
+      body: typeof item.body === 'string' ? item.body : '',
+      submittedAt: typeof item.submitted_at === 'string' ? item.submitted_at : ''
+    })
+  },
   userPath: () => '/user',
   reposPath: (page) => '/user/repos?per_page=' + PAGE_SIZE + '&page=' + page
     + '&sort=updated&affiliation=owner,collaborator,organization_member',
@@ -91,6 +124,34 @@ const gitee = {
   headers: () => ({ Accept: 'application/json' }),
   /** Gitee 只认 access_token 查询参数：任何路径都必须带上，否则私有仓库会被当成不存在（404）。 */
   authorize: (url, token) => url + (url.includes('?') ? '&' : '?') + 'access_token=' + encodeURIComponent(token),
+  /** PR 能力：审查只有「通过」；合并方法两种；删源分支走 prune_source_branch。 */
+  pull: {
+    verdicts: ['approve'],
+    reviewEvents: null,
+    reviewsPath: null,
+    mergeMethods: ['merge', 'squash'],
+    mergeDeletesBranch: 'flag',
+    normalizePull: (item, fullName) => ({
+      number: Number.isFinite(item.number) ? item.number : null,
+      title: typeof item.title === 'string' ? item.title : '',
+      body: typeof item.body === 'string' ? item.body : '',
+      state: typeof item.state === 'string' ? item.state : '',
+      draft: item.draft === true,
+      merged: item.merged === true,
+      mergeable: item.mergeable === true,
+      author: typeof item.user?.login === 'string' ? item.user.login : '',
+      baseBranch: typeof item.base?.ref === 'string' ? item.base.ref : '',
+      headBranch: typeof item.head?.ref === 'string' ? item.head.ref : '',
+      additions: Number.isFinite(item.additions) ? item.additions : 0,
+      deletions: Number.isFinite(item.deletions) ? item.deletions : 0,
+      changedFiles: Number.isFinite(item.changed_files) ? item.changed_files : 0,
+      commits: Number.isFinite(item.commits) ? item.commits : 0,
+      createdAt: typeof item.created_at === 'string' ? item.created_at : '',
+      updatedAt: typeof item.updated_at === 'string' ? item.updated_at : '',
+      htmlUrl: typeof item.html_url === 'string' ? item.html_url : 'https://gitee.com/' + fullName + '/pulls/' + (item.number ?? '')
+    }),
+    normalizeReview: null
+  },
   userPath: () => '/user',
   reposPath: (page) => '/user/repos?per_page=' + PAGE_SIZE + '&page=' + page + '&sort=updated',
   repoPath: (fullName) => '/repos/' + fullName,
@@ -132,12 +193,30 @@ const gitee = {
   })
 }
 
+/** 没有 html_url 时按平台兜底拼一个 PR 链接（只用于展示）。 */
+function provider_html(item, fullName) {
+  return 'https://github.com/' + fullName + '/pull/' + (item.number ?? '')
+}
+
 export const PROVIDERS = Object.freeze({ github, gitee })
 export const PROVIDER_IDS = Object.freeze(['github', 'gitee'])
 
 /** 凭据记录 key：`<scope>/<provider>`（凭据服务要求两段都是小写 slug）。 */
 export function credentialKeyFor(providerId) {
   return CREDENTIAL_SCOPE + '/' + providerId
+}
+
+function requireFullName(value) {
+  if (typeof value !== 'string' || !/^[\w.-]+\/[\w.-]+$/.test(value)) {
+    throw new GitError('bad-request', '仓库名不合法：' + String(value))
+  }
+  return value
+}
+
+function requirePullNumber(value) {
+  const number = Number.isInteger(value) ? value : Number.parseInt(String(value), 10)
+  if (!Number.isInteger(number) || number <= 0) throw new GitError('bad-request', 'PR 编号不合法：' + String(value))
+  return number
 }
 
 /** 账号对外 id：`github:login`。内部定位账号也用它。 */
@@ -446,6 +525,134 @@ export function createRemotes(deps) {
     }
   }
 
+  /** 一个 PR 的详情：基础信息 + 审查记录（平台支持时）+ 能力清单。 */
+  async function pullDetail(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    const headers = provider.headers(account.token)
+    const send = (url, init = {}) => request(fetchImpl, provider.authorize(url, account.token), { headers, ...init }, options.signal)
+    const base = provider.apiBase + provider.repoPath(fullName) + '/pulls/' + number
+
+    const detail = await readJson(await send(base))
+
+    let reviews = []
+    if (typeof provider.pull.reviewsPath === 'function') {
+      try {
+        const listed = await readJson(await send(base + '/reviews'))
+        if (Array.isArray(listed)) reviews = listed.map(provider.pull.normalizeReview)
+      } catch {
+        // 审查记录是附加信息：读不到不影响看详情，能力清单里说明「不含审查记录」
+        reviews = []
+      }
+    }
+
+    return {
+      pull: provider.pull.normalizePull(detail, fullName),
+      reviews,
+      capabilities: {
+        verdicts: provider.pull.verdicts,
+        reviews: typeof provider.pull.reviewsPath === 'function',
+        mergeMethods: provider.pull.mergeMethods,
+        deleteBranch: true
+      }
+    }
+  }
+
+  /** 提交审查：GitHub 三种结论，Gitee 只有「通过」。 */
+  async function reviewPull(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    const verdict = typeof input.verdict === 'string' ? input.verdict : ''
+    if (!provider.pull.verdicts.includes(verdict)) {
+      throw new GitError('bad-request', provider.label + ' 不支持这种审查结论：' + verdict)
+    }
+    const body = typeof input.body === 'string' ? input.body.trim() : ''
+    if (verdict !== 'approve' && body === '') {
+      throw new GitError('bad-request', '这个结论必须写点说明')
+    }
+    const base = provider.apiBase + provider.repoPath(fullName) + '/pulls/' + number
+    const headers = provider.headers(account.token)
+
+    if (provider.pull.reviewEvents === null) {
+      // Gitee：POST /pulls/{n}/review，无 body（等同「审查通过」）；说明类意见走评论接口
+      if (body !== '') {
+        await readJson(await request(fetchImpl, provider.authorize(base + '/comments', account.token), {
+          headers,
+          method: 'POST',
+          body: JSON.stringify({ body })
+        }, options.signal))
+      }
+      await readJson(await request(fetchImpl, provider.authorize(base + '/review', account.token), {
+        headers,
+        method: 'POST'
+      }, options.signal))
+      return { verdict, bodyPosted: body !== '' }
+    }
+
+    const event = provider.pull.reviewEvents[verdict]
+    await readJson(await request(fetchImpl, provider.authorize(base + '/reviews', account.token), {
+      headers,
+      method: 'POST',
+      body: JSON.stringify(body === '' ? { event } : { event, body })
+    }, options.signal))
+    return { verdict, bodyPosted: body !== '' }
+  }
+
+  /** 合并 PR；deleteBranch 的行为由平台决定（GitHub 合并后删 ref，Gitee 走合并参数）。 */
+  async function mergePull(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    const method = typeof input.method === 'string' ? input.method : 'merge'
+    if (!provider.pull.mergeMethods.includes(method)) {
+      throw new GitError('bad-request', provider.label + ' 不支持这种合并方式：' + method)
+    }
+    const headers = provider.headers(account.token)
+    const base = provider.apiBase + provider.repoPath(fullName) + '/pulls/' + number
+    const deleteBranch = input.deleteBranch === true
+
+    // 先读一次详情：判断是否已合并 / 是否可合并，并拿到源分支名
+    const detail = await readJson(await request(fetchImpl, provider.authorize(base, account.token), { headers }, options.signal))
+    const pull = provider.pull.normalizePull(detail, fullName)
+    if (pull.merged === true) throw new GitError('already-merged', '这个 PR 已经合并过了')
+    if (pull.state !== 'open') throw new GitError('not-open', '只有打开状态的 PR 才能合并（当前 ' + pull.state + '）')
+    if (pull.mergeable !== true) throw new GitError('not-mergeable', '这个 PR 现在不能合并（可能有冲突或缺少审查）')
+
+    const payload = { merge_method: method }
+    if (provider.pull.mergeDeletesBranch === 'flag') payload.prune_source_branch = deleteBranch
+    const result = await readJson(await request(fetchImpl, provider.authorize(base + '/merge', account.token), {
+      headers,
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    }, options.signal))
+    if (result.merged === false) {
+      throw new GitError('merge-failed', typeof result.message === 'string' ? result.message : '平台没有完成合并')
+    }
+
+    // GitHub：删源分支需要单独调 git refs 接口
+    let branchDeleted = false
+    if (deleteBranch && provider.pull.mergeDeletesBranch === 'api' && pull.headBranch !== '') {
+      const refUrl = provider.apiBase + provider.repoPath(fullName) + '/git/refs/heads/' + encodeURIComponent(pull.headBranch)
+      await readJson(await request(fetchImpl, provider.authorize(refUrl, account.token), {
+        headers,
+        method: 'DELETE'
+      }, options.signal))
+      branchDeleted = true
+    } else if (provider.pull.mergeDeletesBranch === 'flag') {
+      branchDeleted = deleteBranch
+    }
+
+    return {
+      merged: true,
+      method,
+      branchDeleted,
+      headBranch: pull.headBranch,
+      message: typeof result.message === 'string' ? result.message : ''
+    }
+  }
+
   /** 克隆：目标必须在项目根内，且不能已存在（不覆盖、不合并，宁可报错）。 */
   async function cloneRepo(input, options = {}) {
     const { provider, account } = await findAccount(input.accountId)
@@ -493,5 +700,5 @@ export function createRemotes(deps) {
     return { path: targetPath, name: targetName, fullName }
   }
 
-  return { listAccounts, addAccount, updateAccount, readToken, removeAccount, listRepos, repoDetail, cloneRepo }
+  return { listAccounts, addAccount, updateAccount, readToken, removeAccount, listRepos, repoDetail, pullDetail, reviewPull, mergePull, cloneRepo }
 }

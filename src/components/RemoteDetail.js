@@ -32,7 +32,13 @@ function Section(props) {
             className: 'dgp-detail-link dgp-oneline',
             title: item.title,
             'data-dgp-item': kind,
-            onClick: () => onOpen(item.url)
+            onClick: () => {
+              if (kind === 'pulls' && item.number !== null && typeof props.onOpenPull === 'function') {
+                props.onOpenPull(item.number)
+                return
+              }
+              onOpen(item.url)
+            }
           }, (item.number === null ? '' : '#' + item.number + ' ') + item.title),
           h('span', { className: 'dgp-detail-meta dgp-oneline' },
             item.author === '' ? '' : item.author + ' · ',
@@ -147,6 +153,7 @@ export function RemoteDetail(props) {
       onOpen: (url) => {
         if (typeof source.onOpenUrl === 'function') source.onOpenUrl(url ?? repo.pullsUrl)
       },
+      onOpenPull: typeof source.onOpenPull === 'function' ? source.onOpenPull : undefined,
       t
     }))
 }

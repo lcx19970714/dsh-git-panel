@@ -1885,6 +1885,107 @@ test('用例 1J：选中远端仓库后，右侧显示代码概况与 issues / P
   })
 })
 
+test('用例 1K：点开 PR 能看详情并在面板里审查、合并', async () => {
+  const reviews = []
+  const merges = []
+  const pullCalls = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '', language: 'TypeScript',
+          updatedAt: '', sizeKb: 10, defaultBranch: 'main',
+          htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git',
+          provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: {
+          fullName: 'alice/app', description: '', language: 'TypeScript', private: false, defaultBranch: 'main',
+          sizeKb: 10, stars: 1, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
+          issuesUrl: 'https://github.com/alice/app/issues', pullsUrl: 'https://github.com/alice/app/pulls'
+        },
+        issues: { total: 1, items: [] },
+        pulls: {
+          total: 1,
+          items: [{ number: 7, title: 'Add remote panel', url: 'https://github.com/alice/app/pull/7', author: 'alice', comments: 0, createdAt: '' }]
+        },
+        failures: []
+      }),
+      'remote/pull': (payload) => {
+        pullCalls.push(payload)
+        return sayOk({
+          pull: {
+            number: payload.number, title: 'Add remote panel', body: 'body text', state: 'open', draft: false,
+            merged: false, mergeable: true, author: 'alice', baseBranch: 'main', headBranch: 'feature/remote',
+            additions: 120, deletions: 8, changedFiles: 6, commits: 3, createdAt: '', updatedAt: '',
+            htmlUrl: 'https://github.com/alice/app/pull/7'
+          },
+          reviews: [{ author: 'bob', state: 'APPROVED', body: 'LGTM', submittedAt: '' }],
+          capabilities: { verdicts: ['approve', 'request-changes', 'comment'], reviews: true, mergeMethods: ['merge', 'squash', 'rebase'], deleteBranch: true }
+        })
+      },
+      'remote/pull/review': (payload) => {
+        reviews.push(payload)
+        return sayOk({ verdict: payload.verdict })
+      },
+      'remote/pull/merge': (payload) => {
+        merges.push(payload)
+        return sayOk({ merged: true, headBranch: 'feature/remote' })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+
+    // 点详情里的 PR 条目 → 面板内打开 PR 详情（不再跳浏览器）
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+    eq(pullCalls.length, 1, '应请求一次 PR 详情')
+    eq(pullCalls[0], { accountId: 'github:alice', fullName: 'alice/app', number: 7 }, 'PR 详情载荷')
+    eq(panel.window.opened.length, 0, '不应打开浏览器')
+
+    const detail = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'detail')
+    assert(detail !== null, '右侧应显示 PR 详情')
+    assert(textOf(detail).includes('Add remote panel'), '标题')
+    assert(textOf(detail).includes('body text'), '正文')
+    assert(textOf(detail).includes('LGTM'), '审查记录')
+
+    // 审批
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'note')
+      .props.onChange({ target: { value: '可以合' } })
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'verdict-approve'))
+    await panel.flush()
+    eq(reviews.length, 1, '应提交一次审查')
+    eq(reviews[0], { accountId: 'github:alice', fullName: 'alice/app', number: 7, verdict: 'approve', body: '可以合' })
+
+    // 合并（选 squash、删源分支）
+    const method = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'merge-method')
+    method.props.onChange({ target: { value: 'squash' } })
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'merge-run'))
+    await panel.flush()
+    eq(merges.length, 1, '应合并一次')
+    eq(merges[0].method, 'squash')
+    eq(merges[0].deleteBranch, true)
+
+    // 返回仓库详情
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'back'))
+    await panel.flush()
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'detail'), null, '应回到仓库详情')
+  })
+})
+
 test('用例 1H：浏览器拦截新窗口时，把令牌页地址原样显示出来', async () => {
   await withPanel({
     routes: {

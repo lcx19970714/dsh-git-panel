@@ -154,6 +154,21 @@ export function remoteDetail(payload, options) {
   return call('remote/detail', payload, options)
 }
 
+/** 一个 PR 的详情（含平台能力与审查记录）。 */
+export function remotePull(payload, options) {
+  return call('remote/pull', payload, options)
+}
+
+/** 提交审查结论。 */
+export function remotePullReview(payload, options) {
+  return call('remote/pull/review', payload, options)
+}
+
+/** 合并 PR。 */
+export function remotePullMerge(payload, options) {
+  return call('remote/pull/merge', payload, options)
+}
+
 /** 把远端仓库克隆到项目根下的子目录。 */
 export function cloneRemoteRepo(payload, options) {
   return call('remote/clone', payload, options)

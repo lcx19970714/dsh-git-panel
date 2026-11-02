@@ -987,6 +987,38 @@ export const CSS = `
   font-size: 11px;
 }
 
+/* PR 详情根容器：沿用 .dgp-detail 的排布，这里只补标题行更紧凑的间距 */
+.dgp-pull { gap: 8px; }
+/* PR 详情：正文与操作区 */
+.dgp-pull-body {
+  margin: 0;
+  max-height: 240px;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.dgp-pull-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.dgp-pull-note { flex: 1 1 200px; min-width: 0; height: 26px; }
+.dgp-pull-method { flex: none; width: 132px; height: 24px; }
+.dgp-pull-check { display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+.dgp-pull-verdict {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+}
+.dgp-pull-verdict[data-state="APPROVED"] { color: var(--dsw-alias-state-success-primary); }
+.dgp-pull-verdict[data-state="CHANGES_REQUESTED"] { color: var(--dsw-alias-state-error-primary); }
+.dgp-detail-notice { margin: 0; color: var(--dsw-alias-state-success-primary); font-size: 11px; }
 /* 远端仓库详情（右侧） */
 .dgp-detail { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 12px 14px; overflow: auto; }
 .dgp-detail-top { display: flex; align-items: flex-start; gap: 10px; }

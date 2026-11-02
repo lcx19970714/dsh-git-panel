@@ -1658,6 +1658,101 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
   })
 })
 
+test('用例 1F：没账号时远端页签就地添加账号，不用跳设置页', async () => {
+  let accounts = []
+  const added = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts,
+        providers: [
+          { id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new?scopes=repo' },
+          { id: 'gitee', label: 'Gitee', tokenUrl: 'https://gitee.com/profile/personal_access_tokens' }
+        ]
+      }),
+      'accounts/add': (payload) => {
+        added.push(payload)
+        accounts = [{
+          id: payload.provider + ':alice',
+          provider: payload.provider,
+          login: 'alice',
+          label: payload.label === '' ? 'alice' : payload.label,
+          providerLabel: payload.provider === 'gitee' ? 'Gitee' : 'GitHub'
+        }]
+        return sayOk({ account: accounts[0] })
+      },
+      'remote/repos': () => sayOk({ repos: [], page: 1, hasMore: false })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+
+    // 空态只给一个「添加账号」入口，平台在表单的下拉里选
+    const addButtons = panel.all((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'add-account')
+    eq(addButtons.length, 1, '空态应有一个添加账号入口')
+
+    click(addButtons[0])
+    await panel.flush()
+    const form = panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-form')
+    assert(form !== null, '点平台按钮应就地展开表单，而不是跳设置页')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-view') === 'settings') === null,
+      '不应跳到设置页')
+
+    const providerSelect = panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-provider')
+    assert(providerSelect !== null, '表单里应有平台下拉')
+    eq(providerSelect.props.value, 'github', '默认选中第一个平台')
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'open-token-page'))
+    await panel.flush()
+    eq(panel.window.opened.length, 1, '应打开令牌页面')
+    assert(panel.window.opened[0].url.includes('github.com/settings/tokens'), '打开的是 GitHub 令牌页')
+
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-token')
+      .props.onChange({ target: { value: 'ghp_zzz' } })
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-submit'))
+    await panel.flush()
+
+    eq(added.length, 1, '应调用一次 accounts/add')
+    eq(added[0], { provider: 'github', label: '', token: 'ghp_zzz' }, '添加载荷')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-form'), null,
+      '成功后表单应收起')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-account') === 'github:alice') !== null,
+      '添加成功后出现账号 chip')
+  })
+})
+
+test('用例 1G：已有账号时点 ＋ 也能就地添加', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({ repos: [], page: 1, hasMore: false })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+
+    const add = panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'add-account')
+    assert(add !== null, '有账号时应有 ＋ 入口')
+    click(add)
+    await panel.flush()
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-form') !== null,
+      '点 ＋ 应展开表单')
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-cancel'))
+    await panel.flush()
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-form'), null, '取消应收起')
+  })
+})
+
 test('用例 1E：设置页的账号引导按平台给三步，并能一键打开令牌页面', async () => {
   const added = []
   await withPanel({

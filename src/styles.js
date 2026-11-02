@@ -1035,6 +1035,24 @@ export const CSS = `
 .dgp-remote-more { align-self: center; margin: 6px 0; }
 
 /* ── 设置页：账号列表与添加表单 ── */
+/* 空态里的按钮组（例如没账号时的两个平台入口） */
+.dgp-state-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 4px; }
+/* 按钮保持内容宽度：中文标签一旦被压窄就会溢出边框 */
+.dgp-state-actions .dgp-btn { flex: 0 0 auto; white-space: nowrap; }
+
+/* 远端页签里就地展开的账号表单 */
+.dgp-account-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dgp-account-inline-head { display: flex; align-items: center; gap: 8px; }
+.dgp-account-inline .dgp-account-form { margin-top: 0; }
+.dgp-account-form .dgp-btn { flex: 0 0 auto; white-space: nowrap; }
 /* 设置页：获取令牌的三步引导 */
 .dgp-account-guide {
   display: flex;

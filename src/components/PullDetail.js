@@ -122,7 +122,13 @@ export function PullDetail(props) {
       setDraft(result.comment ?? '')
       return
     }
-    setAi({ status: 'error', result: null, error: result === null || result === undefined ? '审阅失败' : result.error })
+    setAi({
+      status: 'error',
+      result: null,
+      error: result === null || result === undefined ? '审阅失败' : result.error,
+      // 只有「没配审阅模型」这种情况值得给快捷入口，其它错误去设置页也没用
+      code: result === null || result === undefined ? null : (result.code ?? null)
+    })
   }
 
   /** 提交评论：内容就是输入框里的（用户可改过的）文本。 */
@@ -231,9 +237,21 @@ export function PullDetail(props) {
           'data-dgp-pull': 'ai-run',
           disabled: ai.status === 'loading' || busy !== null,
           onClick: runAi
-        }, t(ai.status === 'done' ? 'pull.aiRerun' : 'pull.aiRun'))),
+        }, t(ai.status === 'done' ? 'pull.aiRerun' : 'pull.aiStart'))),
       ai.status === 'loading' ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' }, t('pull.aiRunning')) : null,
-      ai.status === 'error' ? h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error) : null,
+      ai.status === 'error'
+        ? h('div', { className: 'dgp-ai-error' },
+          h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error),
+          ai.code === 'no-review-model' && typeof source.onOpenSettings === 'function'
+            ? h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-dgp-pull': 'ai-open-settings',
+              onClick: () => source.onOpenSettings()
+            }, t('pull.aiOpenSettings'))
+            : null)
+        : null,
       ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
         ai.result.truncated === true
           ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))

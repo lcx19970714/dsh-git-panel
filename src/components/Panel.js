@@ -1023,7 +1023,7 @@ export function Panel(props) {
       const review = await api.remotePullAiReview(input)
       return { ok: true, ...review }
     } catch (error) {
-      return { ok: false, error: api.describeError(error, tRef.current) }
+      return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
     }
   }, [])
 
@@ -1595,6 +1595,7 @@ function buildUpdateNote(updateState, t) {
       onPass: passPull,
       onAiReview: aiReviewPull,
       onComment: commentPull,
+      onOpenSettings: openSettings,
       onMerge: mergePull,
       onChanged: () => loadPullDetail(openPull),
       onOpenUrl: openExternal,

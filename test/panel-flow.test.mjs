@@ -2427,6 +2427,8 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
     // 触发 AI 审阅
     const runButton = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-run')
     assert(runButton !== null, '应有 AI 审阅按钮')
+    // 区块标题已经是「AI 审阅」，按钮必须换一个说法，不能重复
+    eq(textOf(runButton), panel.t('pull.aiStart'), '按钮文案应为「开始审阅」')
     click(runButton)
     await panel.flush()
 
@@ -2462,6 +2464,71 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
     eq(comments[0].comment, '我自己改过的评论内容', '提交的是用户编辑后的内容')
     eq(comments[0].number, 7)
     assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-notice') !== null, '提交后要有提示')
+  })
+})
+
+test('用例 1R：没配 AI 审阅模型时，报错旁边有「去设置模型」入口', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'main',
+          htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git',
+          provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: {
+          fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
+          issuesUrl: 'x', pullsUrl: 'x'
+        },
+        issues: { total: 0, items: [] },
+        pulls: { total: 1, items: [{ number: 7, title: 'PR seven', url: 'x', author: 'alice', comments: 0, createdAt: '' }] },
+        failures: []
+      }),
+      'remote/pull': () => sayOk({
+        pull: {
+          number: 7, title: 'PR seven', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 0, deletions: 0, changedFiles: 0,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
+        },
+        reviews: [],
+        gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: null },
+        capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
+      }),
+      // 宿主明确报「没配审阅模型」
+      'remote/pull/ai-review': () => sayFail('no-review-model', '还没有配置 AI 审阅模型（设置页里选「审阅模型」）'),
+      'models/list': () => sayOk({ models: [], failed: [] }),
+      'settings/get': () => sayOk({ commitModel: null, reviewModel: null })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-run'))
+    await panel.flush()
+
+    const error = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-error')
+    assert(error !== null, '应显示错误')
+    const jump = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-open-settings')
+    assert(jump !== null, '错误旁边应有「去设置模型」')
+    click(jump)
+    await panel.flush()
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-view') === 'settings') !== null,
+      '点击后应进入设置页')
   })
 })
 

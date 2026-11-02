@@ -149,6 +149,26 @@ export function createPulls(deps) {
   }
 
   /**
+   * 深度审阅需要的东西：PR 详情 + 拉取用的 git 地址/refspec/凭据。
+   *
+   * 凭据只给这次 fetch 用（http.extraHeader），不写进任何配置。
+   */
+  async function reviewSource(input, options = {}) {
+    const detail = await pullDetail(input, options)
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    return {
+      pull: detail.pull,
+      fullName,
+      url: provider.gitUrl(fullName),
+      remoteRef: provider.reviewRef(number, detail.pull),
+      user: provider.gitUser === null ? account.login : provider.gitUser,
+      token: account.token
+    }
+  }
+
+  /**
    * PR 的文件列表 + 每个文件的 patch（AI 审阅的输入）。
    *
    * 两家都是 `pulls/{n}/files`，每页 50 条（**必须 ≤70**：GitHub 在 per_page>70 时
@@ -293,5 +313,5 @@ export function createPulls(deps) {
     }
   }
 
-  return { pullDetail, pullDiff, reviewPull, testPull, passPull, commentPull, mergePull }
+  return { pullDetail, pullDiff, reviewSource, reviewPull, testPull, passPull, commentPull, mergePull }
 }

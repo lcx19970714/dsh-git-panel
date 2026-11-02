@@ -63,6 +63,7 @@ import {
   generateCommitMessage
 } from './host/models.js'
 import { generateReview } from './host/review.js'
+import { deepReview } from './host/deep-review.js'
 import { resolveRoots, addExtraRoot, removeExtraRoot, hideRoot, unhideRoot } from './host/roots.js'
 
 export const name = 'dsh-git-panel'
@@ -119,6 +120,7 @@ export const ENDPOINTS = Object.freeze([
   'remote/pull/diff',
   'remote/pull/review',
   'remote/pull/ai-review',
+  'remote/pull/deep-review',
   'remote/pull/comment',
   'remote/pull/test',
   'remote/pull/pass',
@@ -554,6 +556,37 @@ function createDispatcher(ctx) {
     return generateReview(llmService, settings.reviewModel, { pull: detail.pull, files: diff.files }, { signal })
   }
 
+  /**
+   * 深度审阅：把 PR 的 head 拉到临时裸仓库/worktree，读完整文件后再交给模型。
+   * 全程不碰用户工作区；临时目录在 finally 里删除。
+   */
+  async function remotePullDeepReview(request, signal) {
+    const settings = await readSettings()
+    if (settings.reviewModel === null) {
+      throw new GitError('no-review-model', '还没有配置 AI 审阅模型（设置页里选「审阅模型」）')
+    }
+    const accountId = requireString(request.accountId, 'accountId')
+    const fullName = requireString(request.fullName, 'fullName')
+    const number = request.number
+    const source = await remotesOf().reviewSource({ accountId, fullName, number }, { signal })
+    const diff = await remotesOf().pullDiff({ accountId, fullName, number }, { signal })
+    // 本地有对应仓库时复用它：有 rootPath 就解析出仓库根，交给 deepReview 判断是否匹配
+    let localRoot = null
+    if (typeof request.rootPath === 'string' && request.rootPath !== '') {
+      const repo = await resolveRepo(requireAbsolute(request.rootPath, 'rootPath'))
+      if (repo?.repoRoot) localRoot = normalizeSlashes(repo.repoRoot)
+    }
+    return deepReview({
+      llm: llmService,
+      pair: settings.reviewModel,
+      source,
+      pull: source.pull,
+      files: diff.files,
+      localRoot,
+      signal
+    })
+  }
+
   /** 提交评论：内容由用户在面板里确认/编辑，这里只负责发出去。 */
   async function remotePullComment(request, signal) {
     return remotesOf().commentPull({
@@ -791,6 +824,7 @@ function createDispatcher(ctx) {
     'remote/pull': (request, signal) => remotePull(request, signal),
     'remote/pull/diff': (request, signal) => remotePullDiff(request, signal),
     'remote/pull/ai-review': (request, signal) => remotePullAiReview(request, signal),
+    'remote/pull/deep-review': (request, signal) => remotePullDeepReview(request, signal),
     'remote/pull/comment': (request, signal) => remotePullComment(request, signal),
     'remote/pull/review': (request, signal) => remotePullReview(request, signal),
     'remote/pull/pass': (request, signal) => remotePullPass(request, signal),

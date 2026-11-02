@@ -1035,6 +1035,16 @@ export function Panel(props) {
     }
   }, [])
 
+  /** 深度审阅：宿主拉 PR head 到临时 worktree，读完整文件后再判。 */
+  const deepReviewPull = useCallback(async (input) => {
+    try {
+      const review = await api.remotePullDeepReview(input)
+      return { ok: true, ...review }
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
+    }
+  }, [])
+
   /** 提交评论（内容已由用户在面板里确认过）。 */
   const commentPull = useCallback(async (input) => {
     try {
@@ -1608,6 +1618,9 @@ function buildUpdateNote(updateState, t) {
       onTest: testPull,
       onPass: passPull,
       onAiReview: aiReviewPull,
+      onDeepReview: deepReviewPull,
+      // 本地有对应仓库时深度审阅可以复用它的对象库（快很多）
+      localRepoRoot: activeRoot !== null && activeRoot.isGit === true ? activeRoot.path : null,
       onComment: commentPull,
       onOpenSettings: openSettings,
       onMerge: mergePull,

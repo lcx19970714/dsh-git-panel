@@ -160,6 +160,28 @@ await test('generateReview：没有 llm 服务时明确报 no-llm', async () => 
   )
 })
 
+await test('deep 模式：完整文件内容进提示词，系统提示词要求上下文检查，预算更大', async () => {
+  const files = [{ filename: 'src/a.js', status: 'modified', additions: 1, deletions: 0, changes: 1, patch: '+x', patchAvailable: true }]
+  const shallow = buildReviewInput({ pull: { title: 'T' }, files })
+  const deep = buildReviewInput({ pull: { title: 'T' }, files }, {
+    mode: 'deep',
+    fullFiles: [{ filename: 'src/a.js', text: 'const context = 42\n' }]
+  })
+  assert.equal(shallow.deep, false)
+  assert.equal(deep.deep, true)
+  assert.ok(!shallow.text.includes('完整文件：src/a.js'), '普通模式不带完整文件')
+  assert.ok(deep.text.includes('完整文件：src/a.js'), '深度模式带完整文件')
+  assert.ok(deep.text.length > shallow.text.length)
+
+  const llm = fakeLlm(JSON.stringify(validReview))
+  await generateReview(llm.service, { provider: 'p1', model: 'm1' }, { pull: { title: 'T' }, files }, {
+    mode: 'deep',
+    fullFiles: [{ filename: 'src/a.js', text: 'const context = 42\n' }]
+  })
+  assert.ok(llm.calls[0].system.includes('【深度审阅】'), '系统提示词要包含深度审阅要求')
+  assert.ok(llm.calls[0].prompt.includes('const context = 42'), '提示词里要有完整文件内容')
+})
+
 console.log('')
 console.log(passed + ' passed, ' + failed + ' failed')
 process.exit(failed === 0 ? 0 : 1)

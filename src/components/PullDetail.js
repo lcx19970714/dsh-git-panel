@@ -26,7 +26,7 @@ export function PullDetail(props) {
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   // AI 审阅：idle / loading / done(result) / error
-  const [ai, setAi] = useState({ status: 'idle', result: null, error: null })
+  const [ai, setAi] = useState({ status: 'idle', mode: 'diff', result: null, error: null })
   // 评论草稿：AI 生成后填入，用户可改，只有点「提交评论」才发出去
   const [draft, setDraft] = useState('')
   const [commentBusy, setCommentBusy] = useState(false)
@@ -120,22 +120,28 @@ export function PullDetail(props) {
   }
 
   /** 跑一次 AI 审阅（宿主负责取 diff 与调模型）。 */
-  const runAi = async () => {
-    if (typeof source.onAiReview !== 'function') return
-    setAi({ status: 'loading', result: null, error: null })
+  const runAi = async (mode) => {
+    const handler = mode === 'deep' ? source.onDeepReview : source.onAiReview
+    if (typeof handler !== 'function') return
+    setAi({ status: 'loading', mode, result: null, error: null })
     setCommentNotice(null)
-    const result = await source.onAiReview({
+    const result = await handler({
       accountId: selection.accountId,
       fullName: selection.fullName,
-      number: pull.number
+      number: pull.number,
+      // 深度审阅：本地有对应仓库就带上，宿主据此复用它的对象库
+      ...(mode === 'deep' && typeof source.localRepoRoot === 'string'
+        ? { rootPath: source.localRepoRoot }
+        : {})
     })
     if (result !== null && result !== undefined && result.ok === true) {
-      setAi({ status: 'done', result, error: null })
+      setAi({ status: 'done', mode, result, error: null })
       setDraft(result.comment ?? '')
       return
     }
     setAi({
       status: 'error',
+      mode,
       result: null,
       error: result === null || result === undefined ? '审阅失败' : result.error,
       // 只有「没配审阅模型」这种情况值得给快捷入口，其它错误去设置页也没用
@@ -253,9 +259,21 @@ export function PullDetail(props) {
           'data-size': 'sm',
           'data-dgp-pull': 'ai-run',
           disabled: ai.status === 'loading' || busy !== null,
-          onClick: runAi
-        }, t(ai.status === 'done' ? 'pull.aiRerun' : 'pull.aiStart'))),
-      ai.status === 'loading' ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' }, t('pull.aiRunning')) : null,
+          onClick: () => runAi('diff')
+        }, t(ai.status === 'done' && ai.mode === 'diff' ? 'pull.aiRerun' : 'pull.aiStart')),
+        h('button', {
+          type: 'button',
+          className: 'dgp-btn',
+          'data-size': 'sm',
+          'data-dgp-pull': 'ai-deep-run',
+          disabled: ai.status === 'loading' || busy !== null,
+          title: t('pull.aiDeepHint'),
+          onClick: () => runAi('deep')
+        }, t(ai.status === 'done' && ai.mode === 'deep' ? 'pull.aiDeepRerun' : 'pull.aiDeepRun'))),
+      ai.status === 'loading'
+        ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' },
+          t(ai.mode === 'deep' ? 'pull.aiDeepRunning' : 'pull.aiRunning'))
+        : null,
       ai.status === 'error'
         ? h('div', { className: 'dgp-ai-error' },
           h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error),
@@ -270,6 +288,24 @@ export function PullDetail(props) {
             : null)
         : null,
       ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
+        ai.mode === 'deep'
+          ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-deep-info' },
+            t('pull.aiDeepInfo', { count: ai.result.filesRead ?? 0 }),
+            ' · ',
+            t(ai.result.objectSource === 'local' ? 'pull.aiDeepLocal' : 'pull.aiDeepTemp'))
+          : null,
+        Array.isArray(ai.result.fullFilesSkipped) && ai.result.fullFilesSkipped.length > 0
+          ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-deep-skipped' },
+            h('p', { className: 'dgp-detail-notice' },
+              t('pull.aiDeepSkipped', { count: ai.result.fullFilesSkipped.length })),
+            h('ul', { className: 'dgp-skipped-list' },
+              ai.result.fullFilesSkipped.map((file, index) => h('li', {
+                key: String(file.filename) + '#' + String(index),
+                className: 'dgp-skipped-item'
+              },
+              h('span', { className: 'dgp-skipped-name dgp-oneline', title: file.filename }, file.filename),
+              h('span', { className: 'dgp-skipped-size' }, file.reason)))))
+          : null,
         ai.result.truncated === true
           ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))
           : null,

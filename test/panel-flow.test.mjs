@@ -2501,6 +2501,76 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
   })
 })
 
+test('用例 1S：深度审阅按钮调用 deep-review，并显示复用了本地仓库', async () => {
+  const deepCalls = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'main',
+          htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git',
+          provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: {
+          fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
+          issuesUrl: 'x', pullsUrl: 'x'
+        },
+        issues: { total: 0, items: [] },
+        pulls: { total: 1, items: [{ number: 7, title: 'PR seven', url: 'x', author: 'alice', comments: 0, createdAt: '', updatedAt: '' }] },
+        failures: []
+      }),
+      'remote/pull': () => sayOk({
+        pull: {
+          number: 7, title: 'PR seven', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 1, deletions: 0, changedFiles: 1,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
+        },
+        reviews: [],
+        gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: null },
+        capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
+      }),
+      'remote/pull/deep-review': (payload) => {
+        deepCalls.push(payload)
+        return sayOk({
+          summary: '深度审阅结论', verdict: 'comment',
+          findings: [{ severity: 'minor', file: 'src/a.js', line: 3, title: '边界', detail: 'd', suggestion: 's' }],
+          comment: '1. 边界检查',
+          model: 'p1/m1', truncated: false, filesIncluded: 1,
+          deep: true, objectSource: 'local', filesRead: 1, fullFilesSkipped: []
+        })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-deep-run'))
+    await panel.flush()
+
+    eq(deepCalls.length, 1, '应调用 deep-review')
+    eq(deepCalls[0].number, 7)
+    eq(deepCalls[0].rootPath, PROJECT, '应带上本地仓库根，供宿主复用对象库')
+    const info = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-deep-info')
+    assert(info !== null, '深度审阅结果要显示读取信息')
+    assert(textOf(info).includes('复用了本地仓库'), '要说明复用了本地仓库：' + textOf(info))
+  })
+})
+
 test('用例 1R：没配 AI 审阅模型时，报错旁边有「去设置模型」入口', async () => {
   await withPanel({
     routes: {

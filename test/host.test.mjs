@@ -209,6 +209,48 @@ function test(name, fn) {
   tests.push({ name, fn })
 }
 
+test('deep-review：本地仓库匹配时复用对象库，不匹配时用临时裸仓库', async () => {
+  const { materializePull } = await import('../host/deep-review.js')
+  const { execFileSync } = await import('node:child_process')
+
+  // 造一个「平台」裸仓库，带 refs/pull/1/head
+  const platform = path.join(tempDir('dgp-platform-'), 'alice', 'app.git')
+  execFileSync('git', ['init', '--bare', '-q', platform], { stdio: 'pipe' })
+  const work = path.join(tempDir('dgp-platform-work-'), 'work')
+  execFileSync('git', ['init', '-q', work], { stdio: 'pipe' })
+  writeFileSync(path.join(work, 'a.js'), 'export const a = 1\n')
+  const g = (...args) => execFileSync('git', args, { cwd: work, stdio: 'pipe' })
+  g('config', 'user.email', 'a@b.c')
+  g('config', 'user.name', 'a')
+  g('add', '-A')
+  g('commit', '-qm', 'one')
+  g('push', '-q', platform, 'HEAD:refs/pull/1/head')
+
+  // 本地克隆：origin 指向这个「平台」，与 fullName 匹配 → 复用
+  const local = path.join(tempDir('dgp-local-'), 'clone')
+  execFileSync('git', ['clone', '-q', platform, local], { stdio: 'pipe' })
+
+  const reused = await materializePull({
+    fullName: 'alice/app', url: platform, remoteRef: 'refs/pull/1/head', user: 'x', token: ''
+  }, { localRoot: local })
+  assert.equal(reused.objectSource, 'local', '应复用本地仓库')
+  assert.ok(existsSync(path.join(reused.tree, 'a.js')), 'worktree 里应有文件')
+  await reused.cleanup()
+  assert.equal(existsSync(reused.tree), false, 'worktree 应被清理')
+  // 清理后本地仓库不该留下临时 ref
+  const refs = execFileSync('git', ['for-each-ref', 'refs/dsh/'], { cwd: local, stdio: 'pipe' }).toString('utf8').trim()
+  assert.equal(refs, '', '临时 ref 应被删除：' + refs)
+
+  // 不匹配的本地仓库 → 走临时裸仓库
+  const tempRoot = tempDir('dgp-temp-')
+  const fetched = await materializePull({
+    fullName: 'other/repo', url: platform, remoteRef: 'refs/pull/1/head', user: 'x', token: ''
+  }, { localRoot: local, tempRoot })
+  assert.equal(fetched.objectSource, 'temp', '仓库不匹配时用临时裸仓库')
+  assert.ok(existsSync(path.join(fetched.tree, 'a.js')))
+  await fetched.cleanup()
+})
+
 test('文档与端点清单必须一致：数量一致，且每个端点都在文档端点表里', async () => {
   const doc = readFileSync(new URL('../docs/ARCHITECTURE.md', import.meta.url), 'utf8')
   const claimed = /通过 (\d+) 个 RPC 端点通信/.exec(doc)

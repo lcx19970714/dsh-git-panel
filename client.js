@@ -1654,6 +1654,14 @@ window.__ModuleLoader__.load({
         'settings.reviewModelLabel': 'AI 审阅模型',
         'settings.reviewModelHint': '用于审阅 PR 的模型；建议选能力更强的，审阅比写提交说明难得多。两个模型互不影响。',
         'pull.aiTitle': 'AI 审阅',
+        'pull.aiDeepRun': '深度审阅',
+        'pull.aiDeepRerun': '重新深度审阅',
+        'pull.aiDeepHint': '把 PR 的分支拉到临时目录，连同完整文件内容一起审（更慢，但能看上下文）',
+        'pull.aiDeepRunning': '正在拉取 PR 代码并读取完整文件，可能需要更久…',
+        'pull.aiDeepInfo': '深度审阅：已读取 {count} 个完整文件',
+        'pull.aiDeepLocal': '复用了本地仓库的对象（已存在的提交不会重下）',
+        'pull.aiDeepTemp': '临时拉取（本地没有对应仓库）',
+        'pull.aiDeepSkipped': '有 {count} 个文件没读到完整内容：',
         'pull.aiStart': '开始审阅',
         'pull.aiOpenSettings': '去设置模型',
         'pull.aiRerun': '重新审阅',
@@ -1970,6 +1978,14 @@ window.__ModuleLoader__.load({
         'settings.reviewModelLabel': 'AI review model',
         'settings.reviewModelHint': 'Model used to review PRs; pick a stronger one — reviewing is harder than writing a commit message. The two models are independent.',
         'pull.aiTitle': 'AI review',
+        'pull.aiDeepRun': 'Deep review',
+        'pull.aiDeepRerun': 'Deep review again',
+        'pull.aiDeepHint': 'Fetch the PR branch into a temp folder and review with full file contents (slower, but sees context)',
+        'pull.aiDeepRunning': 'Fetching the PR and reading full files — this takes longer…',
+        'pull.aiDeepInfo': 'Deep review: read {count} full files',
+        'pull.aiDeepLocal': 'reused your local repository objects',
+        'pull.aiDeepTemp': 'fetched into a temporary repo (no matching local clone)',
+        'pull.aiDeepSkipped': '{count} file(s) had no full content:',
         'pull.aiStart': 'Start review',
         'pull.aiOpenSettings': 'Choose a model',
         'pull.aiRerun': 'Review again',
@@ -3250,6 +3266,16 @@ window.__ModuleLoader__.load({
           }
         }, [])
 
+        /** 深度审阅：宿主拉 PR head 到临时 worktree，读完整文件后再判。 */
+        const deepReviewPull = useCallback(async (input) => {
+          try {
+            const review = await api.remotePullDeepReview(input)
+            return { ok: true, ...review }
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
+          }
+        }, [])
+
         /** 提交评论（内容已由用户在面板里确认过）。 */
         const commentPull = useCallback(async (input) => {
           try {
@@ -3823,6 +3849,9 @@ window.__ModuleLoader__.load({
             onTest: testPull,
             onPass: passPull,
             onAiReview: aiReviewPull,
+            onDeepReview: deepReviewPull,
+            // 本地有对应仓库时深度审阅可以复用它的对象库（快很多）
+            localRepoRoot: activeRoot !== null && activeRoot.isGit === true ? activeRoot.path : null,
             onComment: commentPull,
             onOpenSettings: openSettings,
             onMerge: mergePull,
@@ -6532,6 +6561,11 @@ window.__ModuleLoader__.load({
         return call('remote/pull/ai-review', payload, options)
       }
 
+      /** 深度审阅：宿主拉取 PR head 到临时 worktree，读完整文件后再让模型审。 */
+      function remotePullDeepReview(payload, options) {
+        return call('remote/pull/deep-review', payload, options)
+      }
+
       /** 提交用户确认过的 PR 评论。 */
       function remotePullComment(payload, options) {
         return call('remote/pull/comment', payload, options)
@@ -6638,7 +6672,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullDeepReview, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -8902,7 +8936,7 @@ window.__ModuleLoader__.load({
         const [error, setError] = useState(null)
         const [notice, setNotice] = useState(null)
         // AI 审阅：idle / loading / done(result) / error
-        const [ai, setAi] = useState({ status: 'idle', result: null, error: null })
+        const [ai, setAi] = useState({ status: 'idle', mode: 'diff', result: null, error: null })
         // 评论草稿：AI 生成后填入，用户可改，只有点「提交评论」才发出去
         const [draft, setDraft] = useState('')
         const [commentBusy, setCommentBusy] = useState(false)
@@ -8996,22 +9030,28 @@ window.__ModuleLoader__.load({
         }
 
         /** 跑一次 AI 审阅（宿主负责取 diff 与调模型）。 */
-        const runAi = async () => {
-          if (typeof source.onAiReview !== 'function') return
-          setAi({ status: 'loading', result: null, error: null })
+        const runAi = async (mode) => {
+          const handler = mode === 'deep' ? source.onDeepReview : source.onAiReview
+          if (typeof handler !== 'function') return
+          setAi({ status: 'loading', mode, result: null, error: null })
           setCommentNotice(null)
-          const result = await source.onAiReview({
+          const result = await handler({
             accountId: selection.accountId,
             fullName: selection.fullName,
-            number: pull.number
+            number: pull.number,
+            // 深度审阅：本地有对应仓库就带上，宿主据此复用它的对象库
+            ...(mode === 'deep' && typeof source.localRepoRoot === 'string'
+              ? { rootPath: source.localRepoRoot }
+              : {})
           })
           if (result !== null && result !== undefined && result.ok === true) {
-            setAi({ status: 'done', result, error: null })
+            setAi({ status: 'done', mode, result, error: null })
             setDraft(result.comment ?? '')
             return
           }
           setAi({
             status: 'error',
+            mode,
             result: null,
             error: result === null || result === undefined ? '审阅失败' : result.error,
             // 只有「没配审阅模型」这种情况值得给快捷入口，其它错误去设置页也没用
@@ -9129,9 +9169,21 @@ window.__ModuleLoader__.load({
                 'data-size': 'sm',
                 'data-dgp-pull': 'ai-run',
                 disabled: ai.status === 'loading' || busy !== null,
-                onClick: runAi
-              }, t(ai.status === 'done' ? 'pull.aiRerun' : 'pull.aiStart'))),
-            ai.status === 'loading' ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' }, t('pull.aiRunning')) : null,
+                onClick: () => runAi('diff')
+              }, t(ai.status === 'done' && ai.mode === 'diff' ? 'pull.aiRerun' : 'pull.aiStart')),
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-dgp-pull': 'ai-deep-run',
+                disabled: ai.status === 'loading' || busy !== null,
+                title: t('pull.aiDeepHint'),
+                onClick: () => runAi('deep')
+              }, t(ai.status === 'done' && ai.mode === 'deep' ? 'pull.aiDeepRerun' : 'pull.aiDeepRun'))),
+            ai.status === 'loading'
+              ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' },
+                t(ai.mode === 'deep' ? 'pull.aiDeepRunning' : 'pull.aiRunning'))
+              : null,
             ai.status === 'error'
               ? h('div', { className: 'dgp-ai-error' },
                 h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error),
@@ -9146,6 +9198,24 @@ window.__ModuleLoader__.load({
                   : null)
               : null,
             ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
+              ai.mode === 'deep'
+                ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-deep-info' },
+                  t('pull.aiDeepInfo', { count: ai.result.filesRead ?? 0 }),
+                  ' · ',
+                  t(ai.result.objectSource === 'local' ? 'pull.aiDeepLocal' : 'pull.aiDeepTemp'))
+                : null,
+              Array.isArray(ai.result.fullFilesSkipped) && ai.result.fullFilesSkipped.length > 0
+                ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-deep-skipped' },
+                  h('p', { className: 'dgp-detail-notice' },
+                    t('pull.aiDeepSkipped', { count: ai.result.fullFilesSkipped.length })),
+                  h('ul', { className: 'dgp-skipped-list' },
+                    ai.result.fullFilesSkipped.map((file, index) => h('li', {
+                      key: String(file.filename) + '#' + String(index),
+                      className: 'dgp-skipped-item'
+                    },
+                    h('span', { className: 'dgp-skipped-name dgp-oneline', title: file.filename }, file.filename),
+                    h('span', { className: 'dgp-skipped-size' }, file.reason)))))
+                : null,
               ai.result.truncated === true
                 ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))
                 : null,

@@ -602,6 +602,86 @@ await test('需要对象的接口遇到空响应时，给出明确原因', async
   )
 })
 
+await test('PR 文件 diff：按页取满、带 patch；Gitee 与 GitHub 都走 files 接口', async () => {
+  const credentials = fakeCredentials()
+  const seen = []
+  const files = (count) => Array.from({ length: count }, (_, index) => ({
+    filename: 'src/f' + index + '.js',
+    status: 'modified',
+    additions: 2,
+    deletions: 1,
+    changes: 3,
+    patch: '@@ -1 +1 @@\n-a\n+b'
+  }))
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/pulls\/7\/files\?per_page=100&page=1$/, (url) => {
+      seen.push(url)
+      return { json: files(100) }
+    }],
+    [/\/pulls\/7\/files\?per_page=100&page=2$/, (url) => {
+      seen.push(url)
+      return { json: files(2) }
+    }],
+    [/\/pulls\/7\/files\?per_page=100&page=3$/, (url) => {
+      seen.push(url)
+      return { json: files(0) }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+
+  const diff = await remotes.pullDiff({ accountId: 'github:alice', fullName: 'alice/app', number: 7 })
+  assert.equal(diff.files.length, 102, '两页合计 102 个文件')
+  assert.equal(diff.truncated, false)
+  assert.equal(diff.files[0].patch, '@@ -1 +1 @@\n-a\n+b')
+  assert.equal(diff.files[0].status, 'modified')
+  assert.equal(seen.length, 2, '第二页不满 100 就停止，不再请求第三页')
+})
+
+await test('PR 评论：GitHub 走 issues 评论接口、Gitee 走 pulls，且都是 JSON 请求体', async () => {
+  const credentials = fakeCredentials()
+  const calls = []
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/issues\/9\/comments$/, (url, options) => {
+      calls.push({ url, options })
+      return { json: { html_url: 'https://github.com/alice/app/pull/9#issuecomment-1' } }
+    }],
+    [/\/pulls\/9\/comments\?/, (url, options) => {
+      calls.push({ url, options })
+      return { json: {} }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+  await remotes.addAccount({ provider: 'gitee', token: 'b' })
+
+  const github = await remotes.commentPull({
+    accountId: 'github:alice', fullName: 'alice/app', number: 9, comment: '一处建议'
+  })
+  assert.equal(github.posted, true)
+  assert.match(github.url, /issuecomment/)
+
+  const gitee = await remotes.commentPull({
+    accountId: 'gitee:bob', fullName: 'bob/tool', number: 9, comment: '一处建议'
+  })
+  assert.equal(gitee.posted, true)
+
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].url, 'https://api.github.com/repos/alice/app/issues/9/comments', 'GitHub 走 issues 评论')
+  assert.equal(calls[0].options.headers['Content-Type'], 'application/json;charset=UTF-8')
+  assert.deepEqual(JSON.parse(calls[0].options.body), { body: '一处建议' })
+  assert.match(calls[1].url, /gitee\.com\/api\/v5\/repos\/bob\/tool\/pulls\/9\/comments\?access_token=/, 'Gitee 走 pulls 评论且带 token')
+
+  await assert.rejects(
+    () => remotes.commentPull({ accountId: 'github:alice', fullName: 'alice/app', number: 9, comment: '   ' }),
+    (error) => error.code === 'bad-request'
+  )
+})
+
 await test('门禁聚合：审查状态按人取最新结论，Gitee 的两项都是 unknown', async () => {
   const credentials = fakeCredentials()
   const fetchImpl = fakeFetch([

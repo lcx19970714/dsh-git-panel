@@ -174,6 +174,21 @@ export function remotePullTest(payload, options) {
   return call('remote/pull/test', payload, options)
 }
 
+/** PR 的文件与 patch（AI 审阅的输入）。 */
+export function remotePullDiff(payload, options) {
+  return call('remote/pull/diff', payload, options)
+}
+
+/** 调审阅模型给出结构化结论。 */
+export function remotePullAiReview(payload, options) {
+  return call('remote/pull/ai-review', payload, options)
+}
+
+/** 提交用户确认过的 PR 评论。 */
+export function remotePullComment(payload, options) {
+  return call('remote/pull/comment', payload, options)
+}
+
 /** 一键「审查与测试都通过」（按平台能力执行）。 */
 export function remotePullPass(payload, options) {
   return call('remote/pull/pass', payload, options)

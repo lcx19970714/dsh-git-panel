@@ -1715,15 +1715,26 @@ test('models 设置：结构不对就是坏配置，不静默当成「未设置�
   writeFileSync(file, '{oops', 'utf8')
   await assert.rejects(() => models.readSettings(), (error) => error.code === 'bad-config')
 
-  await models.writeCommitModel(null) // 还原成合法状态，避免影响后续用例
+  await models.writeSettings({ commitModel: null }) // 还原成合法状态，避免影响后续用例
 })
 
 test('models 设置：存的是 provider/model 对，读回来一致，null 表示清空', async () => {
   assert.equal((await models.readSettings()).commitModel, null, '没有设置文件时是 null')
-  await models.writeCommitModel({ provider: 'p1', model: 'm1' })
+  assert.equal((await models.readSettings()).reviewModel, null, '审阅模型同样默认为 null')
+
+  await models.writeSettings({ commitModel: { provider: 'p1', model: 'm1' } })
   assert.deepEqual((await models.readSettings()).commitModel, { provider: 'p1', model: 'm1' })
-  await models.writeCommitModel(null)
+
+  // 只改审阅模型：提交说明模型不能被抹掉
+  await models.writeSettings({ reviewModel: { provider: 'p2', model: 'm2' } })
+  const both = await models.readSettings()
+  assert.deepEqual(both.commitModel, { provider: 'p1', model: 'm1' }, '另一个模型必须保留')
+  assert.deepEqual(both.reviewModel, { provider: 'p2', model: 'm2' })
+
+  await models.writeSettings({ commitModel: null })
   assert.equal((await models.readSettings()).commitModel, null)
+  await models.writeSettings({ reviewModel: null })
+  assert.equal((await models.readSettings()).reviewModel, null)
 })
 
 test('apply 注入 llm 后：models/list 走真实 llm，settings/set 校验模型存在', async () => {

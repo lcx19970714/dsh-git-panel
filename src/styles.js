@@ -1045,6 +1045,78 @@ export const CSS = `
 .dgp-gate-chip[data-gate="test"][data-state="passed"] { color: var(--dsw-alias-state-success-primary); }
 .dgp-gate-chip[data-gate="review"][data-state="changes-requested"] { color: var(--dsw-alias-state-error-primary); }
 .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
+/* AI 审阅：总评 + 编号问题清单 + 评论草稿 */
+.dgp-ai-summary {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.dgp-findings {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dgp-finding {
+  padding: 6px 8px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-module-platform);
+  border-left: 2px solid var(--dsw-alias-border-l1);
+}
+.dgp-finding[data-severity="blocker"] { border-left-color: var(--dsw-alias-state-error-primary); }
+.dgp-finding[data-severity="major"] { border-left-color: var(--dsw-alias-state-error-primary); }
+.dgp-finding[data-severity="minor"] { border-left-color: var(--dsw-alias-label-tertiary); }
+.dgp-finding-head { display: flex; align-items: center; gap: 6px; }
+.dgp-finding-no {
+  flex: none;
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.dgp-severity {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--dsw-radius-xs);
+  font-size: 10px;
+  line-height: 15px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  border: 1px solid var(--dsw-alias-border-l1);
+}
+.dgp-severity[data-severity="blocker"],
+.dgp-severity[data-severity="major"] {
+  color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-state-error-primary);
+}
+.dgp-finding-title { font-size: 12px; color: var(--dsw-alias-label-primary); }
+.dgp-finding-loc {
+  margin-top: 2px;
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.dgp-finding-detail,
+.dgp-finding-fix {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+}
+.dgp-finding-fix { color: var(--dsw-alias-label-primary); }
+.dgp-ai-comment { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.dgp-ai-textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 /* PR 详情：正文与操作区 */
 .dgp-pull-body {
   margin: 0;

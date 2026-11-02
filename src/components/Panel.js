@@ -193,7 +193,7 @@ export function Panel(props) {
   const [generateElapsed, setGenerateElapsed] = useState(0)
   const [commitNote, setCommitNote] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
-  const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, error: null, saved: false })
+  const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
 
   const [moreOpen, setMoreOpen] = useState(false)
   const moreAnchorRef = useRef(null)
@@ -714,7 +714,7 @@ export function Panel(props) {
   /** 打开设置页：同时拉模型目录和当前设置。 */
   const openSettings = useCallback(async () => {
     setShowSettings(true)
-    setSettingsState({ loading: true, models: [], commitModel: null, error: null, saved: false })
+    setSettingsState({ loading: true, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
     // 设置页也管理账号：进来就确保账号列表是最新的（只读列表接口，很便宜）
     loadAccountsRef.current?.()
     try {
@@ -726,11 +726,12 @@ export function Panel(props) {
         loading: false,
         models: catalog.models,
         commitModel: refOfPair(settings.commitModel),
+        reviewModel: refOfPair(settings.reviewModel),
         error: modelError,
         saved: false
       })
     } catch (error) {
-      setSettingsState({ loading: false, models: [], commitModel: null, error: api.describeError(error, tRef.current), saved: false })
+      setSettingsState({ loading: false, models: [], commitModel: null, reviewModel: null, error: api.describeError(error, tRef.current), saved: false })
     }
   }, [])
 
@@ -741,6 +742,18 @@ export function Panel(props) {
     try {
       const saved = await api.writeSettings({ commitModel })
       setSettingsState((previous) => ({ ...previous, commitModel: refOfPair(saved.commitModel), saved: true }))
+    } catch (error) {
+      setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
+    }
+  }, [])
+
+  /** 选择审阅模型即保存；与提交说明模型互不影响。 */
+  const changeReviewModel = useCallback(async (ref) => {
+    const reviewModel = ref === '' ? null : ref
+    setSettingsState((previous) => ({ ...previous, reviewModel, saved: false, error: null }))
+    try {
+      const saved = await api.writeSettings({ reviewModel })
+      setSettingsState((previous) => ({ ...previous, reviewModel: refOfPair(saved.reviewModel), saved: true }))
     } catch (error) {
       setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
     }
@@ -999,6 +1012,27 @@ export function Panel(props) {
       const result = await api.remotePullReview(input)
       await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
       return { ok: true, message: tRef.current('pull.reviewDone', { verdict: input.verdict }) }
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current) }
+    }
+  }, [loadPullDetail])
+
+  /** AI 审阅 PR：宿主取 diff、调审阅模型，返回结构化结论与评论草稿。 */
+  const aiReviewPull = useCallback(async (input) => {
+    try {
+      const review = await api.remotePullAiReview(input)
+      return { ok: true, ...review }
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current) }
+    }
+  }, [])
+
+  /** 提交评论（内容已由用户在面板里确认过）。 */
+  const commentPull = useCallback(async (input) => {
+    try {
+      const result = await api.remotePullComment(input)
+      await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+      return { ok: true, message: tRef.current('pull.aiCommentDone'), url: result.url }
     } catch (error) {
       return { ok: false, error: api.describeError(error, tRef.current) }
     }
@@ -1550,6 +1584,8 @@ function buildUpdateNote(updateState, t) {
   let rightPane
   if (mode === MODE.remote && openPull !== null) {
     rightPane = h(PullDetail, {
+      // 每个 PR 一份独立的本地状态（AI 结果、评论草稿），切 PR 时重置
+      key: openPull.fullName + '#' + String(openPull.number),
       selection: openPull,
       detail: pullDetail,
       onBack: closePull,
@@ -1557,6 +1593,8 @@ function buildUpdateNote(updateState, t) {
       onReview: reviewPull,
       onTest: testPull,
       onPass: passPull,
+      onAiReview: aiReviewPull,
+      onComment: commentPull,
       onMerge: mergePull,
       onChanged: () => loadPullDetail(openPull),
       onOpenUrl: openExternal,
@@ -1786,6 +1824,8 @@ function buildUpdateNote(updateState, t) {
     content = h(SettingsView, {
       models: settingsState.models,
       commitModel: settingsState.commitModel,
+      reviewModel: settingsState.reviewModel,
+      onChangeReviewModel: changeReviewModel,
       loading: settingsState.loading,
       error: settingsState.error,
       saved: settingsState.saved,

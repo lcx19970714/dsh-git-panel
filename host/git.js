@@ -1182,6 +1182,26 @@ export async function switchBranch(repoRoot, branchName, options = {}) {
 }
 
 /**
+ * 从当前 HEAD 创建本地分支并立刻切过去。
+ *
+ * 用 `git switch -c`，不带 `--force`：名字已被占用时 git 自己拒绝，
+ * 不会覆盖已有分支。工作区与索引同样交给 git —— 改动能带过去就带过去，
+ * 会被覆盖时原样报错，这里不自动 stash。
+ */
+export async function createBranch(repoRoot, branchName, options = {}) {
+  if (typeof branchName !== 'string' || branchName === '') {
+    throw new GitError('bad-request', '缺少分支名')
+  }
+  const { signal } = options
+  const check = await runGit(repoRoot, ['check-ref-format', '--branch', branchName], { signal, allowFailure: true })
+  if (check.code !== 0) throw new GitError('bad-branch', '不是合法的分支名：' + branchName)
+
+  await runGit(repoRoot, ['switch', '-c', branchName], { signal })
+  const head = await readHead(repoRoot)
+  return { branch: head.branch, head: head.head }
+}
+
+/**
  * 生成提交说明用的差异文本。
  *
  * 与提交规则对齐：有已暂存的改动就只看索引（`git diff --cached`）；

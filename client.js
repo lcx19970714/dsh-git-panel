@@ -396,7 +396,7 @@ window.__ModuleLoader__.load({
       .dgp-repolist-rows { padding-bottom: 4px; }
       .dgp-repo-row { min-height: 26px; padding-top: 3px; padding-bottom: 3px; }
       .dgp-repo-row > .dgp-ico { color: var(--dsw-alias-label-tertiary); }
-      /* 当前分支：行内的低调按钮，点开分支菜单（VS Code 的分支指示） */
+      /* 当前分支：贴在仓库行最右侧的按钮。只有点它才打开分支菜单，点仓库名只选中仓库。 */
       .dgp-repo-branch {
         flex: 0 1 auto;
         min-width: 0;
@@ -415,6 +415,22 @@ window.__ModuleLoader__.load({
       }
       .dgp-repo-branch:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
       .dgp-repo-branch:focus-visible { outline: none; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+      /* 分支菜单底部：输入名字后创建并切过去 */
+      .dgp-branch-create {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 4px 2px;
+      }
+      .dgp-branch-create > .dgp-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: 24px;
+        padding: 0 8px;
+        font-family: var(--ds-font-family-code);
+        font-size: 11px;
+      }
+      .dgp-branch-create > .dgp-btn { flex: none; }
       .dgp-addform { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 8px; }
       .dgp-addform-actions { display: flex; justify-content: flex-end; gap: 6px; }
       .dgp-list {
@@ -1426,12 +1442,15 @@ window.__ModuleLoader__.load({
         'root.addCancel': '取消',
         'root.addHint': '支持任意位置的本机目录；添加后会与项目内仓库并列显示。',
 
-        'branch.hint': '当前分支 {branch} · 点击切换',
-        'branch.title': '切换分支 · {name}',
+        'branch.hint': '当前分支 {branch} · 点击切换或新建',
+        'branch.title': '分支 · {name}',
         'branch.loading': '正在读取分支…',
         'branch.empty': '这个仓库还没有任何分支',
         'branch.switching': '正在切换到 {name}…',
-        'branch.failed': '切换失败：{message}',
+        'branch.creating': '正在创建并切换到 {name}…',
+        'branch.create': '创建',
+        'branch.createPlaceholder': '新分支名，回车创建并切换',
+        'branch.failed': '失败：{message}',
         'pull.loading': '正在读取 PR #{number}…',
         'pull.failed': '读取 PR 失败',
         'pull.back': '返回仓库',
@@ -1701,12 +1720,15 @@ window.__ModuleLoader__.load({
         'root.addCancel': 'Cancel',
         'root.addHint': 'Any local folder works; it will be listed next to project repositories.',
 
-        'branch.hint': 'On {branch} · click to switch',
-        'branch.title': 'Switch branch · {name}',
+        'branch.hint': 'On {branch} · click to switch or create',
+        'branch.title': 'Branches · {name}',
         'branch.loading': 'Loading branches…',
         'branch.empty': 'This repository has no branches yet',
         'branch.switching': 'Switching to {name}…',
-        'branch.failed': 'Could not switch: {message}',
+        'branch.creating': 'Creating and switching to {name}…',
+        'branch.create': 'Create',
+        'branch.createPlaceholder': 'New branch name, Enter to create and switch',
+        'branch.failed': 'Failed: {message}',
         'pull.loading': 'Loading pull request #{number}…',
         'pull.failed': 'Could not load the pull request',
         'pull.back': 'Back to repository',
@@ -2760,6 +2782,17 @@ window.__ModuleLoader__.load({
           await refreshStatus()
         }, [resolveProject, refreshStatus])
 
+        /** 创建分支后直接切过去：宿主一次做完 `git switch -c`，面板只负责刷新。 */
+        const createBranch = useCallback(async (root, name) => {
+          try {
+            await api.createBranch({ rootPath: root.path, name })
+          } catch (error) {
+            throw new Error(api.describeError(error, tRef.current))
+          }
+          await resolveProject()
+          await refreshStatus()
+        }, [resolveProject, refreshStatus])
+
         const loadDir = useCallback(async (relPath, signal) => {
           const root = browseRootRef.current
           if (root === null) return { entries: [], truncated: false }
@@ -3374,6 +3407,7 @@ window.__ModuleLoader__.load({
                 onRemove: removeExternalRoot,
                 onLoadBranches: loadBranches,
                 onSwitchBranch: switchBranch,
+                onCreateBranch: createBranch,
                 t
               }),
               h(CommitBox, {
@@ -3941,13 +3975,13 @@ window.__ModuleLoader__.load({
        *   │  └─ button[data-action=add-root] ← 添加外部仓库
        *   ├─ ul.dgp-level
        *   │  └─ li > div.dgp-row-wrap
-       *   │     ├─ button.dgp-repo-row[data-dgp-repo]   ← 选中该仓库
-       *   │     ├─ button.dgp-repo-branch[data-dgp-branch] ← 点开分支菜单（VS Code 的当前分支）
+       *   │     ├─ button.dgp-repo-row[data-dgp-repo]   ← 只选中该仓库，不打开分支菜单
+       *   │     ├─ button.dgp-repo-branch[data-dgp-branch] ← 贴在行的最右侧；只有点它才打开分支菜单
        *   │     └─ button.dgp-row-action                ← 仅外部仓库：移除
        *   ├─ AddRootForm（展开时）
-       *   └─ PopupMenu（分支菜单）
+       *   └─ PopupMenu（分支菜单：切换已有分支，或输入名字创建并切过去）
        *
-       * 分支菜单的取数与切换都通过 props 交给 Panel：这里只负责交互与错误呈现，
+       * 分支菜单的取数、切换与创建都通过 props 交给 Panel：这里只负责交互与错误呈现，
        * 切换失败（例如本地改动会被覆盖）原样显示 git 的话，让用户自己决定怎么处理。
        */
       const { h, useState } = __m("./platform.js");
@@ -3962,7 +3996,7 @@ window.__ModuleLoader__.load({
         const activeRootId = typeof source.activeRootId === 'string' ? source.activeRootId : null
         const open = source.open !== false
         const [formOpen, setFormOpen] = useState(false)
-        // 分支菜单：{ root, rect, list, loading, switching, error }
+        // 分支菜单：{ root, rect, list, loading, switching, creating, name, error }
         const [branchMenu, setBranchMenu] = useState(null)
 
         if (roots.length === 0) return null
@@ -3971,7 +4005,7 @@ window.__ModuleLoader__.load({
         const closeBranches = () => setBranchMenu(null)
 
         const loadBranches = (root, rect) => {
-          setBranchMenu({ root, rect, list: [], loading: true, switching: null, error: null })
+          setBranchMenu({ root, rect, list: [], loading: true, switching: null, creating: false, name: '', error: null })
           Promise.resolve(source.onLoadBranches(root))
             .then((value) => {
               setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
@@ -3996,16 +4030,35 @@ window.__ModuleLoader__.load({
             })
         }
 
+        const changeCreateName = (value) => {
+          setBranchMenu((previous) => (previous === null ? previous : { ...previous, name: value, error: null }))
+        }
+
+        const createBranch = (menu) => {
+          const name = menu.name.trim()
+          if (name === '' || menu.creating === true || menu.switching !== null) return
+          setBranchMenu({ ...menu, name, creating: true, error: null })
+          Promise.resolve(source.onCreateBranch(menu.root, name))
+            .then(() => setBranchMenu(null))
+            .catch((error) => {
+              setBranchMenu((previous) => (previous === null
+                ? previous
+                : { ...previous, creating: false, error: error && error.message ? error.message : String(error) }))
+            })
+        }
+
+        const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true)
+        const createName = branchMenu === null ? '' : branchMenu.name.trim()
         const branchMenuNode = branchMenu === null
           ? null
-          : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 220 },
+          : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 240 },
             h(MenuLabel, null, translate('branch.title', { name: branchMenu.root.name })),
             branchMenu.loading ? h(MenuLabel, null, translate('branch.loading')) : null,
             branchMenu.list.map((branch) => h(MenuItem, {
               key: branch.name,
               label: branch.name,
               checked: branch.current,
-              disabled: branchMenu.switching !== null,
+              disabled: menuBusy,
               onClick: () => {
                 if (branch.current) closeBranches()
                 else chooseBranch(branchMenu, branch.name)
@@ -4014,9 +4067,46 @@ window.__ModuleLoader__.load({
             branchMenu.list.length === 0 && branchMenu.loading !== true
               ? h(MenuLabel, null, translate('branch.empty'))
               : null,
+            h('div', { className: 'dgp-menu-sep', role: 'separator' }),
+            h('form', {
+              className: 'dgp-branch-create',
+              'data-dgp-branch-create': 'true',
+              onSubmit: (event) => {
+                event.preventDefault()
+                createBranch(branchMenu)
+              }
+            },
+            h('input', {
+              className: 'dgp-input',
+              'data-dgp-branch-name': 'true',
+              value: branchMenu.name,
+              placeholder: translate('branch.createPlaceholder'),
+              spellCheck: false,
+              disabled: menuBusy,
+              onChange: (event) => changeCreateName(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  closeBranches()
+                }
+              }
+            }),
+            h('button', {
+              type: 'submit',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'primary',
+              'data-dgp-branch-create-submit': 'true',
+              disabled: menuBusy || createName === '',
+              title: translate('branch.create')
+            }, translate('branch.create'))),
             branchMenu.switching === null
               ? null
               : h(MenuLabel, null, translate('branch.switching', { name: branchMenu.switching })),
+            branchMenu.creating !== true
+              ? null
+              : h(MenuLabel, null, translate('branch.creating', { name: createName })),
             branchMenu.error === null
               ? null
               : h(MenuLabel, null, translate('branch.failed', { message: branchMenu.error })))
@@ -4075,8 +4165,7 @@ window.__ModuleLoader__.load({
                         title: translate('branch.hint', { branch: hasBranch ? root.branch : translate('root.noBranch') }),
                         onClick: (event) => {
                           event.stopPropagation()
-                          const rect = event.currentTarget.getBoundingClientRect()
-                          loadBranches(root, rect)
+                          loadBranches(root, event.currentTarget.getBoundingClientRect())
                         }
                       }, hasBranch ? root.branch : translate('root.noBranch')),
                     root.kind === 'extra'
@@ -5953,6 +6042,11 @@ window.__ModuleLoader__.load({
         return call('branch/switch', payload, options)
       }
 
+      /** 从当前 HEAD 创建分支并立刻切过去。 */
+      function createBranch(payload, options) {
+        return call('branch/create', payload, options)
+      }
+
       /** 提交：有暂存只提交暂存，没有则先全部暂存。 */
       function commitChanges(payload, options) {
         return call('commit', payload, options)
@@ -6009,7 +6103,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullPass, remotePullMerge, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullPass, remotePullMerge, cloneRemoteRepo, listBranches, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {

@@ -498,15 +498,17 @@ test('RepoList：列出全部仓库、当前仓库高亮、外部仓库可移除
   eq(rows.map((node) => node.props['data-dgp-repo']), ['r1', 'r2', 'r3'], '顺序与入参一致')
   eq(rows.find((node) => node.props['data-dgp-repo'] === 'r2').props['data-active'], 'true', '当前仓库高亮')
   eq(rows.find((node) => node.props['data-dgp-repo'] === 'r1').props['data-active'], 'false', '其它仓库不高亮')
-  // 分支是行内的独立按钮（行本身不能嵌套按钮），点它开分支菜单
+  // 分支是贴在行最右侧的独立按钮；点仓库名只选中，点分支按钮才开菜单
   const branchButtons = collect(tree, (node) => node.$$host === true && node.props['data-dgp-branch'] !== undefined)
   eq(branchButtons.length, 3, '每个仓库一个分支按钮')
   eq(branchButtons.map((node) => node.props['data-dgp-branch']), ['r1', 'r2', 'r3'], '分支按钮按仓库顺序')
+  eq(branchButtons.every((node) => node.type === 'button'), true, '分支是按钮')
   assert(textOf(branchButtons[0]).includes('main'), '分支按钮显示当前分支')
   eq(textOf(branchButtons[2]), 'root.noBranch', '没有分支时显示占位文案')
+  eq(textOf(rows[0]).includes('main'), false, '分支名不在仓库名按钮里')
 
   rows[0].props.onClick({ preventDefault() {}, stopPropagation() {} })
-  eq(picked, ['r1'], '点行应切到该仓库')
+  eq(picked, ['r1'], '点仓库名只选中该仓库')
 
   const removeButtons = collect(tree, (node) => node.$$host === true && node.props['data-dgp-repo-remove'] !== undefined)
   eq(removeButtons.length, 1, '只有外部仓库带移除按钮')

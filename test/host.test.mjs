@@ -1276,6 +1276,29 @@ test('branches/list 与 branch/switch：列出本地分支、切换后当前分�
   assert.equal(bad.error.code, 'bad-branch')
 })
 
+test('branch/create：从当前 HEAD 建分支并切过去；重名与非法名字拒绝', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-branch-create-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  const before = git('rev-parse', '--short', 'HEAD').toString('utf8').trim()
+
+  const created = await callOk('branch/create', { rootPath: dir, name: 'topic' })
+  assert.equal(created.branch, 'topic', '创建后应停在新分支上')
+  assert.equal(created.head, before, '新分支应指向创建时的 HEAD，而不是另起一个提交')
+  assert.equal(git('branch', '--show-current').toString('utf8').trim(), 'topic')
+
+  const listed = await callOk('branches/list', { rootPath: dir })
+  assert.equal(listed.branches.find((branch) => branch.name === 'topic').current, true)
+  assert.equal(listed.branches.find((branch) => branch.name === 'main').current, false)
+
+  const duplicate = await callRoute('branch/create', { rootPath: dir, name: 'main' })
+  assert.equal(duplicate.ok, false, '已有分支不能被新建覆盖')
+  assert.equal(git('branch', '--show-current').toString('utf8').trim(), 'topic', '失败后仍停在原分支')
+
+  const bad = await callRoute('branch/create', { rootPath: dir, name: 'has space' })
+  assert.equal(bad.ok, false, '非法分支名必须拒绝')
+  assert.equal(bad.error.code, 'bad-branch')
+})
+
 test('branch/switch：改动会被覆盖时由 git 拒绝，错误原样上抛且不丢改动', async () => {
   const dir = makeRepo(path.join(tempDir('dgp-branch-dirty-'), 'repo'))
   const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })

@@ -814,6 +814,17 @@ export function Panel(props) {
     await refreshStatus()
   }, [resolveProject, refreshStatus])
 
+  /** 创建分支后直接切过去：宿主一次做完 `git switch -c`，面板只负责刷新。 */
+  const createBranch = useCallback(async (root, name) => {
+    try {
+      await api.createBranch({ rootPath: root.path, name })
+    } catch (error) {
+      throw new Error(api.describeError(error, tRef.current))
+    }
+    await resolveProject()
+    await refreshStatus()
+  }, [resolveProject, refreshStatus])
+
   const loadDir = useCallback(async (relPath, signal) => {
     const root = browseRootRef.current
     if (root === null) return { entries: [], truncated: false }
@@ -1428,6 +1439,7 @@ function buildUpdateNote(updateState, t) {
           onRemove: removeExternalRoot,
           onLoadBranches: loadBranches,
           onSwitchBranch: switchBranch,
+          onCreateBranch: createBranch,
           t
         }),
         h(CommitBox, {

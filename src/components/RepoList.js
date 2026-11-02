@@ -8,13 +8,13 @@
  *   │  └─ button[data-action=add-root] ← 添加外部仓库
  *   ├─ ul.dgp-level
  *   │  └─ li > div.dgp-row-wrap
- *   │     ├─ button.dgp-repo-row[data-dgp-repo]   ← 选中该仓库
- *   │     ├─ button.dgp-repo-branch[data-dgp-branch] ← 点开分支菜单（VS Code 的当前分支）
+ *   │     ├─ button.dgp-repo-row[data-dgp-repo]   ← 只选中该仓库，不打开分支菜单
+ *   │     ├─ button.dgp-repo-branch[data-dgp-branch] ← 贴在行的最右侧；只有点它才打开分支菜单
  *   │     └─ button.dgp-row-action                ← 仅外部仓库：移除
  *   ├─ AddRootForm（展开时）
- *   └─ PopupMenu（分支菜单）
+ *   └─ PopupMenu（分支菜单：切换已有分支，或输入名字创建并切过去）
  *
- * 分支菜单的取数与切换都通过 props 交给 Panel：这里只负责交互与错误呈现，
+ * 分支菜单的取数、切换与创建都通过 props 交给 Panel：这里只负责交互与错误呈现，
  * 切换失败（例如本地改动会被覆盖）原样显示 git 的话，让用户自己决定怎么处理。
  */
 import { h, useState } from '../platform.js'
@@ -29,7 +29,7 @@ export function RepoList(props) {
   const activeRootId = typeof source.activeRootId === 'string' ? source.activeRootId : null
   const open = source.open !== false
   const [formOpen, setFormOpen] = useState(false)
-  // 分支菜单：{ root, rect, list, loading, switching, error }
+  // 分支菜单：{ root, rect, list, loading, switching, creating, name, error }
   const [branchMenu, setBranchMenu] = useState(null)
 
   if (roots.length === 0) return null
@@ -38,7 +38,7 @@ export function RepoList(props) {
   const closeBranches = () => setBranchMenu(null)
 
   const loadBranches = (root, rect) => {
-    setBranchMenu({ root, rect, list: [], loading: true, switching: null, error: null })
+    setBranchMenu({ root, rect, list: [], loading: true, switching: null, creating: false, name: '', error: null })
     Promise.resolve(source.onLoadBranches(root))
       .then((value) => {
         setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
@@ -63,16 +63,35 @@ export function RepoList(props) {
       })
   }
 
+  const changeCreateName = (value) => {
+    setBranchMenu((previous) => (previous === null ? previous : { ...previous, name: value, error: null }))
+  }
+
+  const createBranch = (menu) => {
+    const name = menu.name.trim()
+    if (name === '' || menu.creating === true || menu.switching !== null) return
+    setBranchMenu({ ...menu, name, creating: true, error: null })
+    Promise.resolve(source.onCreateBranch(menu.root, name))
+      .then(() => setBranchMenu(null))
+      .catch((error) => {
+        setBranchMenu((previous) => (previous === null
+          ? previous
+          : { ...previous, creating: false, error: error && error.message ? error.message : String(error) }))
+      })
+  }
+
+  const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true)
+  const createName = branchMenu === null ? '' : branchMenu.name.trim()
   const branchMenuNode = branchMenu === null
     ? null
-    : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 220 },
+    : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 240 },
       h(MenuLabel, null, translate('branch.title', { name: branchMenu.root.name })),
       branchMenu.loading ? h(MenuLabel, null, translate('branch.loading')) : null,
       branchMenu.list.map((branch) => h(MenuItem, {
         key: branch.name,
         label: branch.name,
         checked: branch.current,
-        disabled: branchMenu.switching !== null,
+        disabled: menuBusy,
         onClick: () => {
           if (branch.current) closeBranches()
           else chooseBranch(branchMenu, branch.name)
@@ -81,9 +100,46 @@ export function RepoList(props) {
       branchMenu.list.length === 0 && branchMenu.loading !== true
         ? h(MenuLabel, null, translate('branch.empty'))
         : null,
+      h('div', { className: 'dgp-menu-sep', role: 'separator' }),
+      h('form', {
+        className: 'dgp-branch-create',
+        'data-dgp-branch-create': 'true',
+        onSubmit: (event) => {
+          event.preventDefault()
+          createBranch(branchMenu)
+        }
+      },
+      h('input', {
+        className: 'dgp-input',
+        'data-dgp-branch-name': 'true',
+        value: branchMenu.name,
+        placeholder: translate('branch.createPlaceholder'),
+        spellCheck: false,
+        disabled: menuBusy,
+        onChange: (event) => changeCreateName(event.target.value),
+        onKeyDown: (event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            closeBranches()
+          }
+        }
+      }),
+      h('button', {
+        type: 'submit',
+        className: 'dgp-btn',
+        'data-size': 'sm',
+        'data-variant': 'primary',
+        'data-dgp-branch-create-submit': 'true',
+        disabled: menuBusy || createName === '',
+        title: translate('branch.create')
+      }, translate('branch.create'))),
       branchMenu.switching === null
         ? null
         : h(MenuLabel, null, translate('branch.switching', { name: branchMenu.switching })),
+      branchMenu.creating !== true
+        ? null
+        : h(MenuLabel, null, translate('branch.creating', { name: createName })),
       branchMenu.error === null
         ? null
         : h(MenuLabel, null, translate('branch.failed', { message: branchMenu.error })))
@@ -142,8 +198,7 @@ export function RepoList(props) {
                   title: translate('branch.hint', { branch: hasBranch ? root.branch : translate('root.noBranch') }),
                   onClick: (event) => {
                     event.stopPropagation()
-                    const rect = event.currentTarget.getBoundingClientRect()
-                    loadBranches(root, rect)
+                    loadBranches(root, event.currentTarget.getBoundingClientRect())
                   }
                 }, hasBranch ? root.branch : translate('root.noBranch')),
               root.kind === 'extra'

@@ -199,6 +199,11 @@ export function switchBranch(payload, options) {
   return call('branch/switch', payload, options)
 }
 
+/** 从当前 HEAD 创建分支并立刻切过去。 */
+export function createBranch(payload, options) {
+  return call('branch/create', payload, options)
+}
+
 /** 提交：有暂存只提交暂存，没有则先全部暂存。 */
 export function commitChanges(payload, options) {
   return call('commit', payload, options)

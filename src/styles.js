@@ -214,7 +214,7 @@ export const CSS = `
 .dgp-repolist-rows { padding-bottom: 4px; }
 .dgp-repo-row { min-height: 26px; padding-top: 3px; padding-bottom: 3px; }
 .dgp-repo-row > .dgp-ico { color: var(--dsw-alias-label-tertiary); }
-/* 当前分支：行内的低调按钮，点开分支菜单（VS Code 的分支指示） */
+/* 当前分支：贴在仓库行最右侧的按钮。只有点它才打开分支菜单，点仓库名只选中仓库。 */
 .dgp-repo-branch {
   flex: 0 1 auto;
   min-width: 0;
@@ -233,6 +233,22 @@ export const CSS = `
 }
 .dgp-repo-branch:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dgp-repo-branch:focus-visible { outline: none; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+/* 分支菜单底部：输入名字后创建并切过去 */
+.dgp-branch-create {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 2px;
+}
+.dgp-branch-create > .dgp-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+}
+.dgp-branch-create > .dgp-btn { flex: none; }
 .dgp-addform { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 8px; }
 .dgp-addform-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .dgp-list {

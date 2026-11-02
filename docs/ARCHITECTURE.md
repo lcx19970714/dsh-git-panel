@@ -152,6 +152,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 │  │  ├─ repos.js           列仓库 / 仓库详情 / 克隆
 │  │  ├─ pulls.js           PR 详情 / 审查 / 合并
 │  │  └─ http.js            带超时的请求、错误归一、分页 Link
+│  ├─ review.js             AI 审阅 PR：输入拼装（超限截断如实标记）、严格校验模型 JSON、评论草稿
 │  ├─ roots.js              三种根的解析（primary / discovered / extra）
 │  └─ config.js             外部根持久化（原子写、损坏自动备份）
 ├─ src/                     ← 客户端源码（ESM，构建成 client.js）
@@ -177,7 +178,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 36 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 39 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -207,6 +208,15 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not supported."}`。
 不要手写 `body: JSON.stringify(...)`。
 
+**AI 审阅约定**：`remote/pull/ai-review` 由宿主取 `pulls/{n}/files` 的 patch，拼成
+PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 JSON（summary / verdict / findings[] / comment）。
+
+- 输入上限 `REVIEW_DIFF_LIMIT = 200_000` 字符；超限时提示词里写明「只看到前 N 个字符」，并把 `truncated` 一路带回界面；
+- 输出上限 8192 token、超时 180s，与提交说明生成同一套 prepareCall / stream / abort 机制；
+- 模型输出必须严格合法（坏 JSON、缺字段、非法 severity/verdict 一律 `bad-model-output`），不做修补；
+- 评论只生成草稿：`remote/pull/comment` 只有在用户点「提交评论」时才调用，内容以界面里的文本为准；
+- 两个模型（commitModel / reviewModel）存在 `~/.dsh/dsh-git-panel/settings.json`，写入是部分更新，互不覆盖。
+
 **外部目录约定**：`roots/add` 只接受「含 .git 的目录」，存的就是用户给的那个路径本身
 （不做 realpath 归一、不向上找祖先仓库、不向下扫描子仓库）。因此 `add` 与 `remove` 用的是同一个键，
 不存在「两种写法各删一次」的兜底；用户加了仓库里的子目录会被明确拒绝（缺少 .git）。
@@ -226,6 +236,9 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 | `remote/pull` | `{accountId, fullName, number}` | `{pull, reviews, capabilities}`；capabilities 说明平台支持哪些审查结论与合并方式 |
 | `remote/pull/review` | `{accountId, fullName, number, verdict, body?}` | `{verdict, bodyPosted}`；GitHub 三种结论，Gitee 只有 approve（说明走评论接口） |
 | `remote/pull/pass` | `{accountId, fullName, number, body?}` | `{completed, failures}`；按平台能力依次执行审查/测试，部分成功照实返回 |
+| `remote/pull/diff` | `{accountId, fullName, number}` | `{files: [{filename, status, additions, deletions, changes, patch}], truncated}`；两家都走 `pulls/{n}/files`，每页 100、最多 3 页 |
+| `remote/pull/ai-review` | `{accountId, fullName, number}` | `{summary, verdict, findings[], comment, model, truncated, filesIncluded}`；读 `reviewModel`，输出严格校验 |
+| `remote/pull/comment` | `{accountId, fullName, number, comment}` | `{posted, url}`；内容由用户在面板里确认/编辑后提交 |
 | `remote/pull/test` | `{accountId, fullName, number}` | `{tested}`；Gitee 专用（POST /pulls/{n}/test，无请求体），GitHub 报不支持 |
 | `remote/pull/merge` | `{accountId, fullName, number, method, deleteBranch?}` | `{merged, method, branchDeleted, headBranch}`；不可合并/已合并/非打开状态在宿主侧拦下 |
 | `remote/clone` | `{accountId, fullName, cloneUrl, projectRoot, targetName?}` | `{path, name, fullName}`；鉴权只走 `-c http.extraHeader`，不写进 `.git/config` |
@@ -262,7 +275,7 @@ node scripts/install-profile.mjs --dry-run
 | `remote` | 远端地址 → 网页地址（scp/ssh/https/git 形式）、凭据不入地址栏、本地路径 → null |
 | `build` | 打包器：产物无残留 import/export、能真跑、循环依赖报错 |
 | `git` | git 引擎（需要 `_sandbox/repo` 夹具：`node test/make-fixture.mjs`） |
-| `host` | 36 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表、切换与创建、代码托管账号（令牌存 DSH 凭据服务）、远端仓库列表与克隆、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
+| `host` | 39 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表、切换与创建、代码托管账号（令牌存 DSH 凭据服务）、远端仓库列表与克隆、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
 | `client` | 产物装载 + `apply()` 契约 + 用假 react 真渲染 tab body（不需要浏览器）+ 样式表合法性（规则外不得有裸文本行，否则浏览器会吞掉下一条规则） |
 | `components` | 组件渲染契约：编辑器脏/冲突态、不可编辑占位、换行开关下的行号隐藏 |
 | `flow` | 面板端到端数据流：选根→status→diff→文件读→编辑保存→冲突→检测更新（假 fetch，不起服务） |

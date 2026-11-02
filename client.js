@@ -1227,6 +1227,78 @@ window.__ModuleLoader__.load({
       .dgp-gate-chip[data-gate="test"][data-state="passed"] { color: var(--dsw-alias-state-success-primary); }
       .dgp-gate-chip[data-gate="review"][data-state="changes-requested"] { color: var(--dsw-alias-state-error-primary); }
       .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
+      /* AI 审阅：总评 + 编号问题清单 + 评论草稿 */
+      .dgp-ai-summary {
+        margin: 0;
+        color: var(--dsw-alias-label-primary);
+        font-size: 12px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+      }
+      .dgp-findings {
+        margin: 6px 0 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .dgp-finding {
+        padding: 6px 8px;
+        border-radius: var(--dsw-radius-sm);
+        background: var(--dsw-alias-bg-module-platform);
+        border-left: 2px solid var(--dsw-alias-border-l1);
+      }
+      .dgp-finding[data-severity="blocker"] { border-left-color: var(--dsw-alias-state-error-primary); }
+      .dgp-finding[data-severity="major"] { border-left-color: var(--dsw-alias-state-error-primary); }
+      .dgp-finding[data-severity="minor"] { border-left-color: var(--dsw-alias-label-tertiary); }
+      .dgp-finding-head { display: flex; align-items: center; gap: 6px; }
+      .dgp-finding-no {
+        flex: none;
+        font-family: var(--ds-font-family-code);
+        font-size: 11px;
+        color: var(--dsw-alias-label-tertiary);
+      }
+      .dgp-severity {
+        flex: none;
+        padding: 0 5px;
+        border-radius: var(--dsw-radius-xs);
+        font-size: 10px;
+        line-height: 15px;
+        background: var(--dsw-alias-bg-module-platform);
+        color: var(--dsw-alias-label-secondary);
+        border: 1px solid var(--dsw-alias-border-l1);
+      }
+      .dgp-severity[data-severity="blocker"],
+      .dgp-severity[data-severity="major"] {
+        color: var(--dsw-alias-state-error-primary);
+        border-color: var(--dsw-alias-state-error-primary);
+      }
+      .dgp-finding-title { font-size: 12px; color: var(--dsw-alias-label-primary); }
+      .dgp-finding-loc {
+        margin-top: 2px;
+        font-family: var(--ds-font-family-code);
+        font-size: 11px;
+        color: var(--dsw-alias-label-tertiary);
+      }
+      .dgp-finding-detail,
+      .dgp-finding-fix {
+        margin-top: 3px;
+        font-size: 12px;
+        line-height: 1.6;
+        color: var(--dsw-alias-label-secondary);
+        white-space: pre-wrap;
+      }
+      .dgp-finding-fix { color: var(--dsw-alias-label-primary); }
+      .dgp-ai-comment { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+      .dgp-ai-textarea {
+        width: 100%;
+        resize: vertical;
+        font-family: var(--ds-font-family-code);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
       /* PR 详情：正文与操作区 */
       .dgp-pull-body {
         margin: 0;
@@ -1506,6 +1578,27 @@ window.__ModuleLoader__.load({
         'pull.method.squash': '压缩为一个提交',
         'pull.method.rebase': '变基合并',
         'pull.deleteBranch': '合并后删除分支 {branch}',
+        'settings.reviewModelLabel': 'AI 审阅模型',
+        'settings.reviewModelHint': '用于审阅 PR 的模型；建议选能力更强的，审阅比写提交说明难得多。两个模型互不影响。',
+        'pull.aiTitle': 'AI 审阅',
+        'pull.aiRun': 'AI 审阅',
+        'pull.aiRerun': '重新审阅',
+        'pull.aiRunning': '正在读取 diff 并审阅，可能需要十几秒…',
+        'pull.aiTruncated': '改动太大，只把前一部分发给了模型：结论可能不完整。',
+        'pull.aiNoFindings': '没有发现需要调整的问题。',
+        'pull.aiSuggestion': '建议：',
+        'pull.aiVerdict.approve': '建议通过',
+        'pull.aiVerdict.comment': '有建议',
+        'pull.aiVerdict.request-changes': '建议修改后再合',
+        'pull.severity.blocker': '阻断',
+        'pull.severity.major': '重要',
+        'pull.severity.minor': '次要',
+        'pull.severity.nit': '细节',
+        'pull.aiCommentLabel': '评论草稿',
+        'pull.aiCommentHint': 'AI 起草的内容，提交前请自己核对：只有点「提交评论」才会发到这个 PR。',
+        'pull.aiCommentSubmit': '提交评论',
+        'pull.aiCommentSubmitting': '正在提交…',
+        'pull.aiCommentDone': '评论已提交',
         'pull.gateReview': '审查',
         'pull.gateTest': '测试',
         'pull.gateMergeState': '合并状态',
@@ -1795,6 +1888,27 @@ window.__ModuleLoader__.load({
         'pull.method.squash': 'Squash and merge',
         'pull.method.rebase': 'Rebase and merge',
         'pull.deleteBranch': 'Delete branch {branch} after merging',
+        'settings.reviewModelLabel': 'AI review model',
+        'settings.reviewModelHint': 'Model used to review PRs; pick a stronger one — reviewing is harder than writing a commit message. The two models are independent.',
+        'pull.aiTitle': 'AI review',
+        'pull.aiRun': 'Review with AI',
+        'pull.aiRerun': 'Review again',
+        'pull.aiRunning': 'Reading the diff and reviewing — this can take a while…',
+        'pull.aiTruncated': 'The change is too large: only the first part was sent to the model, so the review may be incomplete.',
+        'pull.aiNoFindings': 'No issues worth changing were found.',
+        'pull.aiSuggestion': 'Suggestion: ',
+        'pull.aiVerdict.approve': 'looks good',
+        'pull.aiVerdict.comment': 'has suggestions',
+        'pull.aiVerdict.request-changes': 'changes requested',
+        'pull.severity.blocker': 'blocker',
+        'pull.severity.major': 'major',
+        'pull.severity.minor': 'minor',
+        'pull.severity.nit': 'nit',
+        'pull.aiCommentLabel': 'Comment draft',
+        'pull.aiCommentHint': 'Drafted by AI — please check it yourself; nothing is posted until you click submit.',
+        'pull.aiCommentSubmit': 'Post comment',
+        'pull.aiCommentSubmitting': 'Posting…',
+        'pull.aiCommentDone': 'Comment posted',
         'pull.gateReview': 'Review',
         'pull.gateTest': 'Test',
         'pull.gateMergeState': 'Merge state',
@@ -2209,7 +2323,7 @@ window.__ModuleLoader__.load({
         const [generateElapsed, setGenerateElapsed] = useState(0)
         const [commitNote, setCommitNote] = useState(null)
         const [showSettings, setShowSettings] = useState(false)
-        const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, error: null, saved: false })
+        const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
 
         const [moreOpen, setMoreOpen] = useState(false)
         const moreAnchorRef = useRef(null)
@@ -2730,7 +2844,7 @@ window.__ModuleLoader__.load({
         /** 打开设置页：同时拉模型目录和当前设置。 */
         const openSettings = useCallback(async () => {
           setShowSettings(true)
-          setSettingsState({ loading: true, models: [], commitModel: null, error: null, saved: false })
+          setSettingsState({ loading: true, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
           // 设置页也管理账号：进来就确保账号列表是最新的（只读列表接口，很便宜）
           loadAccountsRef.current?.()
           try {
@@ -2742,11 +2856,12 @@ window.__ModuleLoader__.load({
               loading: false,
               models: catalog.models,
               commitModel: refOfPair(settings.commitModel),
+              reviewModel: refOfPair(settings.reviewModel),
               error: modelError,
               saved: false
             })
           } catch (error) {
-            setSettingsState({ loading: false, models: [], commitModel: null, error: api.describeError(error, tRef.current), saved: false })
+            setSettingsState({ loading: false, models: [], commitModel: null, reviewModel: null, error: api.describeError(error, tRef.current), saved: false })
           }
         }, [])
 
@@ -2757,6 +2872,18 @@ window.__ModuleLoader__.load({
           try {
             const saved = await api.writeSettings({ commitModel })
             setSettingsState((previous) => ({ ...previous, commitModel: refOfPair(saved.commitModel), saved: true }))
+          } catch (error) {
+            setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
+          }
+        }, [])
+
+        /** 选择审阅模型即保存；与提交说明模型互不影响。 */
+        const changeReviewModel = useCallback(async (ref) => {
+          const reviewModel = ref === '' ? null : ref
+          setSettingsState((previous) => ({ ...previous, reviewModel, saved: false, error: null }))
+          try {
+            const saved = await api.writeSettings({ reviewModel })
+            setSettingsState((previous) => ({ ...previous, reviewModel: refOfPair(saved.reviewModel), saved: true }))
           } catch (error) {
             setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
           }
@@ -3015,6 +3142,27 @@ window.__ModuleLoader__.load({
             const result = await api.remotePullReview(input)
             await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
             return { ok: true, message: tRef.current('pull.reviewDone', { verdict: input.verdict }) }
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current) }
+          }
+        }, [loadPullDetail])
+
+        /** AI 审阅 PR：宿主取 diff、调审阅模型，返回结构化结论与评论草稿。 */
+        const aiReviewPull = useCallback(async (input) => {
+          try {
+            const review = await api.remotePullAiReview(input)
+            return { ok: true, ...review }
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current) }
+          }
+        }, [])
+
+        /** 提交评论（内容已由用户在面板里确认过）。 */
+        const commentPull = useCallback(async (input) => {
+          try {
+            const result = await api.remotePullComment(input)
+            await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+            return { ok: true, message: tRef.current('pull.aiCommentDone'), url: result.url }
           } catch (error) {
             return { ok: false, error: api.describeError(error, tRef.current) }
           }
@@ -3566,6 +3714,8 @@ window.__ModuleLoader__.load({
         let rightPane
         if (mode === MODE.remote && openPull !== null) {
           rightPane = h(PullDetail, {
+            // 每个 PR 一份独立的本地状态（AI 结果、评论草稿），切 PR 时重置
+            key: openPull.fullName + '#' + String(openPull.number),
             selection: openPull,
             detail: pullDetail,
             onBack: closePull,
@@ -3573,6 +3723,8 @@ window.__ModuleLoader__.load({
             onReview: reviewPull,
             onTest: testPull,
             onPass: passPull,
+            onAiReview: aiReviewPull,
+            onComment: commentPull,
             onMerge: mergePull,
             onChanged: () => loadPullDetail(openPull),
             onOpenUrl: openExternal,
@@ -3802,6 +3954,8 @@ window.__ModuleLoader__.load({
           content = h(SettingsView, {
             models: settingsState.models,
             commitModel: settingsState.commitModel,
+            reviewModel: settingsState.reviewModel,
+            onChangeReviewModel: changeReviewModel,
             loading: settingsState.loading,
             error: settingsState.error,
             saved: settingsState.saved,
@@ -6256,6 +6410,21 @@ window.__ModuleLoader__.load({
         return call('remote/pull/test', payload, options)
       }
 
+      /** PR 的文件与 patch（AI 审阅的输入）。 */
+      function remotePullDiff(payload, options) {
+        return call('remote/pull/diff', payload, options)
+      }
+
+      /** 调审阅模型给出结构化结论。 */
+      function remotePullAiReview(payload, options) {
+        return call('remote/pull/ai-review', payload, options)
+      }
+
+      /** 提交用户确认过的 PR 评论。 */
+      function remotePullComment(payload, options) {
+        return call('remote/pull/comment', payload, options)
+      }
+
       /** 一键「审查与测试都通过」（按平台能力执行）。 */
       function remotePullPass(payload, options) {
         return call('remote/pull/pass', payload, options)
@@ -6357,7 +6526,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -7731,7 +7900,21 @@ window.__ModuleLoader__.load({
               h('option', { value: '' }, translate('settings.modelNone')),
               models.map((model) => h('option', { key: model.ref, value: model.ref },
                 model.providerLabel + ' · ' + model.modelLabel))),
-              h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint')),
+              h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint'))),
+            h('div', { className: 'dgp-settings-field' },
+              h('label', { className: 'dgp-settings-label' }, translate('settings.reviewModelLabel')),
+              h('select', {
+                className: 'dgp-select',
+                'data-dgp-settings': 'review-model',
+                value: typeof source.reviewModel === 'string' ? source.reviewModel : '',
+                onChange: (event) => {
+                  if (typeof source.onChangeReviewModel === 'function') source.onChangeReviewModel(event.target.value)
+                }
+              },
+              h('option', { value: '' }, translate('settings.modelNone')),
+              models.map((model) => h('option', { key: model.ref, value: model.ref },
+                model.providerLabel + ' · ' + model.modelLabel))),
+              h('p', { className: 'dgp-settings-hint' }, translate('settings.reviewModelHint')),
               saved ? h(InlineNote, { tone: 'info' }, translate('settings.saved')) : null),
           h('div', { className: 'dgp-settings-field' },
             h('label', { className: 'dgp-settings-label' }, translate('settings.viewLabel')),
@@ -8569,6 +8752,12 @@ window.__ModuleLoader__.load({
         const [busy, setBusy] = useState(null)
         const [error, setError] = useState(null)
         const [notice, setNotice] = useState(null)
+        // AI 审阅：idle / loading / done(result) / error
+        const [ai, setAi] = useState({ status: 'idle', result: null, error: null })
+        // 评论草稿：AI 生成后填入，用户可改，只有点「提交评论」才发出去
+        const [draft, setDraft] = useState('')
+        const [commentBusy, setCommentBusy] = useState(false)
+        const [commentNotice, setCommentNotice] = useState(null)
 
         if (selection === null) return null
 
@@ -8645,6 +8834,40 @@ window.__ModuleLoader__.load({
           setError(result === null || result === undefined ? '操作失败' : result.error)
         }
 
+        /** 跑一次 AI 审阅（宿主负责取 diff 与调模型）。 */
+        const runAi = async () => {
+          if (typeof source.onAiReview !== 'function') return
+          setAi({ status: 'loading', result: null, error: null })
+          setCommentNotice(null)
+          const result = await source.onAiReview({
+            accountId: selection.accountId,
+            fullName: selection.fullName,
+            number: pull.number
+          })
+          if (result !== null && result !== undefined && result.ok === true) {
+            setAi({ status: 'done', result, error: null })
+            setDraft(result.comment ?? '')
+            return
+          }
+          setAi({ status: 'error', result: null, error: result === null || result === undefined ? '审阅失败' : result.error })
+        }
+
+        /** 提交评论：内容就是输入框里的（用户可改过的）文本。 */
+        const submitComment = async () => {
+          if (typeof source.onComment !== 'function' || commentBusy) return
+          setCommentBusy(true)
+          setCommentNotice(null)
+          const result = await source.onComment({
+            accountId: selection.accountId,
+            fullName: selection.fullName,
+            number: pull.number,
+            comment: draft
+          })
+          setCommentBusy(false)
+          if (result !== null && result !== undefined && result.ok === true) setCommentNotice(result.message ?? t('pull.aiCommentDone'))
+          else setCommentNotice(result === null || result === undefined ? '评论失败' : result.error)
+        }
+
         const submitReview = (verdict) => run('review', () => source.onReview({
           accountId: selection.accountId,
           fullName: selection.fullName,
@@ -8719,6 +8942,71 @@ window.__ModuleLoader__.load({
           pull.body === ''
             ? null
             : h('pre', { className: 'dgp-pull-body', 'data-dgp-pull': 'body' }, pull.body),
+
+          /* --------------------------- AI 审阅 --------------------------- */
+          h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'ai' },
+            h('div', { className: 'dgp-detail-head' },
+              h('span', { className: 'dgp-detail-title' }, t('pull.aiTitle')),
+              ai.status === 'done'
+                ? h('span', { className: 'dgp-detail-count', 'data-dgp-pull': 'ai-verdict', 'data-verdict': ai.result.verdict },
+                  t('pull.aiVerdict.' + ai.result.verdict))
+                : null,
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-dgp-pull': 'ai-run',
+                disabled: ai.status === 'loading' || busy !== null,
+                onClick: runAi
+              }, t(ai.status === 'done' ? 'pull.aiRerun' : 'pull.aiRun'))),
+            ai.status === 'loading' ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' }, t('pull.aiRunning')) : null,
+            ai.status === 'error' ? h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error) : null,
+            ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
+              ai.result.truncated === true
+                ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))
+                : null,
+              h('p', { className: 'dgp-ai-summary', 'data-dgp-pull': 'ai-summary' }, ai.result.summary),
+              ai.result.findings.length === 0
+                ? h('p', { className: 'dgp-detail-meta' }, t('pull.aiNoFindings'))
+                : h('ol', { className: 'dgp-findings' },
+                  ai.result.findings.map((finding, index) => h('li', {
+                    key: String(finding.file) + '#' + String(index),
+                    className: 'dgp-finding',
+                    'data-dgp-finding': String(index + 1),
+                    'data-severity': finding.severity
+                  },
+                  h('div', { className: 'dgp-finding-head' },
+                    h('span', { className: 'dgp-finding-no' }, String(index + 1) + '.'),
+                    h('span', { className: 'dgp-severity', 'data-severity': finding.severity }, t('pull.severity.' + finding.severity)),
+                    h('span', { className: 'dgp-finding-title' }, finding.title)),
+                  h('div', { className: 'dgp-finding-loc' },
+                    finding.file + (finding.line === null ? '' : ':' + String(finding.line))),
+                  h('div', { className: 'dgp-finding-detail' }, finding.detail),
+                  h('div', { className: 'dgp-finding-fix' }, t('pull.aiSuggestion'), finding.suggestion)))),
+              h('div', { className: 'dgp-ai-comment' },
+                h('label', { className: 'dgp-settings-label' }, t('pull.aiCommentLabel')),
+                h('p', { className: 'dgp-settings-hint' }, t('pull.aiCommentHint')),
+                h('textarea', {
+                  className: 'dgp-input dgp-ai-textarea',
+                  'data-dgp-pull': 'ai-comment',
+                  value: draft,
+                  spellCheck: false,
+                  rows: 10,
+                  onChange: (event) => setDraft(event.target.value)
+                }),
+                h('div', { className: 'dgp-pull-actions' },
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-variant': 'primary',
+                    'data-dgp-pull': 'comment-submit',
+                    disabled: commentBusy || draft.trim() === '',
+                    onClick: submitComment
+                  }, t(commentBusy ? 'pull.aiCommentSubmitting' : 'pull.aiCommentSubmit'))),
+                commentNotice === null
+                  ? null
+                  : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-notice' }, commentNotice)))),
 
           /* ------------------------------ 审查 ------------------------------ */
           h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'review' },

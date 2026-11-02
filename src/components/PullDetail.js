@@ -25,6 +25,12 @@ export function PullDetail(props) {
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
+  // AI 审阅：idle / loading / done(result) / error
+  const [ai, setAi] = useState({ status: 'idle', result: null, error: null })
+  // 评论草稿：AI 生成后填入，用户可改，只有点「提交评论」才发出去
+  const [draft, setDraft] = useState('')
+  const [commentBusy, setCommentBusy] = useState(false)
+  const [commentNotice, setCommentNotice] = useState(null)
 
   if (selection === null) return null
 
@@ -101,6 +107,40 @@ export function PullDetail(props) {
     setError(result === null || result === undefined ? '操作失败' : result.error)
   }
 
+  /** 跑一次 AI 审阅（宿主负责取 diff 与调模型）。 */
+  const runAi = async () => {
+    if (typeof source.onAiReview !== 'function') return
+    setAi({ status: 'loading', result: null, error: null })
+    setCommentNotice(null)
+    const result = await source.onAiReview({
+      accountId: selection.accountId,
+      fullName: selection.fullName,
+      number: pull.number
+    })
+    if (result !== null && result !== undefined && result.ok === true) {
+      setAi({ status: 'done', result, error: null })
+      setDraft(result.comment ?? '')
+      return
+    }
+    setAi({ status: 'error', result: null, error: result === null || result === undefined ? '审阅失败' : result.error })
+  }
+
+  /** 提交评论：内容就是输入框里的（用户可改过的）文本。 */
+  const submitComment = async () => {
+    if (typeof source.onComment !== 'function' || commentBusy) return
+    setCommentBusy(true)
+    setCommentNotice(null)
+    const result = await source.onComment({
+      accountId: selection.accountId,
+      fullName: selection.fullName,
+      number: pull.number,
+      comment: draft
+    })
+    setCommentBusy(false)
+    if (result !== null && result !== undefined && result.ok === true) setCommentNotice(result.message ?? t('pull.aiCommentDone'))
+    else setCommentNotice(result === null || result === undefined ? '评论失败' : result.error)
+  }
+
   const submitReview = (verdict) => run('review', () => source.onReview({
     accountId: selection.accountId,
     fullName: selection.fullName,
@@ -175,6 +215,71 @@ export function PullDetail(props) {
     pull.body === ''
       ? null
       : h('pre', { className: 'dgp-pull-body', 'data-dgp-pull': 'body' }, pull.body),
+
+    /* --------------------------- AI 审阅 --------------------------- */
+    h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'ai' },
+      h('div', { className: 'dgp-detail-head' },
+        h('span', { className: 'dgp-detail-title' }, t('pull.aiTitle')),
+        ai.status === 'done'
+          ? h('span', { className: 'dgp-detail-count', 'data-dgp-pull': 'ai-verdict', 'data-verdict': ai.result.verdict },
+            t('pull.aiVerdict.' + ai.result.verdict))
+          : null,
+        h('button', {
+          type: 'button',
+          className: 'dgp-btn',
+          'data-size': 'sm',
+          'data-dgp-pull': 'ai-run',
+          disabled: ai.status === 'loading' || busy !== null,
+          onClick: runAi
+        }, t(ai.status === 'done' ? 'pull.aiRerun' : 'pull.aiRun'))),
+      ai.status === 'loading' ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' }, t('pull.aiRunning')) : null,
+      ai.status === 'error' ? h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error) : null,
+      ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
+        ai.result.truncated === true
+          ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))
+          : null,
+        h('p', { className: 'dgp-ai-summary', 'data-dgp-pull': 'ai-summary' }, ai.result.summary),
+        ai.result.findings.length === 0
+          ? h('p', { className: 'dgp-detail-meta' }, t('pull.aiNoFindings'))
+          : h('ol', { className: 'dgp-findings' },
+            ai.result.findings.map((finding, index) => h('li', {
+              key: String(finding.file) + '#' + String(index),
+              className: 'dgp-finding',
+              'data-dgp-finding': String(index + 1),
+              'data-severity': finding.severity
+            },
+            h('div', { className: 'dgp-finding-head' },
+              h('span', { className: 'dgp-finding-no' }, String(index + 1) + '.'),
+              h('span', { className: 'dgp-severity', 'data-severity': finding.severity }, t('pull.severity.' + finding.severity)),
+              h('span', { className: 'dgp-finding-title' }, finding.title)),
+            h('div', { className: 'dgp-finding-loc' },
+              finding.file + (finding.line === null ? '' : ':' + String(finding.line))),
+            h('div', { className: 'dgp-finding-detail' }, finding.detail),
+            h('div', { className: 'dgp-finding-fix' }, t('pull.aiSuggestion'), finding.suggestion)))),
+        h('div', { className: 'dgp-ai-comment' },
+          h('label', { className: 'dgp-settings-label' }, t('pull.aiCommentLabel')),
+          h('p', { className: 'dgp-settings-hint' }, t('pull.aiCommentHint')),
+          h('textarea', {
+            className: 'dgp-input dgp-ai-textarea',
+            'data-dgp-pull': 'ai-comment',
+            value: draft,
+            spellCheck: false,
+            rows: 10,
+            onChange: (event) => setDraft(event.target.value)
+          }),
+          h('div', { className: 'dgp-pull-actions' },
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'primary',
+              'data-dgp-pull': 'comment-submit',
+              disabled: commentBusy || draft.trim() === '',
+              onClick: submitComment
+            }, t(commentBusy ? 'pull.aiCommentSubmitting' : 'pull.aiCommentSubmit'))),
+          commentNotice === null
+            ? null
+            : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-notice' }, commentNotice)))),
 
     /* ------------------------------ 审查 ------------------------------ */
     h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'review' },

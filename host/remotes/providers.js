@@ -115,6 +115,9 @@ const github = {
   issueListPath: (pageSize) => '/issues?state=open&per_page=' + pageSize,
   // /issues 会把 PR 也算进去，所以 issue 总数要减去 PR 总数
   issuesIncludePulls: true,
+  filesPath: (number) => '/pulls/' + number + '/files',
+  // PR 在 GitHub 上是 issue，评论走 issues 接口
+  commentPath: (number) => '/issues/' + number + '/comments',
   normalizeRepo: repoMeta,
   normalizeIssue: issueMeta,
   normalizeDetail: (item, fullName) => ({
@@ -156,6 +159,8 @@ const gitee = {
   pullListPath: (pageSize) => '/pulls?state=open&per_page=' + pageSize,
   issueListPath: (pageSize) => '/issues?state=open&per_page=' + pageSize,
   issuesIncludePulls: false,
+  filesPath: (number) => '/pulls/' + number + '/files',
+  commentPath: (number) => '/pulls/' + number + '/comments',
   normalizeRepo: repoMeta,
   normalizeIssue: issueMeta,
   normalizeDetail: (item, fullName) => ({
@@ -184,6 +189,7 @@ export const PROVIDER_IDS = Object.freeze(['github', 'gitee'])
 const REQUIRED_PROVIDER_KEYS = [
   'id', 'label', 'web', 'apiBase', 'tokenUrl', 'headers', 'authorize',
   'userPath', 'reposPath', 'repoPath', 'pullPath', 'pullListPath', 'issueListPath',
+  'filesPath', 'commentPath',
   'normalizeRepo', 'normalizeIssue', 'normalizeDetail'
 ]
 const REQUIRED_PULL_KEYS = [

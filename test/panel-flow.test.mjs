@@ -1481,11 +1481,13 @@ test('用例 1u：设置按钮打开设置页，选择模型即保存', async ()
       'settings/get': () => sayOk({ commitModel: null }),
       'settings/set': (payload) => {
         saved.push(payload)
-        const at = String(payload.commitModel).indexOf('/')
+        const split = (ref) => {
+          const at = String(ref).indexOf('/')
+          return { provider: String(ref).slice(0, at), model: String(ref).slice(at + 1) }
+        }
         return sayOk({
-          commitModel: payload.commitModel === null
-            ? null
-            : { provider: payload.commitModel.slice(0, at), model: payload.commitModel.slice(at + 1) }
+          commitModel: payload.commitModel === undefined ? null : (payload.commitModel === null ? null : split(payload.commitModel)),
+          reviewModel: payload.reviewModel === undefined ? null : (payload.reviewModel === null ? null : split(payload.reviewModel))
         })
       }
     }
@@ -1501,6 +1503,14 @@ test('用例 1u：设置按钮打开设置页，选择模型即保存', async ()
     await panel.flush()
     eq(saved.length, 1, '选择即保存')
     eq(saved[0].commitModel, 'kedaya-grok/grok-4.7', '保存的模型')
+
+    // 审阅模型是独立的一项：只改它时请求里只带 reviewModel
+    const reviewSelect = panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'review-model')
+    assert(reviewSelect !== null, '设置页应有 AI 审阅模型下拉')
+    reviewSelect.props.onChange({ target: { value: 'kedaya-grok/grok-4.7' } })
+    await panel.flush()
+    eq(Object.keys(saved[saved.length - 1]), ['reviewModel'], '只改审阅模型时不要带 commitModel')
+    eq(saved[saved.length - 1].reviewModel, 'kedaya-grok/grok-4.7')
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'back'))
     await panel.flush()
     eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-view') === 'settings'), null, '返回后离开设置页')
@@ -2343,6 +2353,104 @@ test('用例 1P：粘贴带引号的路径/分支名会自动去掉引号', asyn
     await panel.flush()
     eq(createdBranches.length, 1, '应创建分支一次')
     eq(createdBranches[0].name, 'feature/from-clipboard', '分支名的引号也要去掉')
+  })
+})
+
+test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后手动提交', async () => {
+  const comments = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'main',
+          htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git',
+          provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: {
+          fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
+          issuesUrl: 'https://github.com/alice/app/issues', pullsUrl: 'https://github.com/alice/app/pulls'
+        },
+        issues: { total: 0, items: [] },
+        pulls: { total: 1, items: [{ number: 7, title: 'PR seven', url: 'https://github.com/alice/app/pull/7', author: 'alice', comments: 0, createdAt: '' }] },
+        failures: []
+      }),
+      'remote/pull': () => sayOk({
+        pull: {
+          number: 7, title: 'PR seven', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 9, deletions: 2, changedFiles: 2,
+          commits: 2, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
+        },
+        reviews: [],
+        gate: { review: { state: 'pending', approvals: 0, changesRequested: 0 }, test: { state: 'unknown' }, mergeState: null },
+        capabilities: { verdicts: ['approve', 'request-changes', 'comment'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
+      }),
+      'remote/pull/ai-review': () => sayOk({
+        summary: '整体方向正确，但重试没有上限。',
+        verdict: 'request-changes',
+        findings: [
+          { severity: 'blocker', file: 'src/retry.js', line: 12, title: '重试没有上限', detail: '可能无限重试', suggestion: '加最大次数' },
+          { severity: 'nit', file: 'src/retry.js', line: null, title: '命名不一致', detail: '两个变量风格不同', suggestion: '统一命名' }
+        ],
+        comment: '1. src/retry.js:12 重试没有上限，建议加最大次数。\n2. 命名建议统一。',
+        model: 'p1/m1',
+        truncated: false,
+        filesIncluded: 2
+      }),
+      'remote/pull/comment': (payload) => {
+        comments.push(payload)
+        return sayOk({ posted: true, url: null })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+
+    // 触发 AI 审阅
+    const runButton = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-run')
+    assert(runButton !== null, '应有 AI 审阅按钮')
+    click(runButton)
+    await panel.flush()
+
+    // 结论：总评 + 编号清单 + 严重度
+    const summary = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-summary')
+    assert(summary !== null, '应显示总评')
+    assert(textOf(summary).includes('重试没有上限'), '总评内容：' + textOf(summary))
+
+    const findings = panel.all((node) => isHost(node) && attr(node, 'data-dgp-finding') !== undefined)
+    eq(findings.length, 2, '应列出两条问题')
+    eq(findings.map((node) => attr(node, 'data-dgp-finding')), ['1', '2'], '问题要编号')
+    eq(attr(findings[0], 'data-severity'), 'blocker', '严重度要带上')
+    assert(textOf(findings[0]).includes('src/retry.js:12'), '要显示文件与行号：' + textOf(findings[0]))
+    assert(textOf(findings[0]).includes('加最大次数'), '要给出调整建议：' + textOf(findings[0]))
+
+    // 评论草稿：默认是 AI 写的，用户可以改
+    const draftBox = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-comment')
+    assert(draftBox !== null, '应有评论草稿输入框')
+    assert(String(draftBox.props.value).includes('重试没有上限'), '草稿默认带 AI 内容')
+    draftBox.props.onChange({ target: { value: '我自己改过的评论内容' } })
+    await panel.flush()
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-submit'))
+    await panel.flush()
+    eq(comments.length, 1, '应提交一次评论')
+    eq(comments[0].comment, '我自己改过的评论内容', '提交的是用户编辑后的内容')
+    eq(comments[0].number, 7)
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-notice') !== null, '提交后要有提示')
   })
 })
 

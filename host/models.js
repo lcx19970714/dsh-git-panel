@@ -212,8 +212,9 @@ export function settingsPath() {
 /**
  * 读设置。
  *
- * 只有「文件不存在」等于「还没选模型」；文件在但解析失败、或字段形状不对，
+ * 只有「文件不存在」等于「都还没配置」；文件在但解析失败、或字段形状不对，
  * 都是坏配置，直接报错 —— 把坏数据悄悄当成「未设置」等于掩盖问题。
+ * 两个模型互相独立：缺一个不影响另一个。
  */
 export async function readSettings() {
   const file = settingsPath()
@@ -221,7 +222,7 @@ export async function readSettings() {
   try {
     text = await readFile(file, 'utf8')
   } catch (error) {
-    if (error !== null && error.code === 'ENOENT') return { commitModel: null }
+    if (error !== null && error.code === 'ENOENT') return { commitModel: null, reviewModel: null }
     throw error
   }
   let parsed
@@ -233,23 +234,54 @@ export async function readSettings() {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new GitError('bad-config', '设置文件顶层必须是对象：' + file)
   }
-  const pair = parsed.commitModel
-  if (pair === undefined || pair === null) return { commitModel: null }
-  const valid = typeof pair === 'object' && !Array.isArray(pair)
-    && typeof pair.provider === 'string' && pair.provider !== ''
-    && typeof pair.model === 'string' && pair.model !== ''
-  if (!valid) {
-    throw new GitError('bad-config', '设置里的 commitModel 必须是 {provider, model}：' + file)
+  return {
+    commitModel: readPair(parsed.commitModel, 'commitModel', file),
+    reviewModel: readPair(parsed.reviewModel, 'reviewModel', file)
   }
-  return { commitModel: { provider: pair.provider, model: pair.model } }
 }
 
-/** 保存「生成提交说明用的模型」。传 null 表示清空。 */
-export async function writeCommitModel(pair) {
+function readPair(value, field, file) {
+  if (value === undefined || value === null) return null
+  const valid = typeof value === 'object' && !Array.isArray(value)
+    && typeof value.provider === 'string' && value.provider !== ''
+    && typeof value.model === 'string' && value.model !== ''
+  if (!valid) {
+    throw new GitError('bad-config', '设置里的 ' + field + ' 必须是 {provider, model}：' + file)
+  }
+  return { provider: value.provider, model: value.model }
+}
+
+/**
+ * 保存设置（部分更新）。
+ *
+ * 设置文件被手工改坏时：先把坏文件备份为 `settings.json.broken-<时间戳>`，再写新值。
+ * 这不是「猜」——用户明确改了某个模型，意图清楚；坏文件留档，不静默丢弃。
+ *
+ * @param {{commitModel?: {provider: string, model: string}|null, reviewModel?: {provider: string, model: string}|null}} patch
+ *   只处理传入的字段：传 null 表示清空该模型，未传表示保持原值。
+ */
+export async function writeSettings(patch) {
   const target = settingsPath()
+  let current = { commitModel: null, reviewModel: null }
+  let corrupt = null
+  try {
+    current = await readSettings()
+  } catch (error) {
+    if (error instanceof GitError && error.code === 'bad-config') corrupt = error
+    else throw error
+  }
+  const next = {
+    version: 2,
+    commitModel: patch.commitModel === undefined ? current.commitModel : patch.commitModel,
+    reviewModel: patch.reviewModel === undefined ? current.reviewModel : patch.reviewModel
+  }
   await mkdir(path.dirname(target), { recursive: true })
+  if (corrupt !== null) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    await rename(target, target + '.broken-' + stamp)
+  }
   const temp = target + '.tmp-' + randomBytes(6).toString('hex')
-  await writeFile(temp, JSON.stringify({ version: 1, commitModel: pair }, null, 2), 'utf8')
+  await writeFile(temp, JSON.stringify(next, null, 2), 'utf8')
   await rename(temp, target)
-  return { commitModel: pair }
+  return { commitModel: next.commitModel, reviewModel: next.reviewModel, backedUp: corrupt === null ? null : target + '.broken-*' }
 }

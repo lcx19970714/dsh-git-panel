@@ -6,7 +6,7 @@
  *  - Gitee：审查只有「通过」（说明文字走评论接口）；合并方法两种；删分支走 prune_source_branch
  */
 import { GitError } from '../git.js'
-import { readArray, readJson, readObject, request, requestJson } from './http.js'
+import { lastPageOf, readArray, readJson, readObject, request, requestJson } from './http.js'
 import { requireFullName, requirePullNumber } from './providers.js'
 
 export function createPulls(deps) {
@@ -149,6 +149,65 @@ export function createPulls(deps) {
   }
 
   /**
+   * PR 的文件列表 + 每个文件的 patch（AI 审阅的输入）。
+   *
+   * 两家都是 `pulls/{n}/files`，一次 100 条，最多 3 页（300 个文件）。
+   * 达到上限时 truncated=true —— 调用方必须把这个事实带进提示词与界面，
+   * 不能假装「这就是全部改动」。
+   */
+  async function pullDiff(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    const headers = provider.headers(account.token)
+    const base = provider.apiBase + provider.repoPath(fullName) + provider.pullPath(number)
+    const PAGE_SIZE = 100
+    const MAX_PAGES = 3
+
+    const files = []
+    let truncated = false
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
+      const url = provider.authorize(base + provider.filesPath(number) + '?per_page=' + PAGE_SIZE + '&page=' + page, account.token)
+      const response = await request(fetchImpl, url, { headers }, options.signal)
+      const listed = await readArray(response, 'PR 文件列表')
+      for (const item of listed) {
+        files.push({
+          filename: typeof item.filename === 'string' ? item.filename : '',
+          status: typeof item.status === 'string' ? item.status : '',
+          additions: Number.isFinite(item.additions) ? item.additions : 0,
+          deletions: Number.isFinite(item.deletions) ? item.deletions : 0,
+          changes: Number.isFinite(item.changes) ? item.changes : 0,
+          patch: typeof item.patch === 'string' ? item.patch : ''
+        })
+      }
+      if (listed.length < PAGE_SIZE) break
+      if (page === MAX_PAGES) truncated = true
+    }
+    return { files, truncated, pagesRead: Math.min(MAX_PAGES, Math.ceil(files.length / 100) || 1) }
+  }
+
+  /** 发一条 PR 评论（内容由用户在界面上确认/编辑后提交）。 */
+  async function commentPull(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    const comment = typeof input.comment === 'string' ? input.comment.trim() : ''
+    if (comment === '') throw new GitError('bad-request', '评论内容不能为空')
+    const headers = provider.headers(account.token)
+    const url = provider.apiBase + provider.repoPath(fullName) + provider.commentPath(number)
+    const response = await requestJson(fetchImpl, provider.authorize(url, account.token), {
+      method: 'POST',
+      headers,
+      json: { body: comment }
+    }, options.signal)
+    const posted = await readJson(response)
+    return {
+      posted: true,
+      url: posted !== null && typeof posted === 'object' && typeof posted.html_url === 'string' ? posted.html_url : null
+    }
+  }
+
+  /**
    * 标记 PR「测试通过」——Gitee 的合并门禁之一。
    * GitHub 没有对应动作（门禁由 CI 的 required status checks 决定），这里明确报不支持。
    */
@@ -227,5 +286,5 @@ export function createPulls(deps) {
     }
   }
 
-  return { pullDetail, reviewPull, testPull, passPull, mergePull }
+  return { pullDetail, pullDiff, reviewPull, testPull, passPull, commentPull, mergePull }
 }

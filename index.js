@@ -59,9 +59,10 @@ import {
   parseRef,
   readSettings,
   requireModel,
-  writeCommitModel,
+  writeSettings,
   generateCommitMessage
 } from './host/models.js'
+import { generateReview } from './host/review.js'
 import { resolveRoots, addExtraRoot, removeExtraRoot, hideRoot, unhideRoot } from './host/roots.js'
 
 export const name = 'dsh-git-panel'
@@ -115,7 +116,10 @@ export const ENDPOINTS = Object.freeze([
   'remote/detail',
   'remote/pr-counts',
   'remote/pull',
+  'remote/pull/diff',
   'remote/pull/review',
+  'remote/pull/ai-review',
+  'remote/pull/comment',
   'remote/pull/test',
   'remote/pull/pass',
   'remote/pull/merge',
@@ -527,6 +531,39 @@ function createDispatcher(ctx) {
     }, { signal })
   }
 
+  /** PR 的文件与 patch（AI 审阅的输入，也可给界面预览）。 */
+  async function remotePullDiff(request, signal) {
+    return remotesOf().pullDiff({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullName: requireString(request.fullName, 'fullName'),
+      number: request.number
+    }, { signal })
+  }
+
+  /** AI 审阅：读 PR diff → 调 reviewModel → 严格结构化的结论。 */
+  async function remotePullAiReview(request, signal) {
+    const settings = await readSettings()
+    if (settings.reviewModel === null) {
+      throw new GitError('no-review-model', '还没有配置 AI 审阅模型（设置页里选「审阅模型」）')
+    }
+    const accountId = requireString(request.accountId, 'accountId')
+    const fullName = requireString(request.fullName, 'fullName')
+    const number = request.number
+    const detail = await remotesOf().pullDetail({ accountId, fullName, number }, { signal })
+    const diff = await remotesOf().pullDiff({ accountId, fullName, number }, { signal })
+    return generateReview(llmService, settings.reviewModel, { pull: detail.pull, files: diff.files }, { signal })
+  }
+
+  /** 提交评论：内容由用户在面板里确认/编辑，这里只负责发出去。 */
+  async function remotePullComment(request, signal) {
+    return remotesOf().commentPull({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullName: requireString(request.fullName, 'fullName'),
+      number: request.number,
+      comment: requireString(request.comment, 'comment')
+    }, { signal })
+  }
+
   async function remotePullReview(request, signal) {
     return remotesOf().reviewPull({
       accountId: requireString(request.accountId, 'accountId'),
@@ -659,14 +696,26 @@ function createDispatcher(ctx) {
 
   /** 保存「生成提交说明用的模型」。null 表示清空；非空时必须在当前目录里。 */
   async function settingsSet(request) {
-    const raw = request.commitModel
-    if (raw === null || raw === undefined) return writeCommitModel(null)
-    const pair = parseRef(raw)
-    if (pair === null) {
-      throw new GitError('bad-request', 'commitModel 必须是 "provider/model" 或 null')
+    const patch = {}
+    for (const field of ['commitModel', 'reviewModel']) {
+      if (!(field in request)) continue
+      const raw = request[field]
+      if (raw === null) {
+        patch[field] = null
+        continue
+      }
+      if (typeof raw !== 'string') {
+        throw new GitError('bad-request', field + ' 必须是 "provider/model" 或 null')
+      }
+      const pair = parseRef(raw)
+      if (pair === null) throw new GitError('bad-request', field + ' 必须是 "provider/model"：' + raw)
+      await requireModel(llmService, pair)
+      patch[field] = pair
     }
-    await requireModel(llmService, pair)
-    return writeCommitModel(pair)
+    if (Object.keys(patch).length === 0) {
+      throw new GitError('bad-request', '没有要修改的模型设置')
+    }
+    return writeSettings(patch)
   }
 
   /* file/read --------------------------------------------------------- */
@@ -740,6 +789,9 @@ function createDispatcher(ctx) {
     'remote/detail': (request, signal) => remoteDetail(request, signal),
     'remote/pr-counts': (request, signal) => remotePullCounts(request, signal),
     'remote/pull': (request, signal) => remotePull(request, signal),
+    'remote/pull/diff': (request, signal) => remotePullDiff(request, signal),
+    'remote/pull/ai-review': (request, signal) => remotePullAiReview(request, signal),
+    'remote/pull/comment': (request, signal) => remotePullComment(request, signal),
     'remote/pull/review': (request, signal) => remotePullReview(request, signal),
     'remote/pull/pass': (request, signal) => remotePullPass(request, signal),
     'remote/pull/test': (request, signal) => remotePullTest(request, signal),

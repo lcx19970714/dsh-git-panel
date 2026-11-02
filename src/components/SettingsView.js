@@ -79,7 +79,21 @@ export function SettingsView(props) {
         h('option', { value: '' }, translate('settings.modelNone')),
         models.map((model) => h('option', { key: model.ref, value: model.ref },
           model.providerLabel + ' · ' + model.modelLabel))),
-        h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint')),
+        h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint'))),
+      h('div', { className: 'dgp-settings-field' },
+        h('label', { className: 'dgp-settings-label' }, translate('settings.reviewModelLabel')),
+        h('select', {
+          className: 'dgp-select',
+          'data-dgp-settings': 'review-model',
+          value: typeof source.reviewModel === 'string' ? source.reviewModel : '',
+          onChange: (event) => {
+            if (typeof source.onChangeReviewModel === 'function') source.onChangeReviewModel(event.target.value)
+          }
+        },
+        h('option', { value: '' }, translate('settings.modelNone')),
+        models.map((model) => h('option', { key: model.ref, value: model.ref },
+          model.providerLabel + ' · ' + model.modelLabel))),
+        h('p', { className: 'dgp-settings-hint' }, translate('settings.reviewModelHint')),
         saved ? h(InlineNote, { tone: 'info' }, translate('settings.saved')) : null),
     h('div', { className: 'dgp-settings-field' },
       h('label', { className: 'dgp-settings-label' }, translate('settings.viewLabel')),

@@ -6,7 +6,7 @@
  *  - Gitee：审查只有「通过」（说明文字走评论接口）；合并方法两种；删分支走 prune_source_branch
  */
 import { GitError } from '../git.js'
-import { readArray, readJson, readObject, request } from './http.js'
+import { readArray, readJson, readObject, request, requestJson } from './http.js'
 import { requireFullName, requirePullNumber } from './providers.js'
 
 export function createPulls(deps) {
@@ -64,11 +64,13 @@ export function createPulls(deps) {
     }
     const headers = provider.headers(account.token)
     const base = provider.apiBase + provider.repoPath(fullName) + provider.pullPath(number)
-    const send = (path, init) => request(fetchImpl, provider.authorize(base + path, account.token), { headers, ...init }, options.signal)
+    const send = (path, init = {}) => (init.json === undefined
+      ? request(fetchImpl, provider.authorize(base + path, account.token), { headers, ...init }, options.signal)
+      : requestJson(fetchImpl, provider.authorize(base + path, account.token), { headers, ...init }, options.signal))
 
     if (provider.pull.reviewEvents === null) {
       // Gitee：说明文字走 PR 评论接口，再调 /review 表示通过（该接口不带 body）
-      if (body !== '') await readJson(await send('/comments', { method: 'POST', body: JSON.stringify({ body }) }))
+      if (body !== '') await readJson(await send('/comments', { method: 'POST', json: { body } }))
       // Gitee 的审查接口成功时返回空响应，不需要读 JSON
       await readJson(await send('/review', { method: 'POST' }))
       return { verdict, bodyPosted: body !== '' }
@@ -77,7 +79,7 @@ export function createPulls(deps) {
     const event = provider.pull.reviewEvents[verdict]
     await readJson(await send('/reviews', {
       method: 'POST',
-      body: JSON.stringify(body === '' ? { event } : { event, body })
+      json: body === '' ? { event } : { event, body }
     }))
     return { verdict, bodyPosted: body !== '' }
   }
@@ -93,7 +95,9 @@ export function createPulls(deps) {
     }
     const headers = provider.headers(account.token)
     const base = provider.apiBase + provider.repoPath(fullName) + provider.pullPath(number)
-    const send = (url, init) => request(fetchImpl, provider.authorize(url, account.token), { headers, ...init }, options.signal)
+    const send = (url, init = {}) => (init.json === undefined
+      ? request(fetchImpl, provider.authorize(url, account.token), { headers, ...init }, options.signal)
+      : requestJson(fetchImpl, provider.authorize(url, account.token), { headers, ...init }, options.signal))
     const deleteBranch = input.deleteBranch === true
 
     // 先读一次详情：已合并 / 非打开 / 明确不可合并都直接拒绝，不让平台甩一句难懂的话
@@ -106,7 +110,7 @@ export function createPulls(deps) {
 
     const payload = { merge_method: method }
     if (provider.pull.mergeDeletesBranch === 'flag') payload.prune_source_branch = deleteBranch
-    const result = await readJson(await send(base + '/merge', { method: 'PUT', body: JSON.stringify(payload) }))
+    const result = await readJson(await send(base + '/merge', { method: 'PUT', json: payload }))
     // 空响应也算成功（平台不返回结果体）；只有明确 merged===false 才是失败
     if (result !== null && typeof result === 'object' && result.merged === false) {
       throw new GitError('merge-failed', typeof result.message === 'string' ? result.message : '平台没有完成合并')

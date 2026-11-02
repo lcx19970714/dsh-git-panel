@@ -509,6 +509,51 @@ await test('Gitee 审查通过返回空响应时，不能再报「不是 JSON」
   assert.equal(calls.length, 1, '只发了 /review 一次请求')
 })
 
+await test('带 body 的请求都声明了 Content-Type: application/json', async () => {
+  const credentials = fakeCredentials()
+  const seen = []
+  const capture = (url, options) => {
+    seen.push({ url, method: options.method, contentType: options.headers?.['Content-Type'], body: options.body })
+    if (url.includes('/merge')) return { json: { merged: true } }
+    if (url.includes('/reviews')) return { json: {} }
+    if (url.includes('/comments')) return { json: {} }
+    if (url.includes('/review')) return { status: 204, empty: true }
+    return { json: { number: 6, title: 'T', state: 'open', merged: false, mergeable: true, base: { ref: 'main' }, head: { ref: 'feat' } } }
+  }
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/pulls\/6\/reviews$/, capture],
+    [/\/pulls\/6\/merge/, capture],
+    [/\/pulls\/6\/comments/, capture],
+    [/\/pulls\/6\/review/, capture],
+    [/\/pulls\/6(\?|$)/, capture]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+  await remotes.addAccount({ provider: 'gitee', token: 'b' })
+
+  await remotes.reviewPull({ accountId: 'github:alice', fullName: 'alice/app', number: 6, verdict: 'approve' })
+  await remotes.mergePull({ accountId: 'github:alice', fullName: 'alice/app', number: 6, method: 'merge' })
+  await remotes.reviewPull({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 6, verdict: 'approve', body: '不错' })
+  await remotes.mergePull({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 6, method: 'merge' })
+
+  const withBody = seen.filter((call) => typeof call.body === 'string' && call.body !== '')
+  assert.ok(withBody.length >= 4, '应该有多次带 body 的请求：' + withBody.length)
+  for (const call of withBody) {
+    assert.equal(
+      call.contentType,
+      'application/json;charset=UTF-8',
+      '带 body 的请求必须声明 JSON 内容类型：' + call.method + ' ' + call.url + ' => ' + String(call.contentType)
+    )
+    assert.doesNotThrow(() => JSON.parse(call.body), 'body 必须是合法 JSON：' + call.body)
+  }
+
+  // Gitee 的 /review 不带 body（平台接口就是这样），因此也不该被塞 content-type
+  const reviewCall = seen.find((call) => /\/pulls\/6\/review(\?|$)/.test(call.url))
+  assert.equal(reviewCall.body, undefined, 'Gitee 审查接口不带请求体')
+})
+
 await test('需要对象的接口遇到空响应时，给出明确原因', async () => {
   const credentials = fakeCredentials()
   const fetchImpl = fakeFetch([

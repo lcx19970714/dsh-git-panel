@@ -1145,19 +1145,118 @@ export async function listBranches(repoRoot, options = {}) {
   const result = await runGit(repoRoot, [
     'for-each-ref',
     '--sort=-committerdate',
-    '--format=%(refname:short)%09%(HEAD)',
-    'refs/heads'
+    '--format=%(refname)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)%09%(symref)',
+    'refs/heads',
+    'refs/remotes'
   ], { signal })
-  const branches = []
+
+  const local = []
+  const remoteByName = new Map()
   for (const line of result.stdout.toString('utf8').split('\n')) {
     if (line.trim() === '') continue
-    const [name, head] = line.split('\t')
-    if (typeof name !== 'string' || name === '') continue
-    branches.push({ name, current: head === '*' })
+    const [refname, head, upstream, track, symref] = line.split('\t')
+    if (typeof refname !== 'string' || refname === '') continue
+    // origin/HEAD 这类符号引用不是分支，跳过
+    if (typeof symref === 'string' && symref !== '') continue
+    if (refname.startsWith('refs/heads/')) {
+      const name = refname.slice('refs/heads/'.length)
+      local.push({
+        name,
+        kind: 'local',
+        current: head === '*',
+        upstream: typeof upstream === 'string' && upstream !== '' ? upstream : null,
+        ...parseTrack(track)
+      })
+      continue
+    }
+    if (refname.startsWith('refs/remotes/')) {
+      const rest = refname.slice('refs/remotes/'.length)
+      const slash = rest.indexOf('/')
+      if (slash <= 0) continue
+      const remote = rest.slice(0, slash)
+      const name = rest.slice(slash + 1)
+      const entry = { name, remote }
+      const list = remoteByName.get(name)
+      if (list === undefined) remoteByName.set(name, [entry])
+      else list.push(entry)
+    }
   }
-  // 当前分支排最前（git 的排序按时间，用户点开菜单第一眼要看到自己在哪）
+
+  const localNames = new Set(local.map((branch) => branch.name))
+  const branches = local.map((branch) => {
+    const remotes = remoteByName.get(branch.name) ?? []
+    return {
+      name: branch.name,
+      kind: 'local',
+      current: branch.current,
+      upstream: branch.upstream,
+      ahead: branch.ahead,
+      behind: branch.behind,
+      upstreamGone: branch.upstreamGone,
+      // 远程是否也有同名分支：没有就是「仅本地」
+      hasRemote: remotes.length > 0,
+      remote: remotes.length > 0 ? remotes[0].remote : null
+    }
+  })
+  // 当前分支排最前，其余按 git 的时间序
   branches.sort((left, right) => Number(right.current) - Number(left.current))
-  return { branches }
+
+  const remoteOnly = []
+  for (const [name, remotes] of remoteByName) {
+    if (localNames.has(name)) continue
+    for (const entry of remotes) {
+      remoteOnly.push({
+        name,
+        kind: 'remote',
+        current: false,
+        remote: entry.remote,
+        ref: entry.remote + '/' + name,
+        hasLocal: false
+      })
+    }
+  }
+  remoteOnly.sort((left, right) => naturalCompare(left.ref, right.ref))
+  branches.push(...remoteOnly)
+
+  return { branches, current: branches.find((branch) => branch.current)?.name ?? null }
+}
+
+/**
+ * 解析 `%(upstream:track)`：`[ahead 1]` / `[behind 2]` / `[ahead 1, behind 2]` / `[gone]`。
+ * 在 LC_ALL=C 下这几种写法是稳定的；无法识别时按 0 处理（不是兜底，是这条输出的语法本身很窄）。
+ */
+function parseTrack(track) {
+  const text = typeof track === 'string' ? track : ''
+  if (text.includes('gone')) return { ahead: 0, behind: 0, upstreamGone: true }
+  const ahead = /ahead (\d+)/.exec(text)
+  const behind = /behind (\d+)/.exec(text)
+  return {
+    ahead: ahead === null ? 0 : Number.parseInt(ahead[1], 10),
+    behind: behind === null ? 0 : Number.parseInt(behind[1], 10),
+    upstreamGone: false
+  }
+}
+
+/**
+ * 把「仅远程」的分支变成能被 checkout 的本地分支。
+ *
+ * `git switch -c <name> --track <remote>/<name>`：本地同名分支已存在时先拦住并
+ * 报 branch-exists —— 不 force，也不悄悄改用别的名字。
+ */
+export async function trackRemoteBranch(repoRoot, remote, name, options = {}) {
+  if (typeof remote !== 'string' || remote === '') throw new GitError('bad-request', '缺少远程名')
+  if (typeof name !== 'string' || name === '') throw new GitError('bad-request', '缺少分支名')
+  const { signal } = options
+
+  const check = await runGit(repoRoot, ['check-ref-format', '--branch', name], { signal, allowFailure: true })
+  if (check.code !== 0) throw new GitError('bad-branch', '不是合法的分支名：' + name)
+
+  const existing = await runGit(repoRoot, ['show-ref', '--verify', '--quiet', 'refs/heads/' + name], { signal, allowFailure: true })
+  if (existing.code === 0) throw new GitError('branch-exists', '本地已经有同名分支：' + name)
+
+  await runGit(repoRoot, ['switch', '-c', name, '--track', remote + '/' + name], { signal })
+  const head = await readHead(repoRoot)
+  return { branch: head.branch, head: head.head, upstream: head.upstream ?? null }
 }
 
 /**

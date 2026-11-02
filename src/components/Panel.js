@@ -838,6 +838,27 @@ export function Panel(props) {
   /** 分支菜单：取数由面板做，组件只负责交互。 */
   const loadBranches = useCallback(async (root) => api.listBranches({ rootPath: root.path }), [])
 
+  /** 「仅远程」的分支：建本地跟踪分支并切过去。 */
+  const trackBranchAt = useCallback(async (root, branch) => {
+    try {
+      await api.trackBranch({ rootPath: root.path, remote: branch.remote, name: branch.name })
+    } catch (error) {
+      throw new Error(api.describeError(error, tRef.current))
+    }
+    await resolveProject()
+    await refreshStatus()
+  }, [resolveProject, refreshStatus])
+
+  /** 分支菜单里的「获取远程更新」：git fetch 后重读分支列表。 */
+  const fetchBranches = useCallback(async (root) => {
+    try {
+      await api.fetchRemote({ rootPath: root.path })
+    } catch (error) {
+      throw new Error(api.describeError(error, tRef.current))
+    }
+    return api.listBranches({ rootPath: root.path })
+  }, [])
+
   const switchBranch = useCallback(async (root, name) => {
     try {
       await api.switchBranch({ rootPath: root.path, name })
@@ -1476,6 +1497,8 @@ function buildUpdateNote(updateState, t) {
           onUnhide: unhideRoot,
           onLoadBranches: loadBranches,
           onSwitchBranch: switchBranch,
+          onFetchBranches: fetchBranches,
+          onTrackBranch: trackBranchAt,
           onCreateBranch: createBranch,
           t
         }),

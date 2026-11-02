@@ -51,6 +51,7 @@ import {
   commitDiffText,
   listBranches,
   switchBranch,
+  trackRemoteBranch,
   createBranch,
   writeTextFile
 } from './host/git.js'
@@ -105,6 +106,7 @@ export const ENDPOINTS = Object.freeze([
   'index/stage-group',
   'branches/list',
   'branch/switch',
+  'branch/track',
   'branch/create',
   'accounts/list',
   'accounts/add',
@@ -582,6 +584,17 @@ function createDispatcher(ctx) {
     return listBranches(normalizeSlashes(repo.repoRoot), { signal })
   }
 
+  async function branchTrack(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const remote = requireString(request.remote, 'remote')
+    const name = requireString(request.name, 'name')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    const result = await trackRemoteBranch(normalizeSlashes(repo.repoRoot), remote, name, { signal })
+    clearStatusCache()
+    return result
+  }
+
   async function branchSwitch(request, signal) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
     const branch = requireString(request.name, 'name')
@@ -761,6 +774,8 @@ function createDispatcher(ctx) {
         return branchesList(request, signal)
       case 'branch/switch':
         return branchSwitch(request, signal)
+      case 'branch/track':
+        return branchTrack(request, signal)
       case 'branch/create':
         return branchCreate(request, signal)
       case 'commit':

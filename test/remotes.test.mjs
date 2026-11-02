@@ -569,6 +569,92 @@ await test('需要对象的接口遇到空响应时，给出明确原因', async
   )
 })
 
+await test('门禁聚合：审查状态按人取最新结论，Gitee 的两项都是 unknown', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/api\.github\.com\/repos\/alice\/app\/pulls\/11\/reviews$/, {
+      json: [
+        { user: { login: 'bob' }, state: 'CHANGES_REQUESTED', body: 'x' },
+        { user: { login: 'bob' }, state: 'APPROVED', body: 'fixed' },
+        { user: { login: 'carl' }, state: 'APPROVED', body: '' },
+        { user: { login: 'dan' }, state: 'COMMENTED', body: 'nit' }
+      ]
+    }],
+    [/api\.github\.com\/repos\/alice\/app\/pulls\/11$/, {
+      json: { number: 11, title: 'T', state: 'open', mergeable: true, mergeable_state: 'blocked', base: { ref: 'main' }, head: { ref: 'feat' } }
+    }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/pulls\/12\?/, {
+      json: { number: 12, title: 'T', state: 'open', mergeable: true, base: { ref: 'master' }, head: { ref: 'dev' } }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+  await remotes.addAccount({ provider: 'gitee', token: 'b' })
+
+  const github = await remotes.pullDetail({ accountId: 'github:alice', fullName: 'alice/app', number: 11 })
+  assert.equal(github.gate.review.state, 'approved', 'bob 从要求修改改成通过，最新结论算通过')
+  assert.equal(github.gate.review.approvals, 2)
+  assert.equal(github.gate.review.changesRequested, 0)
+  assert.equal(github.gate.mergeState, 'blocked', 'GitHub 的 mergeable_state 要透出来')
+  assert.equal(github.gate.test.state, 'unknown', '测试状态平台不提供')
+
+  const gitee = await remotes.pullDetail({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 12 })
+  assert.equal(gitee.gate.review.state, 'unknown', 'Gitee 没有审查记录接口')
+  assert.equal(gitee.gate.test.state, 'unknown')
+})
+
+await test('一键通过：GitHub 只做审查，Gitee 审查 + 测试都做', async () => {
+  const credentials = fakeCredentials()
+  const calls = []
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/api\.github\.com\/repos\/alice\/app\/pulls\/13\/reviews$/, (url, options) => {
+      calls.push({ kind: 'github-review', body: JSON.parse(options.body) })
+      return { json: {} }
+    }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/pulls\/14\/review\?/, (url, options) => {
+      calls.push({ kind: 'gitee-review', body: options.body })
+      return { status: 204, empty: true }
+    }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/pulls\/14\/test\?/, (url, options) => {
+      calls.push({ kind: 'gitee-test', body: options.body })
+      return { status: 204, empty: true }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+  await remotes.addAccount({ provider: 'gitee', token: 'b' })
+
+  const github = await remotes.passPull({ accountId: 'github:alice', fullName: 'alice/app', number: 13, body: 'LGTM' })
+  assert.deepEqual(github.completed, ['review'], 'GitHub 没有测试动作，只做审查')
+  assert.deepEqual(github.failures, [])
+  assert.deepEqual(calls[0], { kind: 'github-review', body: { event: 'APPROVE', body: 'LGTM' } })
+
+  const gitee = await remotes.passPull({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 14 })
+  assert.deepEqual(gitee.completed, ['review', 'test'], 'Gitee 两个都做')
+  assert.deepEqual(gitee.failures, [])
+})
+
+await test('一键通过：测试步骤失败时，审查成功照实返回并列出失败步骤', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/pulls\/15\/review\?/, { status: 204, empty: true }],
+    [/\/pulls\/15\/test\?/, { status: 403, json: { message: '没有测试权限' } }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+
+  const result = await remotes.passPull({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 15 })
+  assert.deepEqual(result.completed, ['review'], '审查那一步是成功的')
+  assert.equal(result.failures.length, 1)
+  assert.equal(result.failures[0].step, 'test')
+  assert.match(result.failures[0].message, /没有测试权限/)
+})
+
 await test('Gitee 可以标记测试通过；GitHub 没有这个动作', async () => {
   const credentials = fakeCredentials()
   const calls = []

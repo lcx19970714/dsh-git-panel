@@ -915,6 +915,17 @@ export function Panel(props) {
     }
   }, [loadPullDetail])
 
+  /** 一键「审查与测试都通过」：宿主按平台能力依次执行，只要有一项成功就报结果。 */
+  const passPull = useCallback(async (input) => {
+    try {
+      const result = await api.remotePullPass(input)
+      await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+      return { ok: true, message: tRef.current('pull.passDone', { steps: result.completed.join(' / ') }) }
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current) }
+    }
+  }, [loadPullDetail])
+
   /** 标记测试通过（Gitee 的合并门禁）：成功后重读详情，让合并按钮可用。 */
   const testPull = useCallback(async (input) => {
     try {
@@ -1442,6 +1453,7 @@ function buildUpdateNote(updateState, t) {
       onRetry: () => loadPullDetail(openPull),
       onReview: reviewPull,
       onTest: testPull,
+      onPass: passPull,
       onMerge: mergePull,
       onChanged: () => loadPullDetail(openPull),
       onOpenUrl: openExternal,

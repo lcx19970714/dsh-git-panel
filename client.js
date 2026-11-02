@@ -1171,6 +1171,20 @@ window.__ModuleLoader__.load({
 
       /* PR 详情根容器：沿用 .dgp-detail 的排布，这里只补标题行更紧凑的间距 */
       .dgp-pull { gap: 8px; }
+      /* PR 门禁状态：审查 / 测试 / 合并状态并排一行 */
+      .dgp-gate { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+      .dgp-gate-chip {
+        padding: 1px 7px;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+        color: var(--dsw-alias-label-secondary);
+        font-size: 11px;
+        line-height: 18px;
+      }
+      .dgp-gate-chip[data-gate="review"][data-state="approved"],
+      .dgp-gate-chip[data-gate="test"][data-state="passed"] { color: var(--dsw-alias-state-success-primary); }
+      .dgp-gate-chip[data-gate="review"][data-state="changes-requested"] { color: var(--dsw-alias-state-error-primary); }
+      .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
       /* PR 详情：正文与操作区 */
       .dgp-pull-body {
         margin: 0;
@@ -1423,6 +1437,19 @@ window.__ModuleLoader__.load({
         'pull.method.squash': '压缩为一个提交',
         'pull.method.rebase': '变基合并',
         'pull.deleteBranch': '合并后删除分支 {branch}',
+        'pull.gateReview': '审查',
+        'pull.gateTest': '测试',
+        'pull.gateMergeState': '合并状态',
+        'pull.gateReviewPassed': '已通过',
+        'pull.gateReviewChanges': '有人要求修改',
+        'pull.gateReviewPending': '等待审查',
+        'pull.gateTestPassed': '已通过',
+        'pull.gateTestPending': '未通过',
+        'pull.gateUnknown': '平台未提供',
+        'pull.passAll': '一键通过（审查 + 测试）',
+        'pull.passReviewOnly': '通过审查',
+        'pull.passAllHint': '按平台能力依次执行：能审查就审查，能标记测试就标记测试',
+        'pull.passDone': '已通过：{steps}',
         'pull.testRun': '标记测试通过',
         'pull.testHint': '部分仓库要求 PR 测试通过才允许合并',
         'pull.testDone': '已标记测试通过',
@@ -1684,6 +1711,19 @@ window.__ModuleLoader__.load({
         'pull.method.squash': 'Squash and merge',
         'pull.method.rebase': 'Rebase and merge',
         'pull.deleteBranch': 'Delete branch {branch} after merging',
+        'pull.gateReview': 'Review',
+        'pull.gateTest': 'Test',
+        'pull.gateMergeState': 'Merge state',
+        'pull.gateReviewPassed': 'approved',
+        'pull.gateReviewChanges': 'changes requested',
+        'pull.gateReviewPending': 'awaiting review',
+        'pull.gateTestPassed': 'passed',
+        'pull.gateTestPending': 'not passed',
+        'pull.gateUnknown': 'not exposed by the platform',
+        'pull.passAll': 'Pass review + test',
+        'pull.passReviewOnly': 'Approve',
+        'pull.passAllHint': 'Runs whatever the platform supports: approve and/or mark tested',
+        'pull.passDone': 'Passed: {steps}',
         'pull.testRun': 'Mark tested',
         'pull.testHint': 'Some repositories require a passed test before merging',
         'pull.testDone': 'Marked as tested',
@@ -2806,6 +2846,17 @@ window.__ModuleLoader__.load({
           }
         }, [loadPullDetail])
 
+        /** 一键「审查与测试都通过」：宿主按平台能力依次执行，只要有一项成功就报结果。 */
+        const passPull = useCallback(async (input) => {
+          try {
+            const result = await api.remotePullPass(input)
+            await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+            return { ok: true, message: tRef.current('pull.passDone', { steps: result.completed.join(' / ') }) }
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current) }
+          }
+        }, [loadPullDetail])
+
         /** 标记测试通过（Gitee 的合并门禁）：成功后重读详情，让合并按钮可用。 */
         const testPull = useCallback(async (input) => {
           try {
@@ -3333,6 +3384,7 @@ window.__ModuleLoader__.load({
             onRetry: () => loadPullDetail(openPull),
             onReview: reviewPull,
             onTest: testPull,
+            onPass: passPull,
             onMerge: mergePull,
             onChanged: () => loadPullDetail(openPull),
             onOpenUrl: openExternal,
@@ -5825,6 +5877,11 @@ window.__ModuleLoader__.load({
         return call('remote/pull/test', payload, options)
       }
 
+      /** 一键「审查与测试都通过」（按平台能力执行）。 */
+      function remotePullPass(payload, options) {
+        return call('remote/pull/pass', payload, options)
+      }
+
       /** 合并 PR。 */
       function remotePullMerge(payload, options) {
         return call('remote/pull/merge', payload, options)
@@ -5901,7 +5958,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePull, remotePullReview, remotePullTest, remotePullMerge, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePull, remotePullReview, remotePullTest, remotePullPass, remotePullMerge, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -8145,6 +8202,18 @@ window.__ModuleLoader__.load({
 
         const data = detail.data
         const pull = data.pull
+        const gate = data.gate ?? { review: { state: 'unknown' }, test: { state: 'unknown' }, mergeState: null }
+        const gateLabel = (kind, state) => {
+          if (kind === 'review') {
+            if (state === 'approved') return t('pull.gateReviewPassed')
+            if (state === 'changes-requested') return t('pull.gateReviewChanges')
+            if (state === 'pending') return t('pull.gateReviewPending')
+            return t('pull.gateUnknown')
+          }
+          if (state === 'passed') return t('pull.gateTestPassed')
+          if (state === 'pending') return t('pull.gateTestPending')
+          return t('pull.gateUnknown')
+        }
         const caps = data.capabilities
         const canMerge = pull.state === 'open' && pull.merged !== true
         // mergeable：true 可以、false 明确不行、null 表示平台还在算 —— null 不该禁用按钮
@@ -8174,6 +8243,13 @@ window.__ModuleLoader__.load({
           fullName: selection.fullName,
           number: pull.number,
           verdict,
+          body: note
+        }))
+
+        const submitPass = () => run('pass', () => source.onPass({
+          accountId: selection.accountId,
+          fullName: selection.fullName,
+          number: pull.number,
           body: note
         }))
 
@@ -8213,6 +8289,15 @@ window.__ModuleLoader__.load({
                 if (typeof source.onOpenUrl === 'function') source.onOpenUrl(pull.htmlUrl)
               }
             }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 }))),
+
+          /* 门禁状态：审查与测试并排一行，状态一眼可见 */
+          h('div', { className: 'dgp-gate', 'data-dgp-pull': 'gate' },
+            h('span', { className: 'dgp-gate-chip', 'data-gate': 'review', 'data-state': gate.review.state },
+              t('pull.gateReview'), '：', gateLabel('review', gate.review.state)),
+            h('span', { className: 'dgp-gate-chip', 'data-gate': 'test', 'data-state': gate.test.state },
+              t('pull.gateTest'), '：', gateLabel('test', gate.test.state)),
+            gate.mergeState === null ? null : h('span', { className: 'dgp-gate-chip', 'data-gate': 'merge-state' },
+              t('pull.gateMergeState'), '：', gate.mergeState)),
 
           h('div', { className: 'dgp-detail-meta' },
             h('span', { 'data-dgp-pull-state': pull.state }, t('pull.state.' + pull.state === '' ? 'pull.state.unknown' : 'pull.state.' + pull.state)),
@@ -8270,6 +8355,16 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'dgp-detail-title' }, t('pull.merge')),
                 h('span', { className: 'dgp-detail-count' }, mergeableText)),
               h('div', { className: 'dgp-pull-actions' },
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-variant': 'primary',
+                  'data-dgp-pull': 'pass-all',
+                  disabled: busy !== null,
+                  title: t('pull.passAllHint'),
+                  onClick: submitPass
+                }, t(caps.test === true ? 'pull.passAll' : 'pull.passReviewOnly')),
                 caps.test === true
                   ? h('button', {
                     type: 'button',

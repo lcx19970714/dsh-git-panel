@@ -36,10 +36,19 @@ export function createPulls(deps) {
       const listed = await readArray(await send(base + '/reviews'), provider.label + ' 审查记录')
       reviews = listed.map(provider.pull.normalizeReview)
     }
+    const reviewGate = provider.pull.reviewsPath === null
+      ? { state: 'unknown', approvals: 0, changesRequested: 0 }
+      : summarizeReviewGate(reviews)
 
     return {
       pull: provider.pull.normalizePull(detail),
       reviews,
+      gate: {
+        review: reviewGate,
+        // 两家都没有「查询测试状态」的接口，只能执行或从合并被拒反推
+        test: { state: 'unknown' },
+        mergeState: typeof detail.mergeable_state === 'string' ? detail.mergeable_state : null
+      },
       capabilities: {
         verdicts: provider.pull.verdicts,
         reviews: provider.pull.reviewsPath !== null,
@@ -83,6 +92,60 @@ export function createPulls(deps) {
       json: body === '' ? { event } : { event, body }
     }))
     return { verdict, bodyPosted: body !== '' }
+  }
+
+  /** 审查状态：按人取最新结论，再判断「有人要求修改」优先于「有人通过」。 */
+  function summarizeReviewGate(reviews) {
+    const latest = new Map()
+    for (const review of reviews) {
+      if (review.state === 'COMMENTED' || review.state === 'PENDING') continue
+      latest.set(review.author, review.state)
+    }
+    let approvals = 0
+    let changesRequested = 0
+    for (const state of latest.values()) {
+      if (state === 'APPROVED') approvals += 1
+      else if (state === 'CHANGES_REQUESTED') changesRequested += 1
+    }
+    const state = changesRequested > 0 ? 'changes-requested' : (approvals > 0 ? 'approved' : 'pending')
+    return { state, approvals, changesRequested }
+  }
+
+  /**
+   * 一键「审查与测试都通过」。
+   *
+   * 按平台能力依次执行：有的平台没有测试动作（GitHub 门禁是 CI）就只做审查。
+   * 任何一步失败都不静默：成功的步骤照实返回，失败的进 failures，界面据此显示。
+   */
+  async function passPull(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    const steps = []
+
+    if (provider.pull.verdicts.includes('approve')) {
+      steps.push(['review', () => reviewPull({ ...input, verdict: 'approve', body: typeof input.body === 'string' ? input.body : '' }, options)])
+    }
+    if (provider.pull.testPath !== null) {
+      steps.push(['test', () => testPull({ ...input, accountId: account.id, fullName, number }, options)])
+    }
+    if (steps.length === 0) throw new GitError('bad-request', provider.label + ' 没有可执行的通过动作')
+
+    const completed = []
+    const failures = []
+    for (const [name, run] of steps) {
+      try {
+        await run()
+        completed.push(name)
+      } catch (error) {
+        failures.push({ step: name, message: error instanceof GitError ? error.message : String(error) })
+      }
+    }
+    if (completed.length === 0) {
+      throw new GitError(failures[0].step === 'test' ? 'test-failed' : 'review-failed',
+        '一键通过失败：' + failures.map((item) => item.step + '：' + item.message).join('；'))
+    }
+    return { completed, failures }
   }
 
   /**
@@ -164,5 +227,5 @@ export function createPulls(deps) {
     }
   }
 
-  return { pullDetail, reviewPull, testPull, mergePull }
+  return { pullDetail, reviewPull, testPull, passPull, mergePull }
 }

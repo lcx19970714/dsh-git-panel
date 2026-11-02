@@ -2057,6 +2057,79 @@ test('用例 1L：Gitee 的 PR 可以标记测试通过（合并门禁）', asyn
   })
 })
 
+test('用例 1M：门禁状态并排显示，一键按钮按平台能力执行', async () => {
+  const passes = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'main',
+          htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git',
+          provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: {
+          fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
+          issuesUrl: 'https://github.com/alice/app/issues', pullsUrl: 'https://github.com/alice/app/pulls'
+        },
+        issues: { total: 0, items: [] },
+        pulls: { total: 1, items: [{ number: 5, title: 'PR five', url: 'https://github.com/alice/app/pull/5', author: 'alice', comments: 0, createdAt: '' }] },
+        failures: []
+      }),
+      'remote/pull': () => sayOk({
+        pull: {
+          number: 5, title: 'PR five', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 1, deletions: 1, changedFiles: 1,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/5'
+        },
+        reviews: [],
+        gate: { review: { state: 'approved', approvals: 1, changesRequested: 0 }, test: { state: 'unknown' }, mergeState: 'blocked' },
+        capabilities: { verdicts: ['approve', 'request-changes', 'comment'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
+      }),
+      'remote/pull/pass': (payload) => {
+        passes.push(payload)
+        return sayOk({ completed: ['review'], failures: [] })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+
+    // 门禁状态一行：审查已通过、测试平台未提供、合并状态 blocked
+    const gate = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'gate')
+    assert(gate !== null, '应有门禁状态行')
+    const chips = findAll(gate, (node) => isHost(node) && hasClass(node, 'dgp-gate-chip'))
+    eq(chips.map((node) => attr(node, 'data-gate')), ['review', 'test', 'merge-state'], '三项并排')
+    assert(textOf(gate).includes('已通过'), '审查已通过：' + textOf(gate))
+    assert(textOf(gate).includes('平台未提供'), '测试状态如实显示未提供：' + textOf(gate))
+    assert(textOf(gate).includes('blocked'), '透出合并状态')
+
+    // GitHub 没有测试动作 → 一键按钮是「通过审查」
+    const pass = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'pass-all')
+    assert(pass !== null, '应有一键通过按钮')
+    assert(textOf(pass).includes('通过审查'), '按钮文案按能力变化：' + textOf(pass))
+
+    click(pass)
+    await panel.flush()
+    eq(passes.length, 1, '应调用一次 remote/pull/pass')
+    eq(passes[0], { accountId: 'github:alice', fullName: 'alice/app', number: 5, body: '' })
+  })
+})
+
 test('用例 1H：浏览器拦截新窗口时，把令牌页地址原样显示出来', async () => {
   await withPanel({
     routes: {

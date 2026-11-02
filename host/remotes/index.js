@@ -152,6 +152,7 @@ export function createRemotes(deps) {
     pullDetail: pulls.pullDetail,
     reviewPull: pulls.reviewPull,
     testPull: pulls.testPull,
+    passPull: pulls.passPull,
     mergePull: pulls.mergePull
   }
 }

@@ -65,6 +65,18 @@ export function PullDetail(props) {
 
   const data = detail.data
   const pull = data.pull
+  const gate = data.gate ?? { review: { state: 'unknown' }, test: { state: 'unknown' }, mergeState: null }
+  const gateLabel = (kind, state) => {
+    if (kind === 'review') {
+      if (state === 'approved') return t('pull.gateReviewPassed')
+      if (state === 'changes-requested') return t('pull.gateReviewChanges')
+      if (state === 'pending') return t('pull.gateReviewPending')
+      return t('pull.gateUnknown')
+    }
+    if (state === 'passed') return t('pull.gateTestPassed')
+    if (state === 'pending') return t('pull.gateTestPending')
+    return t('pull.gateUnknown')
+  }
   const caps = data.capabilities
   const canMerge = pull.state === 'open' && pull.merged !== true
   // mergeable：true 可以、false 明确不行、null 表示平台还在算 —— null 不该禁用按钮
@@ -94,6 +106,13 @@ export function PullDetail(props) {
     fullName: selection.fullName,
     number: pull.number,
     verdict,
+    body: note
+  }))
+
+  const submitPass = () => run('pass', () => source.onPass({
+    accountId: selection.accountId,
+    fullName: selection.fullName,
+    number: pull.number,
     body: note
   }))
 
@@ -133,6 +152,15 @@ export function PullDetail(props) {
           if (typeof source.onOpenUrl === 'function') source.onOpenUrl(pull.htmlUrl)
         }
       }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 }))),
+
+    /* 门禁状态：审查与测试并排一行，状态一眼可见 */
+    h('div', { className: 'dgp-gate', 'data-dgp-pull': 'gate' },
+      h('span', { className: 'dgp-gate-chip', 'data-gate': 'review', 'data-state': gate.review.state },
+        t('pull.gateReview'), '：', gateLabel('review', gate.review.state)),
+      h('span', { className: 'dgp-gate-chip', 'data-gate': 'test', 'data-state': gate.test.state },
+        t('pull.gateTest'), '：', gateLabel('test', gate.test.state)),
+      gate.mergeState === null ? null : h('span', { className: 'dgp-gate-chip', 'data-gate': 'merge-state' },
+        t('pull.gateMergeState'), '：', gate.mergeState)),
 
     h('div', { className: 'dgp-detail-meta' },
       h('span', { 'data-dgp-pull-state': pull.state }, t('pull.state.' + pull.state === '' ? 'pull.state.unknown' : 'pull.state.' + pull.state)),
@@ -190,6 +218,16 @@ export function PullDetail(props) {
           h('span', { className: 'dgp-detail-title' }, t('pull.merge')),
           h('span', { className: 'dgp-detail-count' }, mergeableText)),
         h('div', { className: 'dgp-pull-actions' },
+          h('button', {
+            type: 'button',
+            className: 'dgp-btn',
+            'data-size': 'sm',
+            'data-variant': 'primary',
+            'data-dgp-pull': 'pass-all',
+            disabled: busy !== null,
+            title: t('pull.passAllHint'),
+            onClick: submitPass
+          }, t(caps.test === true ? 'pull.passAll' : 'pull.passReviewOnly')),
           caps.test === true
             ? h('button', {
               type: 'button',

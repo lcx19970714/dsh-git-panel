@@ -989,6 +989,20 @@ export const CSS = `
 
 /* PR 详情根容器：沿用 .dgp-detail 的排布，这里只补标题行更紧凑的间距 */
 .dgp-pull { gap: 8px; }
+/* PR 门禁状态：审查 / 测试 / 合并状态并排一行 */
+.dgp-gate { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dgp-gate-chip {
+  padding: 1px 7px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 18px;
+}
+.dgp-gate-chip[data-gate="review"][data-state="approved"],
+.dgp-gate-chip[data-gate="test"][data-state="passed"] { color: var(--dsw-alias-state-success-primary); }
+.dgp-gate-chip[data-gate="review"][data-state="changes-requested"] { color: var(--dsw-alias-state-error-primary); }
+.dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
 /* PR 详情：正文与操作区 */
 .dgp-pull-body {
   margin: 0;

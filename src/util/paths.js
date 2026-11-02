@@ -5,6 +5,30 @@
  * 约定：插件内部一切「仓库内相对路径」都是正斜杠、无前导斜杠。
  */
 
+const QUOTE_PAIRS = [
+  ['"', '"'],
+  ["'", "'"],
+  ['“', '”'],
+  ['‘', '’']
+]
+
+/**
+ * 去掉首尾成对的引号（只剥一对）。
+ *
+ * 典型输入来自资源管理器的「复制为路径」：`"H:\invitation-system-backend"`。
+ * 首尾不成对、或引号在中间时原样返回；纯空白返回空串。
+ */
+export function stripWrappingQuotes(value) {
+  const text = String(value === null || value === undefined ? '' : value).trim()
+  if (text.length < 2) return text
+  for (const [open, close] of QUOTE_PAIRS) {
+    if (text.startsWith(open) && text.endsWith(close)) {
+      return text.slice(open.length, text.length - close.length).trim()
+    }
+  }
+  return text
+}
+
 /** 取路径最后一段。 */
 export function basename(p) {
   if (!p) return ''

@@ -24,6 +24,7 @@ import { h, useState } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
 import { MenuItem, MenuLabel, PopupMenu } from '../ui/Menu.js'
 import { AddRootForm } from './AddRootForm.js'
+import { stripWrappingQuotes } from '../util/paths.js'
 
 export function RepoList(props) {
   const source = props === null || props === undefined ? {} : props
@@ -106,7 +107,7 @@ export function RepoList(props) {
   }
 
   const createBranch = (menu) => {
-    const name = menu.name.trim()
+    const name = stripWrappingQuotes(menu.name)
     if (name === '' || menu.creating === true || menu.switching !== null) return
     setBranchMenu({ ...menu, name, creating: true, error: null })
     Promise.resolve(source.onCreateBranch(menu.root, name))
@@ -132,7 +133,7 @@ export function RepoList(props) {
   }
 
   const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true || branchMenu.fetching === true)
-  const createName = branchMenu === null ? '' : branchMenu.name.trim()
+  const createName = branchMenu === null ? '' : stripWrappingQuotes(branchMenu.name)
   const branchMenuNode = branchMenu === null
     ? null
     : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 240 },

@@ -65,7 +65,7 @@ export const zh = {
   'root.addPlaceholder': '输入本机目录的绝对路径，例如 D:\\code\\my-repo',
   'root.addConfirm': '添加',
   'root.addCancel': '取消',
-  'root.addHint': '只识别这一个目录（它自己必须含 .git）：不向上找上级仓库，也不扫描它的子目录。',
+  'root.addHint': '只识别这一个目录（它自己必须含 .git）：不向上找上级仓库，也不扫描子目录。粘贴「复制为路径」带引号会自动去掉。',
 
   'branch.hint': '当前分支 {branch} · 点击切换或新建',
   'branch.title': '分支 · {name}',
@@ -355,7 +355,7 @@ export const en = {
   'root.addPlaceholder': 'Absolute path of a folder, e.g. D:\\code\\my-repo',
   'root.addConfirm': 'Add',
   'root.addCancel': 'Cancel',
-  'root.addHint': 'Only this folder is used (it must contain .git). No parent lookup, no scanning inside it.',
+  'root.addHint': 'Only this folder is used (it must contain .git). No parent lookup, no scanning inside it. Pasted quotes are stripped.',
 
   'branch.hint': 'On {branch} · click to switch or create',
   'branch.title': 'Branches · {name}',

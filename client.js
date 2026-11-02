@@ -1454,7 +1454,7 @@ window.__ModuleLoader__.load({
         'root.addPlaceholder': '输入本机目录的绝对路径，例如 D:\\code\\my-repo',
         'root.addConfirm': '添加',
         'root.addCancel': '取消',
-        'root.addHint': '只识别这一个目录（它自己必须含 .git）：不向上找上级仓库，也不扫描它的子目录。',
+        'root.addHint': '只识别这一个目录（它自己必须含 .git）：不向上找上级仓库，也不扫描子目录。粘贴「复制为路径」带引号会自动去掉。',
 
         'branch.hint': '当前分支 {branch} · 点击切换或新建',
         'branch.title': '分支 · {name}',
@@ -1744,7 +1744,7 @@ window.__ModuleLoader__.load({
         'root.addPlaceholder': 'Absolute path of a folder, e.g. D:\\code\\my-repo',
         'root.addConfirm': 'Add',
         'root.addCancel': 'Cancel',
-        'root.addHint': 'Only this folder is used (it must contain .git). No parent lookup, no scanning inside it.',
+        'root.addHint': 'Only this folder is used (it must contain .git). No parent lookup, no scanning inside it. Pasted quotes are stripped.',
 
         'branch.hint': 'On {branch} · click to switch or create',
         'branch.title': 'Branches · {name}',
@@ -4087,6 +4087,7 @@ window.__ModuleLoader__.load({
       const { Icon } = __m("./ui/Icon.js");
       const { MenuItem, MenuLabel, PopupMenu } = __m("./ui/Menu.js");
       const { AddRootForm } = __m("./components/AddRootForm.js");
+      const { stripWrappingQuotes } = __m("./util/paths.js");
 
       function RepoList(props) {
         const source = props === null || props === undefined ? {} : props
@@ -4169,7 +4170,7 @@ window.__ModuleLoader__.load({
         }
 
         const createBranch = (menu) => {
-          const name = menu.name.trim()
+          const name = stripWrappingQuotes(menu.name)
           if (name === '' || menu.creating === true || menu.switching !== null) return
           setBranchMenu({ ...menu, name, creating: true, error: null })
           Promise.resolve(source.onCreateBranch(menu.root, name))
@@ -4195,7 +4196,7 @@ window.__ModuleLoader__.load({
         }
 
         const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true || branchMenu.fetching === true)
-        const createName = branchMenu === null ? '' : branchMenu.name.trim()
+        const createName = branchMenu === null ? '' : stripWrappingQuotes(branchMenu.name)
         const branchMenuNode = branchMenu === null
           ? null
           : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 240 },
@@ -4427,6 +4428,7 @@ window.__ModuleLoader__.load({
        * 不向上找上级仓库、不向下扫描子仓库 —— 校验失败的原因就地显示。
        */
       const { h, useCallback, useState } = __m("./platform.js");
+      const { stripWrappingQuotes } = __m("./util/paths.js");
 
       function AddRootForm(props) {
         const source = props === null || props === undefined ? {} : props
@@ -4439,7 +4441,8 @@ window.__ModuleLoader__.load({
         const [submitting, setSubmitting] = useState(false)
 
         const submit = useCallback(async () => {
-          const dir = value.trim()
+          // 粘贴「复制为路径」会带引号，先剥掉再提交
+          const dir = stripWrappingQuotes(value)
           if (dir === '' || onAdd === null) return
           setSubmitting(true)
           setError(null)
@@ -4487,12 +4490,196 @@ window.__ModuleLoader__.load({
               className: 'dgp-btn',
               'data-size': 'sm',
               'data-variant': 'primary',
-              disabled: submitting || value.trim() === '',
+              'data-dgp-addform-confirm': 'true',
+              disabled: submitting || stripWrappingQuotes(value) === '',
               onClick: submit
             }, translate('root.addConfirm'))))
       }
 
       Object.assign(exports, { AddRootForm });
+
+    });
+    __define("./util/paths.js", (exports, module) => {
+      /**
+       * src/util/paths.js —— 纯路径/显示工具
+       *
+       * 全部纯函数，不依赖 react 或 DOM，可以直接在 Node 里单测。
+       * 约定：插件内部一切「仓库内相对路径」都是正斜杠、无前导斜杠。
+       */
+
+      const QUOTE_PAIRS = [
+        ['"', '"'],
+        ["'", "'"],
+        ['“', '”'],
+        ['‘', '’']
+      ]
+
+      /**
+       * 去掉首尾成对的引号（只剥一对）。
+       *
+       * 典型输入来自资源管理器的「复制为路径」：`"H:\invitation-system-backend"`。
+       * 首尾不成对、或引号在中间时原样返回；纯空白返回空串。
+       */
+      function stripWrappingQuotes(value) {
+        const text = String(value === null || value === undefined ? '' : value).trim()
+        if (text.length < 2) return text
+        for (const [open, close] of QUOTE_PAIRS) {
+          if (text.startsWith(open) && text.endsWith(close)) {
+            return text.slice(open.length, text.length - close.length).trim()
+          }
+        }
+        return text
+      }
+
+      /** 取路径最后一段。 */
+      function basename(p) {
+        if (!p) return ''
+        const clean = String(p).replace(/[\\/]+$/, '')
+        const parts = clean.split(/[\\/]/)
+        return parts[parts.length - 1] || ''
+      }
+
+      /** 取父路径（保留正斜杠）。 */
+      function dirname(p) {
+        if (!p) return ''
+        const clean = String(p).replace(/\\/g, '/').replace(/\/+$/, '')
+        const index = clean.lastIndexOf('/')
+        return index === -1 ? '' : clean.slice(0, index)
+      }
+
+
+      /** 拆成段数组。 */
+      function segments(p) {
+        return String(p || '').replace(/\\/g, '/').split('/').filter(Boolean)
+      }
+
+      /** 从根到该路径的祖先链（不含自身）：'a/b/c' -> ['a', 'a/b']。 */
+      function parentChain(relPath) {
+        const parts = segments(relPath)
+        const out = []
+        for (let i = 1; i < parts.length; i += 1) out.push(parts.slice(0, i).join('/'))
+        return out
+      }
+
+      /** 自然序、忽略大小写的比较。 */
+      function naturalCompare(a, b) {
+        return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' })
+      }
+
+      /**
+       * 把一串路径压成树，并把「只有一个目录子节点」的链折叠成 `a/b/c`。
+       *
+       * @param {Array<{path: string} & Record<string, any>>} entries
+       * @returns {{ nodes: TreeNode[], byPath: Map<string, TreeNode> }}
+       *
+       * TreeNode = {
+       *   name: string, path: string, type: 'dir'|'file',
+       *   children: TreeNode[], entry?: object, depth?: number
+       * }
+       */
+      function buildTree(entries) {
+        const root = { name: '', path: '', type: 'dir', children: [] }
+        const byPath = new Map()
+
+        for (const entry of entries) {
+          const parts = segments(entry.path)
+          if (parts.length === 0) continue
+          let cursor = root
+          for (let i = 0; i < parts.length - 1; i += 1) {
+            const name = parts[i]
+            const path = parts.slice(0, i + 1).join('/')
+            let next = cursor.children.find((child) => child.type === 'dir' && child.name === name)
+            if (next === undefined) {
+              next = { name, path, type: 'dir', children: [] }
+              cursor.children.push(next)
+              byPath.set(path, next)
+            }
+            cursor = next
+          }
+          const fileName = parts[parts.length - 1]
+          const filePath = parts.join('/')
+          const fileNode = { name: fileName, path: filePath, type: 'file', children: [], entry }
+          cursor.children.push(fileNode)
+          byPath.set(filePath, fileNode)
+        }
+
+        sortTree(root)
+        return { nodes: root.children, byPath }
+      }
+
+      function sortTree(node) {
+        node.children.sort((a, b) => {
+          if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
+          return naturalCompare(a.name, b.name)
+        })
+        for (const child of node.children) {
+          if (child.children.length > 0) sortTree(child)
+        }
+      }
+
+      /**
+       * 把单链目录折叠：'src/a/b'（每层只有一个目录子节点）显示成一行。
+       * @returns {{ displayName: string, node: TreeNode, chain: TreeNode[] }}
+       */
+      function compactChain(node) {
+        const chain = [node]
+        let cursor = node
+        while (
+          cursor.type === 'dir'
+          && cursor.children.length === 1
+          && cursor.children[0].type === 'dir'
+        ) {
+          cursor = cursor.children[0]
+          chain.push(cursor)
+        }
+        const displayName = chain.map((item) => item.name).join('/')
+        return { displayName, node: cursor, chain }
+      }
+
+      /** 扁平化树为渲染行（含每个节点的展开状态）。 */
+      function flattenTree(nodes, isExpanded, depth = 0, out = []) {
+        for (const node of nodes) {
+          if (node.type === 'dir') {
+            const { displayName, node: last, chain } = compactChain(node)
+            out.push({ kind: 'dir', node: last, chain, displayName, path: last.path, depth })
+            if (isExpanded(last.path)) flattenTree(last.children, isExpanded, depth + 1, out)
+          } else {
+            out.push({ kind: 'file', node, displayName: node.name, path: node.path, depth })
+          }
+        }
+        return out
+      }
+
+      /** 收集树上所有目录路径（用于「全部折叠/展开」与自动展开到选中项）。 */
+      function collectDirPaths(nodes, out = []) {
+        for (const node of nodes) {
+          if (node.type !== 'dir') continue
+          const { node: last } = compactChain(node)
+          out.push(last.path)
+          collectDirPaths(last.children, out)
+        }
+        return out
+      }
+
+      /** 过滤：命中文件名或完整路径（不区分大小写）。 */
+      function matchesFilter(relPath, filter) {
+        if (!filter) return true
+        const needle = String(filter).toLowerCase().trim()
+        if (needle === '') return true
+        return String(relPath).toLowerCase().includes(needle)
+      }
+
+
+      /** 数字格式化：1234 -> 1.2k。 */
+      function formatCount(value) {
+        const n = Number(value) || 0
+        if (n < 1000) return String(n)
+        if (n < 10_000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
+        return Math.round(n / 1000) + 'k'
+      }
+
+
+      Object.assign(exports, { stripWrappingQuotes, basename, dirname, segments, parentChain, naturalCompare, buildTree, compactChain, flattenTree, collectDirPaths, matchesFilter, formatCount });
 
     });
     __define("./components/ChangesList.js", (exports, module) => {
@@ -4962,165 +5149,6 @@ window.__ModuleLoader__.load({
       }
 
       Object.assign(exports, { ChangesList });
-
-    });
-    __define("./util/paths.js", (exports, module) => {
-      /**
-       * src/util/paths.js —— 纯路径/显示工具
-       *
-       * 全部纯函数，不依赖 react 或 DOM，可以直接在 Node 里单测。
-       * 约定：插件内部一切「仓库内相对路径」都是正斜杠、无前导斜杠。
-       */
-
-      /** 取路径最后一段。 */
-      function basename(p) {
-        if (!p) return ''
-        const clean = String(p).replace(/[\\/]+$/, '')
-        const parts = clean.split(/[\\/]/)
-        return parts[parts.length - 1] || ''
-      }
-
-      /** 取父路径（保留正斜杠）。 */
-      function dirname(p) {
-        if (!p) return ''
-        const clean = String(p).replace(/\\/g, '/').replace(/\/+$/, '')
-        const index = clean.lastIndexOf('/')
-        return index === -1 ? '' : clean.slice(0, index)
-      }
-
-
-      /** 拆成段数组。 */
-      function segments(p) {
-        return String(p || '').replace(/\\/g, '/').split('/').filter(Boolean)
-      }
-
-      /** 从根到该路径的祖先链（不含自身）：'a/b/c' -> ['a', 'a/b']。 */
-      function parentChain(relPath) {
-        const parts = segments(relPath)
-        const out = []
-        for (let i = 1; i < parts.length; i += 1) out.push(parts.slice(0, i).join('/'))
-        return out
-      }
-
-      /** 自然序、忽略大小写的比较。 */
-      function naturalCompare(a, b) {
-        return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' })
-      }
-
-      /**
-       * 把一串路径压成树，并把「只有一个目录子节点」的链折叠成 `a/b/c`。
-       *
-       * @param {Array<{path: string} & Record<string, any>>} entries
-       * @returns {{ nodes: TreeNode[], byPath: Map<string, TreeNode> }}
-       *
-       * TreeNode = {
-       *   name: string, path: string, type: 'dir'|'file',
-       *   children: TreeNode[], entry?: object, depth?: number
-       * }
-       */
-      function buildTree(entries) {
-        const root = { name: '', path: '', type: 'dir', children: [] }
-        const byPath = new Map()
-
-        for (const entry of entries) {
-          const parts = segments(entry.path)
-          if (parts.length === 0) continue
-          let cursor = root
-          for (let i = 0; i < parts.length - 1; i += 1) {
-            const name = parts[i]
-            const path = parts.slice(0, i + 1).join('/')
-            let next = cursor.children.find((child) => child.type === 'dir' && child.name === name)
-            if (next === undefined) {
-              next = { name, path, type: 'dir', children: [] }
-              cursor.children.push(next)
-              byPath.set(path, next)
-            }
-            cursor = next
-          }
-          const fileName = parts[parts.length - 1]
-          const filePath = parts.join('/')
-          const fileNode = { name: fileName, path: filePath, type: 'file', children: [], entry }
-          cursor.children.push(fileNode)
-          byPath.set(filePath, fileNode)
-        }
-
-        sortTree(root)
-        return { nodes: root.children, byPath }
-      }
-
-      function sortTree(node) {
-        node.children.sort((a, b) => {
-          if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
-          return naturalCompare(a.name, b.name)
-        })
-        for (const child of node.children) {
-          if (child.children.length > 0) sortTree(child)
-        }
-      }
-
-      /**
-       * 把单链目录折叠：'src/a/b'（每层只有一个目录子节点）显示成一行。
-       * @returns {{ displayName: string, node: TreeNode, chain: TreeNode[] }}
-       */
-      function compactChain(node) {
-        const chain = [node]
-        let cursor = node
-        while (
-          cursor.type === 'dir'
-          && cursor.children.length === 1
-          && cursor.children[0].type === 'dir'
-        ) {
-          cursor = cursor.children[0]
-          chain.push(cursor)
-        }
-        const displayName = chain.map((item) => item.name).join('/')
-        return { displayName, node: cursor, chain }
-      }
-
-      /** 扁平化树为渲染行（含每个节点的展开状态）。 */
-      function flattenTree(nodes, isExpanded, depth = 0, out = []) {
-        for (const node of nodes) {
-          if (node.type === 'dir') {
-            const { displayName, node: last, chain } = compactChain(node)
-            out.push({ kind: 'dir', node: last, chain, displayName, path: last.path, depth })
-            if (isExpanded(last.path)) flattenTree(last.children, isExpanded, depth + 1, out)
-          } else {
-            out.push({ kind: 'file', node, displayName: node.name, path: node.path, depth })
-          }
-        }
-        return out
-      }
-
-      /** 收集树上所有目录路径（用于「全部折叠/展开」与自动展开到选中项）。 */
-      function collectDirPaths(nodes, out = []) {
-        for (const node of nodes) {
-          if (node.type !== 'dir') continue
-          const { node: last } = compactChain(node)
-          out.push(last.path)
-          collectDirPaths(last.children, out)
-        }
-        return out
-      }
-
-      /** 过滤：命中文件名或完整路径（不区分大小写）。 */
-      function matchesFilter(relPath, filter) {
-        if (!filter) return true
-        const needle = String(filter).toLowerCase().trim()
-        if (needle === '') return true
-        return String(relPath).toLowerCase().includes(needle)
-      }
-
-
-      /** 数字格式化：1234 -> 1.2k。 */
-      function formatCount(value) {
-        const n = Number(value) || 0
-        if (n < 1000) return String(n)
-        if (n < 10_000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
-        return Math.round(n / 1000) + 'k'
-      }
-
-
-      Object.assign(exports, { basename, dirname, segments, parentChain, naturalCompare, buildTree, compactChain, flattenTree, collectDirPaths, matchesFilter, formatCount });
 
     });
     __define("./util/changes.js", (exports, module) => {

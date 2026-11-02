@@ -5,6 +5,7 @@
  * 不向上找上级仓库、不向下扫描子仓库 —— 校验失败的原因就地显示。
  */
 import { h, useCallback, useState } from '../platform.js'
+import { stripWrappingQuotes } from '../util/paths.js'
 
 export function AddRootForm(props) {
   const source = props === null || props === undefined ? {} : props
@@ -17,7 +18,8 @@ export function AddRootForm(props) {
   const [submitting, setSubmitting] = useState(false)
 
   const submit = useCallback(async () => {
-    const dir = value.trim()
+    // 粘贴「复制为路径」会带引号，先剥掉再提交
+    const dir = stripWrappingQuotes(value)
     if (dir === '' || onAdd === null) return
     setSubmitting(true)
     setError(null)
@@ -65,7 +67,8 @@ export function AddRootForm(props) {
         className: 'dgp-btn',
         'data-size': 'sm',
         'data-variant': 'primary',
-        disabled: submitting || value.trim() === '',
+        'data-dgp-addform-confirm': 'true',
+        disabled: submitting || stripWrappingQuotes(value) === '',
         onClick: submit
       }, translate('root.addConfirm'))))
 }

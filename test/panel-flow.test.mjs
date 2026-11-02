@@ -2291,6 +2291,58 @@ test('用例 1O：分支菜单区分本地与仅远程，可跟踪远程分支�
   })
 })
 
+test('用例 1P：粘贴带引号的路径/分支名会自动去掉引号', async () => {
+  const addedRoots = []
+  const createdBranches = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'roots/add': (payload) => {
+        addedRoots.push(payload)
+        return resolveOk([ROOT], PROJECT)
+      },
+      'branches/list': () => sayOk({
+        branches: [{ name: 'main', kind: 'local', current: true, hasRemote: false, ahead: 0, behind: 0 }]
+      }),
+      'branch/create': (payload) => {
+        createdBranches.push(payload)
+        return sayOk({ branch: payload.name, head: 'aaa1111' })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    // 1) 储存库的 + 里粘贴 Windows「复制为路径」的结果：带引号
+    click(panel.one((node) => isHost(node) && attr(node, 'data-action') === 'add-root'))
+    await panel.flush()
+    let addForm = panel.one((node) => isHost(node) && attr(node, 'data-dgp-addform') !== undefined)
+    assert(addForm !== null, '应展开添加表单')
+    findOne(addForm, (node) => isHost(node) && node.type === 'input')
+      .props.onChange({ target: { value: '"H:\\invitation-system-backend"' } })
+    await panel.flush()
+    addForm = panel.one((node) => isHost(node) && attr(node, 'data-dgp-addform') !== undefined)
+    const confirm = findOne(addForm, (node) => isHost(node) && attr(node, 'data-dgp-addform-confirm') !== undefined)
+    assert(confirm !== null, '应有添加按钮')
+    click(confirm)
+    await panel.flush()
+    eq(addedRoots.length, 1, '应提交一次 roots/add')
+    eq(addedRoots[0].path, 'H:\\invitation-system-backend', '引号必须被去掉')
+
+    // 2) 分支菜单底部新建分支，名字同样粘贴带引号
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined))
+    await panel.flush()
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-name') !== undefined)
+      .props.onChange({ target: { value: '"feature/from-clipboard"' } })
+    await panel.flush()
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-create') !== undefined)
+      .props.onSubmit({ preventDefault() {} })
+    await panel.flush()
+    eq(createdBranches.length, 1, '应创建分支一次')
+    eq(createdBranches[0].name, 'feature/from-clipboard', '分支名的引号也要去掉')
+  })
+})
+
 test('用例 1H：浏览器拦截新窗口时，把令牌页地址原样显示出来', async () => {
   await withPanel({
     routes: {

@@ -3,6 +3,7 @@
  * 运行：node test/paths.test.mjs
  */
 import {
+  stripWrappingQuotes,
   basename,
   dirname,
   segments,
@@ -140,6 +141,16 @@ test('formatCount', () => {
   eq(formatCount(12000), '12k')
 })
 
+
+test('stripWrappingQuotes：剥掉「复制为路径」带的首尾引号', () => {
+  eq(stripWrappingQuotes('"H:\\invitation-system-backend"'), 'H:\\invitation-system-backend')
+  eq(stripWrappingQuotes('  "H:\\x"  '), 'H:\\x', '两侧空白也要去掉')
+  eq(stripWrappingQuotes("'abc'"), 'abc')
+  eq(stripWrappingQuotes('\u201CH:\\y\u201D'), 'H:\\y', '全角引号同样处理')
+  eq(stripWrappingQuotes('no-quotes'), 'no-quotes')
+  eq(stripWrappingQuotes('"unbalanced'), '"unbalanced', '不成对时原样返回')
+  eq(stripWrappingQuotes(''), '')
+})
 
 console.log('')
 if (failures.length > 0) {

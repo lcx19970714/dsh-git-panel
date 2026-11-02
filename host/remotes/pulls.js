@@ -164,14 +164,15 @@ export function createPulls(deps) {
     const fullName = requireFullName(input.fullName)
     const number = requirePullNumber(input.number)
     const headers = provider.headers(account.token)
-    const base = provider.apiBase + provider.repoPath(fullName) + provider.pullPath(number)
+    // filesPath 自带 /pulls/{n}/files，所以这里只拼到 repoPath，不能再带 pullPath
+    const repoBase = provider.apiBase + provider.repoPath(fullName)
     const PAGE_SIZE = 50
     const MAX_PAGES = 6
 
     const files = []
     let truncated = false
     for (let page = 1; page <= MAX_PAGES; page += 1) {
-      const url = provider.authorize(base + provider.filesPath(number) + '?per_page=' + PAGE_SIZE + '&page=' + page, account.token)
+      const url = provider.authorize(repoBase + provider.filesPath(number) + '?per_page=' + PAGE_SIZE + '&page=' + page, account.token)
       const response = await request(fetchImpl, url, { headers }, options.signal)
       const listed = await readArray(response, 'PR 文件列表')
       for (const item of listed) {

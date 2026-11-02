@@ -637,15 +637,15 @@ await test('PR 文件 diff：按页取满、带 patch；Gitee 与 GitHub 都走 
     [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
     [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
     // 每页必须是 50：GitHub 在 per_page>70 时会让第 70 个之后的文件丢 patch
-    [/\/pulls\/7\/files\?per_page=50&page=1$/, (url) => {
+    [/^https:\/\/api\.github\.com\/repos\/alice\/app\/pulls\/7\/files\?per_page=50&page=1$/, (url) => {
       seen.push(url)
       return { json: files(100) }
     }],
-    [/\/pulls\/7\/files\?per_page=50&page=2$/, (url) => {
+    [/^https:\/\/api\.github\.com\/repos\/alice\/app\/pulls\/7\/files\?per_page=50&page=2$/, (url) => {
       seen.push(url)
       return { json: files(2) }
     }],
-    [/\/pulls\/7\/files\?per_page=50&page=3$/, (url) => {
+    [/^https:\/\/api\.github\.com\/repos\/alice\/app\/pulls\/7\/files\?per_page=50&page=3$/, (url) => {
       seen.push(url)
       return { json: files(0) }
     }]
@@ -660,13 +660,33 @@ await test('PR 文件 diff：按页取满、带 patch；Gitee 与 GitHub 都走 
   assert.equal(diff.files[0].patchAvailable, true)
   assert.equal(diff.files[0].status, 'modified')
   assert.equal(seen.length, 2, '第二页不满 50 就停止，不再请求第三页')
+  assert.equal(seen[0], 'https://api.github.com/repos/alice/app/pulls/7/files?per_page=50&page=1', '取 diff 的 URL 不能双拼 /pulls/{n}')
+})
+
+await test('PR 文件 diff：Gitee 的路径同样不能双拼 /pulls/{n}（带 access_token）', async () => {
+  const credentials = fakeCredentials()
+  const seen = []
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/^https:\/\/gitee\.com\/api\/v5\/repos\/bob\/tool\/pulls\/4\/files\?per_page=50&page=1&access_token=/, (url) => {
+      seen.push(url)
+      return { json: [] }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+
+  await remotes.pullDiff({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 4 })
+  assert.equal(seen.length, 1, '应只请求一次 files')
+  assert.ok(seen[0].startsWith('https://gitee.com/api/v5/repos/bob/tool/pulls/4/files?'), '路径：' + seen[0])
+  assert.ok(!seen[0].includes('/pulls/4/pulls/4'), '不能出现双拼路径')
 })
 
 await test('PR 文件 diff：平台没给 patch 的文件标 patchAvailable=false 并带上改动量', async () => {
   const credentials = fakeCredentials()
   const fetchImpl = fakeFetch([
     [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
-    [/\/pulls\/8\/files\?per_page=50&page=1$/, {
+    [/^https:\/\/api\.github\.com\/repos\/alice\/app\/pulls\/8\/files\?per_page=50&page=1$/, {
       json: [
         { filename: 'assets/logo.png', status: 'added', additions: 0, deletions: 0, changes: 0 },
         { filename: 'src/big.js', status: 'modified', additions: 900, deletions: 400, changes: 1300 }

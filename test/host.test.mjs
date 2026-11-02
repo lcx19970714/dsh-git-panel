@@ -1182,19 +1182,20 @@ test('branches/list：区分本地 / 仅远程 / 两边都有，并给出 ahead-
 
   const listed = await callOk('branches/list', { rootPath: dir })
   const main = listed.branches.find((branch) => branch.name === 'main')
-  assert.equal(main.kind, 'local')
+  assert.equal(main.local, true)
   assert.equal(main.current, true, '当前分支')
-  assert.equal(main.hasRemote, true, 'origin 有同名分支')
+  assert.equal(main.remote, 'origin', 'origin 有同名分支')
   assert.equal(main.upstream, 'origin/main')
   assert.equal(main.ahead, 1, '领先 1 个提交')
   assert.equal(main.behind, 0)
 
   const localOnly = listed.branches.find((branch) => branch.name === 'local-only')
-  assert.equal(localOnly.kind, 'local')
-  assert.equal(localOnly.hasRemote, false, '远端没有同名分支 → 仅本地')
+  assert.equal(localOnly.local, true)
+  assert.equal(localOnly.remote, null, '远端没有同名分支 → 远程标志是暗的')
 
-  const remoteOnly = listed.branches.filter((branch) => branch.kind === 'remote')
-  assert.deepEqual(remoteOnly.map((branch) => branch.ref), ['origin/remote-only'], '仅远程的分支')
+  const remoteOnly = listed.branches.filter((branch) => branch.local === false)
+  assert.deepEqual(remoteOnly.map((branch) => branch.name), ['remote-only'], '只有远程的分支')
+  assert.equal(remoteOnly[0].remote, 'origin')
   assert.equal(listed.current, 'main')
 })
 
@@ -1214,10 +1215,11 @@ test('branches/track：把仅远程的分支建成本地跟踪分支；同名已
   assert.equal(tracked.upstream, 'origin/feature/x', '并建立跟踪关系')
 
   const listed = await callOk('branches/list', { rootPath: dir })
-  const local = listed.branches.find((branch) => branch.name === 'feature/x' && branch.kind === 'local')
+  const local = listed.branches.find((branch) => branch.name === 'feature/x' && branch.local === true)
   assert.ok(local, '本地分支应出现')
   assert.equal(local.current, true)
-  assert.equal(listed.branches.some((branch) => branch.kind === 'remote'), false, '都建成本地了，仅远程区应清空')
+  assert.equal(local.remote, 'origin', '本地有了，远程标志也应是亮的')
+  assert.equal(listed.branches.some((branch) => branch.local === false), false, '都建成本地了，就不该再有「只有远程」的行')
 
   const again = await callRoute('branch/track', { rootPath: dir, remote: 'origin', name: 'feature/x' })
   assert.equal(again.ok, false)

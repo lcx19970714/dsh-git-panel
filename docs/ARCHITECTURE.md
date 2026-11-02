@@ -192,7 +192,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 | `file/write` | `{rootPath, path, text, expectedHash, eol, bom}` 或 `{…, force:true}` | `{size, mtimeMs, hash}`；哈希不匹配 → `conflict` |
 | `index/stage` | `{rootPath, path, action}` | `{path, action}`；`stage` = `git add --`，`unstage` = `git restore --staged --` |
 | `index/stage-group` | `{rootPath, scope}` | `{scope}`；整组暂存 / 取消暂存 |
-| `branches/list` | `{rootPath}` | `{branches, current}`；一次 for-each-ref 同时给出 refs/heads 与 refs/remotes：每条含 name / kind（local 或 remote）/ current / upstream / ahead / behind / hasRemote / remote / ref；跳过 origin/HEAD 这类符号引用 |
+| `branches/list` | `{rootPath}` | `{branches, current}`；一次 for-each-ref 同时读 refs/heads 与 refs/remotes，按分支名合成一条：`{name, local, current, remote, upstream, ahead, behind, upstreamGone}`（`remote` 是远程名或 null，`local:false` 表示只有远程）；跳过 origin/HEAD 这类符号引用 |
 | `branch/track` | `{rootPath, remote, name}` | `{branch, head, upstream}`；`git switch -c <name> --track <remote>/<name>`，本地同名分支已存在报 `branch-exists` |
 | `branch/switch` | `{rootPath, name}` | `{branch, head}`；`git switch`，工作区怎么处理由 git 决定 |
 | `branch/create` | `{rootPath, name}` | `{branch, head}`；从当前 HEAD `git switch -c`，已存在或名字不合法时拒绝，不覆盖已有分支 |

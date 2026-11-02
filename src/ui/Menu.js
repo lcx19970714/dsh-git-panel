@@ -82,7 +82,7 @@ export function PopupMenu(props) {
 
 /** 菜单项。 */
 export function MenuItem(props) {
-  const { icon, label, sub, checked, disabled, onClick, danger, dataKey } = props
+  const { icon, label, sub, checked, disabled, onClick, danger, dataKey, badges } = props
   const left = checked === undefined
     ? (icon === undefined ? null : h(Icon, { name: icon, size: 14 }))
     : h('span', { className: 'dgp-menu-check', style: { width: 14, display: 'flex' } },
@@ -95,7 +95,7 @@ export function MenuItem(props) {
     'data-menu-key': dataKey === undefined ? undefined : dataKey,
     'data-danger': danger === true ? 'true' : undefined,
     disabled: disabled === true,
-    title: label,
+    title: props.title === undefined ? label : props.title,
     onClick: (event) => {
       event.preventDefault()
       event.stopPropagation()
@@ -104,6 +104,14 @@ export function MenuItem(props) {
   },
   left,
   h('span', { className: 'dgp-menu-item-main' }, label),
+  // 分支这类条目用两个小标签表示「本地有 / 远程有」：亮 = 有，暗 = 没有
+  Array.isArray(badges) && badges.length > 0
+    ? h('span', { className: 'dgp-menu-badges' }, badges.map((badge) => h('span', {
+      key: badge.label,
+      className: 'dgp-menu-badge',
+      'data-active': badge.active === true ? 'true' : 'false'
+    }, badge.label)))
+    : null,
   sub === undefined || sub === null ? null : h('span', { className: 'dgp-menu-item-sub' }, sub))
 }
 

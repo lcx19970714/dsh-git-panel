@@ -424,6 +424,23 @@ window.__ModuleLoader__.load({
       }
       .dgp-repo-branch:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
       .dgp-repo-branch:focus-visible { outline: none; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+      /* 分支条目：本地 / 远程 两个小标签，亮 = 有，暗 = 没有 */
+      .dgp-menu-badges { display: inline-flex; gap: 4px; flex: none; }
+      .dgp-menu-badge {
+        padding: 0 5px;
+        border-radius: var(--dsw-radius-xs);
+        font-size: 10px;
+        line-height: 15px;
+        color: var(--dsw-alias-label-tertiary);
+        background: transparent;
+        border: 1px solid var(--dsw-alias-border-l1);
+      }
+      .dgp-menu-badge[data-active="true"] {
+        color: var(--dsw-alias-label-primary);
+        border-color: var(--dsw-alias-label-secondary);
+        background: var(--dsw-alias-bg-module-platform);
+      }
+
       /* 分支菜单底部：输入名字后创建并切过去 */
       .dgp-branch-create {
         display: flex;
@@ -1459,12 +1476,11 @@ window.__ModuleLoader__.load({
         'branch.hint': '当前分支 {branch} · 点击切换或新建',
         'branch.title': '分支 · {name}',
         'branch.loading': '正在读取分支…',
+        'branch.localTag': '本地',
+        'branch.remoteTag': '远程',
+        'branch.trackHint': '本地还没有这个分支，点一下会创建 {ref} 的本地跟踪分支并切换',
         'branch.fetch': '获取远程更新',
         'branch.fetching': '正在获取远程更新…',
-        'branch.localSection': '本地分支',
-        'branch.remoteSection': '仅远程存在',
-        'branch.onlyLocal': '仅本地',
-        'branch.onlyRemote': '仅远程 · 点击创建本地分支',
         'branch.upstreamGone': '上游已删除',
         'branch.empty': '这个仓库还没有任何分支',
         'branch.switching': '正在切换到 {name}…',
@@ -1749,12 +1765,11 @@ window.__ModuleLoader__.load({
         'branch.hint': 'On {branch} · click to switch or create',
         'branch.title': 'Branches · {name}',
         'branch.loading': 'Loading branches…',
+        'branch.localTag': 'local',
+        'branch.remoteTag': 'remote',
+        'branch.trackHint': 'No local branch yet — clicking creates a local tracking branch for {ref}',
         'branch.fetch': 'Fetch remote updates',
         'branch.fetching': 'Fetching…',
-        'branch.localSection': 'Local branches',
-        'branch.remoteSection': 'Remote only',
-        'branch.onlyLocal': 'local only',
-        'branch.onlyRemote': 'remote only · click to create a local branch',
         'branch.upstreamGone': 'upstream gone',
         'branch.empty': 'This repository has no branches yet',
         'branch.switching': 'Switching to {name}…',
@@ -4022,7 +4037,7 @@ window.__ModuleLoader__.load({
 
       /** 菜单项。 */
       function MenuItem(props) {
-        const { icon, label, sub, checked, disabled, onClick, danger, dataKey } = props
+        const { icon, label, sub, checked, disabled, onClick, danger, dataKey, badges } = props
         const left = checked === undefined
           ? (icon === undefined ? null : h(Icon, { name: icon, size: 14 }))
           : h('span', { className: 'dgp-menu-check', style: { width: 14, display: 'flex' } },
@@ -4035,7 +4050,7 @@ window.__ModuleLoader__.load({
           'data-menu-key': dataKey === undefined ? undefined : dataKey,
           'data-danger': danger === true ? 'true' : undefined,
           disabled: disabled === true,
-          title: label,
+          title: props.title === undefined ? label : props.title,
           onClick: (event) => {
             event.preventDefault()
             event.stopPropagation()
@@ -4044,6 +4059,14 @@ window.__ModuleLoader__.load({
         },
         left,
         h('span', { className: 'dgp-menu-item-main' }, label),
+        // 分支这类条目用两个小标签表示「本地有 / 远程有」：亮 = 有，暗 = 没有
+        Array.isArray(badges) && badges.length > 0
+          ? h('span', { className: 'dgp-menu-badges' }, badges.map((badge) => h('span', {
+            key: badge.label,
+            className: 'dgp-menu-badge',
+            'data-active': badge.active === true ? 'true' : 'false'
+          }, badge.label)))
+          : null,
         sub === undefined || sub === null ? null : h('span', { className: 'dgp-menu-item-sub' }, sub))
       }
 
@@ -4183,17 +4206,18 @@ window.__ModuleLoader__.load({
         }
 
         const menuBranches = branchMenu === null ? [] : branchMenu.list
-        const localBranches = menuBranches.filter((branch) => branch.kind === 'local')
-        const remoteOnly = menuBranches.filter((branch) => branch.kind === 'remote')
-        /** 副标题：仅本地 / 有远程 / ↑n ↓m / upstream 已删除 */
+        /** 副标题只留会变化的信息：↑n ↓m，或上游被删 */
         const branchMeta = (branch) => {
           const parts = []
-          if (branch.hasRemote !== true) parts.push(translate('branch.onlyLocal'))
           if (branch.upstreamGone === true) parts.push(translate('branch.upstreamGone'))
           if (typeof branch.ahead === 'number' && branch.ahead > 0) parts.push('↑' + branch.ahead)
           if (typeof branch.behind === 'number' && branch.behind > 0) parts.push('↓' + branch.behind)
           return parts.join(' ')
         }
+        const branchBadges = (branch) => [
+          { label: translate('branch.localTag'), active: branch.local === true },
+          { label: translate('branch.remoteTag'), active: branch.remote !== null && branch.remote !== undefined }
+        ]
 
         const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true || branchMenu.fetching === true)
         const createName = branchMenu === null ? '' : stripWrappingQuotes(branchMenu.name)
@@ -4210,28 +4234,21 @@ window.__ModuleLoader__.load({
             }),
             h('div', { className: 'dgp-menu-sep', role: 'separator' }),
             branchMenu.loading ? h(MenuLabel, null, translate('branch.loading')) : null,
-            localBranches.length === 0 ? null : h(MenuLabel, null, translate('branch.localSection')),
-            localBranches.map((branch) => h(MenuItem, {
-              key: 'local:' + branch.name,
+            menuBranches.map((branch) => h(MenuItem, {
+              key: branch.name,
               label: branch.name,
-              // 仅本地 / 有远程 / 落后领先 都在副标题里说清楚
+              badges: branchBadges(branch),
               sub: branchMeta(branch),
               checked: branch.current,
               disabled: menuBusy,
-              dataKey: 'local:' + branch.name,
+              dataKey: 'branch:' + branch.name,
+              // 只有远程的行：点一下在本地创建并切过去（不写长文案，放 title 里）
+              title: branch.local !== true ? translate('branch.trackHint', { ref: branch.remote + '/' + branch.name }) : undefined,
               onClick: () => {
                 if (branch.current) closeBranches()
-                else chooseBranch(branchMenu, branch.name)
+                else if (branch.local === true) chooseBranch(branchMenu, branch.name)
+                else trackBranch(branchMenu, branch)
               }
-            })),
-            remoteOnly.length === 0 ? null : h(MenuLabel, null, translate('branch.remoteSection')),
-            remoteOnly.map((branch) => h(MenuItem, {
-              key: 'remote:' + branch.ref,
-              label: branch.ref,
-              sub: translate('branch.onlyRemote'),
-              disabled: menuBusy,
-              dataKey: 'remote:' + branch.ref,
-              onClick: () => trackBranch(branchMenu, branch)
             })),
             branchMenu.list.length === 0 && branchMenu.loading !== true
               ? h(MenuLabel, null, translate('branch.empty'))

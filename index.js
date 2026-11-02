@@ -109,6 +109,7 @@ export const ENDPOINTS = Object.freeze([
   'remote/detail',
   'remote/pull',
   'remote/pull/review',
+  'remote/pull/test',
   'remote/pull/merge',
   'remote/clone',
   'commit',
@@ -500,6 +501,14 @@ function createDispatcher(ctx) {
     }, { signal })
   }
 
+  async function remotePullTest(request, signal) {
+    return remotesOf().testPull({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullName: requireString(request.fullName, 'fullName'),
+      number: request.number
+    }, { signal })
+  }
+
   async function remotePullMerge(request, signal) {
     return remotesOf().mergePull({
       accountId: requireString(request.accountId, 'accountId'),
@@ -678,6 +687,8 @@ function createDispatcher(ctx) {
         return remotePull(request, signal)
       case 'remote/pull/review':
         return remotePullReview(request, signal)
+      case 'remote/pull/test':
+        return remotePullTest(request, signal)
       case 'remote/pull/merge':
         return remotePullMerge(request, signal)
       case 'remote/clone':

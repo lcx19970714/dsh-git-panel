@@ -915,6 +915,17 @@ export function Panel(props) {
     }
   }, [loadPullDetail])
 
+  /** 标记测试通过（Gitee 的合并门禁）：成功后重读详情，让合并按钮可用。 */
+  const testPull = useCallback(async (input) => {
+    try {
+      await api.remotePullTest(input)
+      await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+      return { ok: true, message: tRef.current('pull.testDone') }
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current) }
+    }
+  }, [loadPullDetail])
+
   const mergePull = useCallback(async (input) => {
     try {
       const result = await api.remotePullMerge(input)
@@ -1430,6 +1441,7 @@ function buildUpdateNote(updateState, t) {
       onBack: closePull,
       onRetry: () => loadPullDetail(openPull),
       onReview: reviewPull,
+      onTest: testPull,
       onMerge: mergePull,
       onChanged: () => loadPullDetail(openPull),
       onOpenUrl: openExternal,

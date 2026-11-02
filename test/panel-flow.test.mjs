@@ -1986,6 +1986,77 @@ test('用例 1K：点开 PR 能看详情并在面板里审查、合并', async (
   })
 })
 
+test('用例 1L：Gitee 的 PR 可以标记测试通过（合并门禁）', async () => {
+  const tests = []
+  let pullReads = 0
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'gitee:bob', provider: 'gitee', login: 'bob', label: 'Gitee 号', providerLabel: 'Gitee' }],
+        providers: [{ id: 'gitee', label: 'Gitee', tokenUrl: 'https://gitee.com/profile/personal_access_tokens' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'bob/tool', name: 'tool', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'master',
+          htmlUrl: 'https://gitee.com/bob/tool', cloneUrl: 'https://gitee.com/bob/tool.git',
+          provider: 'gitee', accountId: 'gitee:bob'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: {
+          fullName: 'bob/tool', description: '', language: 'Go', private: false, defaultBranch: 'master',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://gitee.com/bob/tool',
+          issuesUrl: 'https://gitee.com/bob/tool/issues', pullsUrl: 'https://gitee.com/bob/tool/pulls'
+        },
+        issues: { total: 0, items: [] },
+        pulls: { total: 1, items: [{ number: 2, title: 'Fix thing', url: 'https://gitee.com/bob/tool/pulls/2', author: 'bob', comments: 0, createdAt: '' }] },
+        failures: []
+      }),
+      'remote/pull': (payload) => {
+        pullReads += 1
+        return sayOk({
+          pull: {
+            number: payload.number, title: 'Fix thing', body: '', state: 'open', draft: false,
+            merged: false, mergeable: true, author: 'bob', baseBranch: 'master', headBranch: 'dev',
+            additions: 0, deletions: 0, changedFiles: 0, commits: 1, statsComplete: false,
+            createdAt: '', updatedAt: '', htmlUrl: 'https://gitee.com/bob/tool/pulls/2'
+          },
+          reviews: [],
+          capabilities: { verdicts: ['approve'], reviews: false, mergeMethods: ['merge', 'squash'], deleteBranch: true, test: true }
+        })
+      },
+      'remote/pull/test': (payload) => {
+        tests.push(payload)
+        return sayOk({ tested: true })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+
+    const gate = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'test-gate')
+    assert(gate !== null, 'Gitee 的 PR 应有「标记测试通过」按钮')
+    const before = pullReads
+    click(gate)
+    await panel.flush()
+
+    eq(tests.length, 1, '应调用一次 remote/pull/test')
+    eq(tests[0], { accountId: 'gitee:bob', fullName: 'bob/tool', number: 2 }, '载荷')
+    assert(pullReads > before, '操作后应刷新 PR 详情')
+    const notice = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'notice')
+    assert(notice !== null, '成功应有提示')
+    assert(textOf(notice).includes('测试通过'), '提示文案：' + textOf(notice))
+  })
+})
+
 test('用例 1H：浏览器拦截新窗口时，把令牌页地址原样显示出来', async () => {
   await withPanel({
     routes: {

@@ -1423,6 +1423,9 @@ window.__ModuleLoader__.load({
         'pull.method.squash': '压缩为一个提交',
         'pull.method.rebase': '变基合并',
         'pull.deleteBranch': '合并后删除分支 {branch}',
+        'pull.testRun': '标记测试通过',
+        'pull.testHint': '部分仓库要求 PR 测试通过才允许合并',
+        'pull.testDone': '已标记测试通过',
         'pull.mergeRun': '合并 PR',
         'pull.merging': '正在合并…',
         'pull.working': '正在提交…',
@@ -1681,6 +1684,9 @@ window.__ModuleLoader__.load({
         'pull.method.squash': 'Squash and merge',
         'pull.method.rebase': 'Rebase and merge',
         'pull.deleteBranch': 'Delete branch {branch} after merging',
+        'pull.testRun': 'Mark tested',
+        'pull.testHint': 'Some repositories require a passed test before merging',
+        'pull.testDone': 'Marked as tested',
         'pull.mergeRun': 'Merge pull request',
         'pull.merging': 'Merging…',
         'pull.working': 'Submitting…',
@@ -2800,6 +2806,17 @@ window.__ModuleLoader__.load({
           }
         }, [loadPullDetail])
 
+        /** 标记测试通过（Gitee 的合并门禁）：成功后重读详情，让合并按钮可用。 */
+        const testPull = useCallback(async (input) => {
+          try {
+            await api.remotePullTest(input)
+            await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+            return { ok: true, message: tRef.current('pull.testDone') }
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current) }
+          }
+        }, [loadPullDetail])
+
         const mergePull = useCallback(async (input) => {
           try {
             const result = await api.remotePullMerge(input)
@@ -3315,6 +3332,7 @@ window.__ModuleLoader__.load({
             onBack: closePull,
             onRetry: () => loadPullDetail(openPull),
             onReview: reviewPull,
+            onTest: testPull,
             onMerge: mergePull,
             onChanged: () => loadPullDetail(openPull),
             onOpenUrl: openExternal,
@@ -5802,6 +5820,11 @@ window.__ModuleLoader__.load({
         return call('remote/pull/review', payload, options)
       }
 
+      /** 标记 PR 测试通过（Gitee 的合并门禁之一）。 */
+      function remotePullTest(payload, options) {
+        return call('remote/pull/test', payload, options)
+      }
+
       /** 合并 PR。 */
       function remotePullMerge(payload, options) {
         return call('remote/pull/merge', payload, options)
@@ -5878,7 +5901,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePull, remotePullReview, remotePullMerge, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePull, remotePullReview, remotePullTest, remotePullMerge, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -8154,6 +8177,12 @@ window.__ModuleLoader__.load({
           body: note
         }))
 
+        const submitTest = () => run('test', () => source.onTest({
+          accountId: selection.accountId,
+          fullName: selection.fullName,
+          number: pull.number
+        }))
+
         const submitMerge = () => run('merge', () => source.onMerge({
           accountId: selection.accountId,
           fullName: selection.fullName,
@@ -8241,6 +8270,17 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'dgp-detail-title' }, t('pull.merge')),
                 h('span', { className: 'dgp-detail-count' }, mergeableText)),
               h('div', { className: 'dgp-pull-actions' },
+                caps.test === true
+                  ? h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-dgp-pull': 'test-gate',
+                    disabled: busy !== null,
+                    title: t('pull.testHint'),
+                    onClick: submitTest
+                  }, t('pull.testRun'))
+                  : null,
                 h('select', {
                   className: 'dgp-select dgp-pull-method',
                   'data-dgp-pull': 'merge-method',

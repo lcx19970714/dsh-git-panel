@@ -97,6 +97,12 @@ export function PullDetail(props) {
     body: note
   }))
 
+  const submitTest = () => run('test', () => source.onTest({
+    accountId: selection.accountId,
+    fullName: selection.fullName,
+    number: pull.number
+  }))
+
   const submitMerge = () => run('merge', () => source.onMerge({
     accountId: selection.accountId,
     fullName: selection.fullName,
@@ -184,6 +190,17 @@ export function PullDetail(props) {
           h('span', { className: 'dgp-detail-title' }, t('pull.merge')),
           h('span', { className: 'dgp-detail-count' }, mergeableText)),
         h('div', { className: 'dgp-pull-actions' },
+          caps.test === true
+            ? h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-dgp-pull': 'test-gate',
+              disabled: busy !== null,
+              title: t('pull.testHint'),
+              onClick: submitTest
+            }, t('pull.testRun'))
+            : null,
           h('select', {
             className: 'dgp-select dgp-pull-method',
             'data-dgp-pull': 'merge-method',

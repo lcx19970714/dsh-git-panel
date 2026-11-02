@@ -128,6 +128,8 @@ const github = {
     reviewsPath: true,
     mergeMethods: ['merge', 'squash', 'rebase'],
     mergeDeletesBranch: 'api',
+    // GitHub 的合并门禁是 required status checks（CI 决定），面板里没有「标记测试通过」这种动作
+    testPath: null,
     normalizePull: (item) => pullMeta(item, github),
     normalizeReview: (item) => ({
       author: typeof item.user?.login === 'string' ? item.user.login : '',
@@ -167,6 +169,8 @@ const gitee = {
     reviewsPath: null,
     mergeMethods: ['merge', 'squash'],
     mergeDeletesBranch: 'flag',
+    // Gitee 允许把 PR 标记为「测试通过」，这是它的合并门禁之一
+    testPath: '/test',
     normalizePull: (item) => pullMeta(item, gitee),
     normalizeReview: null
   }

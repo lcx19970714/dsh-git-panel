@@ -149,6 +149,11 @@ export function listRemoteRepos(payload, options) {
   return call('remote/repos', payload, options)
 }
 
+/** 仓库详情：代码概况 + 未关闭 issue/PR 数量 + 最近条目。 */
+export function remoteDetail(payload, options) {
+  return call('remote/detail', payload, options)
+}
+
 /** 把远端仓库克隆到项目根下的子目录。 */
 export function cloneRemoteRepo(payload, options) {
   return call('remote/clone', payload, options)

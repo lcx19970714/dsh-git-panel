@@ -26,8 +26,10 @@ import { EmptyState, LoadingState, InlineNote } from './States.js'
 import { CommitBox } from './CommitBox.js'
 import { SettingsView } from './SettingsView.js'
 import { RemotePane } from './RemotePane.js'
+import { RemoteDetail } from './RemoteDetail.js'
 import { MODE, usePref, useLatestGuard } from '../store.js'
 import * as api from '../api.js'
+import { openExternalUrl } from '../util/openUrl.js'
 import { reconcileSelection } from '../util/changes.js'
 import { webUrlOf } from '../util/remote.js'
 import { formatClock } from '../util/time.js'
@@ -88,6 +90,9 @@ export function Panel(props) {
   const [cloneState, setCloneState] = useState(null)
   const [cloneNow, setCloneNow] = useState(0)
   const [providers, setProviders] = useState([])
+  // 右侧详情：选中的仓库与它的数据
+  const [remoteSelection, setRemoteSelection] = useState(null)
+  const [remoteDetail, setRemoteDetail] = useState(null)
   const [accountsBusy, setAccountsBusy] = useState(false)
   const [accountsError, setAccountsError] = useState(null)
   const [accountsNotice, setAccountsNotice] = useState(null)
@@ -844,11 +849,46 @@ export function Panel(props) {
     }
   }, [])
 
+  /** 读选中仓库的详情（代码 / issues / PR）。 */
+  const loadRemoteDetail = useCallback(async (selection) => {
+    if (selection === null) {
+      setRemoteDetail(null)
+      return
+    }
+    setRemoteDetail({ loading: true, error: null, data: null })
+    try {
+      const data = await api.remoteDetail({ accountId: selection.accountId, fullName: selection.fullName })
+      setRemoteDetail({ loading: false, error: null, data })
+    } catch (error) {
+      setRemoteDetail({ loading: false, error: api.describeError(error, tRef.current), data: null })
+    }
+  }, [])
+
+  /** 选中仓库：右侧立刻进入加载态再拉数据。 */
+  const selectRemoteRepo = useCallback((repo) => {
+    const selection = { accountId: repo.accountId, fullName: repo.fullName, name: repo.name }
+    setRemoteSelection(selection)
+    loadRemoteDetail(selection)
+  }, [loadRemoteDetail])
+
+  const openExternal = useCallback((url) => {
+    const result = openExternalUrl(url)
+    if (result.opened !== true) setStatusError(tRef.current('error.openFailed', { url }))
+  }, [])
+
   /** 进「远端」页签且还没读过账号时读一次。 */
   useEffect(() => {
     if (mode !== MODE.remote || accountsLoaded) return
     loadAccounts()
   }, [mode, accountsLoaded, loadAccounts])
+
+  /** 仓库列表刷新后：当前选中不在列表里就选第一个，右侧不留空。 */
+  useEffect(() => {
+    if (mode !== MODE.remote || remoteRepos.length === 0) return
+    const exists = remoteSelection !== null && remoteRepos.some((repo) => repo.fullName === remoteSelection.fullName)
+    if (exists) return
+    selectRemoteRepo(remoteRepos[0])
+  }, [mode, remoteRepos, remoteSelection, selectRemoteRepo])
 
   /** 切账号或首次进入时读第一页。 */
   useEffect(() => {
@@ -1238,6 +1278,8 @@ function buildUpdateNote(updateState, t) {
         loadAccounts()
       },
       onClone: cloneRepo,
+      selectedFullName: remoteSelection === null ? null : remoteSelection.fullName,
+      onSelectRepo: selectRemoteRepo,
       providers,
       onAddAccount: addAccount,
       t
@@ -1320,16 +1362,18 @@ function buildUpdateNote(updateState, t) {
 
   let rightPane
   if (mode === MODE.remote) {
-    // 远端页签只需要说明「拉下来的东西会落在哪」，选中仓库时右侧不承载 diff
-    rightPane = h('div', { className: 'dgp-viewer' },
-      h(EmptyState, {
-        icon: 'folder-open',
-        title: t('remote.cloneTargetTitle'),
-        description: project.projectRoot === null
-          ? t('status.noCwd')
-          : t('remote.cloneTargetDesc', { path: project.projectRoot }),
-        t
-      }))
+    rightPane = h(RemoteDetail, {
+      selection: remoteSelection,
+      detail: remoteDetail,
+      onRetry: () => loadRemoteDetail(remoteSelection),
+      onClone: (selection) => cloneRepo({
+        accountId: selection.accountId,
+        fullName: selection.fullName,
+        name: selection.name
+      }, ''),
+      onOpenUrl: openExternal,
+      t
+    })
   } else if (mode === MODE.changes) {
     if (selection === null) {
       // 和 DiffView 用同一个容器壳，空态与有内容时的几何完全一致（居中，不贴左上角）

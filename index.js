@@ -106,6 +106,7 @@ export const ENDPOINTS = Object.freeze([
   'accounts/token',
   'accounts/remove',
   'remote/repos',
+  'remote/detail',
   'remote/clone',
   'commit',
   'commit/message',
@@ -470,6 +471,14 @@ function createDispatcher(ctx) {
     }, { signal })
   }
 
+  async function remoteDetail(request, signal) {
+    return remotesOf().repoDetail({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullName: requireString(request.fullName, 'fullName'),
+      pageSize: Number.isInteger(request.pageSize) ? request.pageSize : 10
+    }, { signal })
+  }
+
   async function remoteClone(request, signal) {
     return remotesOf().cloneRepo({
       accountId: requireString(request.accountId, 'accountId'),
@@ -632,6 +641,8 @@ function createDispatcher(ctx) {
         return accountsRemove(request)
       case 'remote/repos':
         return remoteRepos(request, signal)
+      case 'remote/detail':
+        return remoteDetail(request, signal)
       case 'remote/clone':
         return remoteClone(request, signal)
       case 'branches/list':

@@ -1819,6 +1819,72 @@ test('用例 1I：账号可以改备注名、显示并复制令牌', async () =>
   })
 })
 
+test('用例 1J：选中远端仓库后，右侧显示代码概况与 issues / PR 数量', async () => {
+  const detailCalls = []
+  const payload = (fullName) => ({
+    repo: {
+      fullName, description: '演示仓库', language: 'TypeScript', private: false,
+      defaultBranch: 'main', sizeKb: 120, stars: 9, forks: 2, updatedAt: '2026-02-02T00:00:00Z',
+      htmlUrl: 'https://github.com/alice/' + fullName.split('/')[1],
+      issuesUrl: 'https://github.com/alice/' + fullName.split('/')[1] + '/issues',
+      pullsUrl: 'https://github.com/alice/' + fullName.split('/')[1] + '/pulls'
+    },
+    issues: {
+      total: 7,
+      items: [{ number: 7, title: 'issue A', url: 'https://github.com/alice/app/issues/7', author: 'bob', comments: 0, createdAt: '2026-01-01T00:00:00Z' }]
+    },
+    pulls: {
+      total: 3,
+      items: [{ number: 3, title: 'PR three', url: 'https://github.com/alice/app/pull/3', author: 'carl', comments: 0, createdAt: '2026-01-02T00:00:00Z' }]
+    },
+    failures: []
+  })
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [
+          { fullName: 'alice/app', name: 'app', private: false, description: '演示仓库', language: 'TypeScript', updatedAt: '2026-02-02T00:00:00Z', sizeKb: 120, defaultBranch: 'main', htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git', provider: 'github', accountId: 'github:alice' },
+          { fullName: 'alice/tool', name: 'tool', private: true, description: '', language: 'Go', updatedAt: '', sizeKb: 8, defaultBranch: 'master', htmlUrl: 'https://github.com/alice/tool', cloneUrl: 'https://github.com/alice/tool.git', provider: 'github', accountId: 'github:alice' }
+        ],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': (p) => {
+        detailCalls.push(p)
+        return sayOk(payload(p.fullName))
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+
+    // 列表加载完默认选中第一个，右侧直接有内容
+    eq(detailCalls.length >= 1, true, '进入远端页签应自动读取第一个仓库的详情')
+    eq(detailCalls[0], { accountId: 'github:alice', fullName: 'alice/app' }, '详情载荷')
+
+    const issuesSection = panel.one((node) => isHost(node) && attr(node, 'data-dgp-section') === 'issues')
+    const pullsSection = panel.one((node) => isHost(node) && attr(node, 'data-dgp-section') === 'pulls')
+    assert(issuesSection !== null && pullsSection !== null, '右侧应有 issues 与 PR 两块')
+    assert(textOf(issuesSection).includes('7 个未关闭'), 'issue 数量：' + textOf(issuesSection))
+    assert(textOf(pullsSection).includes('3 个未关闭'), 'PR 数量：' + textOf(pullsSection))
+    assert(textOf(issuesSection).includes('issue A'), '应列出最近 issue')
+    assert(textOf(pullsSection).includes('PR three'), '应列出最近 PR')
+    assert(textOf(panel.tree).includes('TypeScript'), '代码概况里应有语言')
+
+    // 点第二个仓库 → 重新拉详情
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote-item') === 'alice/tool'))
+    await panel.flush()
+    eq(detailCalls[detailCalls.length - 1], { accountId: 'github:alice', fullName: 'alice/tool' }, '切换仓库要重拉详情')
+  })
+})
+
 test('用例 1H：浏览器拦截新窗口时，把令牌页地址原样显示出来', async () => {
   await withPanel({
     routes: {

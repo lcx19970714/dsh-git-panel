@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 28 个 */
+/* 模块: 29 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -1169,6 +1169,28 @@ window.__ModuleLoader__.load({
         font-size: 11px;
       }
 
+      /* 远端仓库详情（右侧） */
+      .dgp-detail { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 12px 14px; overflow: auto; }
+      .dgp-detail-top { display: flex; align-items: flex-start; gap: 10px; }
+      .dgp-detail-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; }
+      .dgp-detail-name { min-width: 0; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+      .dgp-detail-actions { display: flex; flex: none; gap: 6px; }
+      .dgp-detail-desc { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.6; }
+      .dgp-detail-meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+      .dgp-detail-failure { margin: 0; color: var(--dsw-alias-state-warn-label); font-size: 11px; }
+      .dgp-detail-code { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: var(--dsw-radius-xs); background: var(--dsw-alias-bg-module-platform); }
+      .dgp-detail-section { display: flex; flex-direction: column; gap: 4px; }
+      .dgp-detail-head { display: flex; align-items: center; gap: 8px; }
+      .dgp-detail-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+      .dgp-detail-count { flex: 1 1 auto; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+      .dgp-detail-empty { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+      .dgp-detail-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+      .dgp-detail-item { display: flex; align-items: center; gap: 8px; min-width: 0; }
+      .dgp-detail-link { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: 0 0; color: var(--dsw-alias-state-business-primary); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+      .dgp-detail-link:hover { text-decoration: underline; }
+      .dgp-detail-meta { flex: none; }
+      .dgp-remote-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
+
       /* ── 远端页签：账号 chip、仓库列表、行内克隆表单 ── */
       .dgp-remote { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; gap: 6px; padding: 8px 8px 6px; }
       .dgp-remote-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -1351,6 +1373,23 @@ window.__ModuleLoader__.load({
         'branch.empty': '这个仓库还没有任何分支',
         'branch.switching': '正在切换到 {name}…',
         'branch.failed': '切换失败：{message}',
+        'detail.pickRepo': '从左侧选一个仓库',
+        'detail.pickRepoHint': '右侧会显示它的代码概况、Issues 与 PR',
+        'detail.loading': '正在读取 {name}…',
+        'detail.failed': '读取仓库详情失败',
+        'detail.code': '代码',
+        'detail.issues': 'Issues',
+        'detail.pulls': 'Pull Requests',
+        'detail.countOf': '{count} 个未关闭',
+        'detail.countUnknown': '数量未知',
+        'detail.openOnWeb': '打开',
+        'detail.noIssues': '没有未关闭的 issue',
+        'detail.noPulls': '没有未合并的 PR',
+        'detail.sizeKb': '{size} KB',
+        'detail.defaultBranch': '默认分支 {name}',
+        'detail.stars': '★ {count}',
+        'detail.forks': '⑂ {count}',
+        'detail.sectionFailed': '{section} 读取失败：{message}',
         'remote.title': '账号与仓库',
         'remote.addAccount': '添加账号',
         'remote.addAccountOn': '添加 {provider} 账号',
@@ -1497,6 +1536,7 @@ window.__ModuleLoader__.load({
         'error.notRepository': '这个目录不是 Git 仓库',
         'error.timeout': '操作超时',
         'error.outsideRoot': '路径超出仓库范围',
+        'error.openFailed': '无法打开链接（浏览器拦截或环境不支持）：{url}',
         'error.generic': '出错了：{message}'
       }
 
@@ -1561,6 +1601,23 @@ window.__ModuleLoader__.load({
         'branch.empty': 'This repository has no branches yet',
         'branch.switching': 'Switching to {name}…',
         'branch.failed': 'Could not switch: {message}',
+        'detail.pickRepo': 'Pick a repository on the left',
+        'detail.pickRepoHint': 'Its code overview, issues and pull requests show up here',
+        'detail.loading': 'Loading {name}…',
+        'detail.failed': 'Could not load the repository',
+        'detail.code': 'Code',
+        'detail.issues': 'Issues',
+        'detail.pulls': 'Pull Requests',
+        'detail.countOf': '{count} open',
+        'detail.countUnknown': 'count unknown',
+        'detail.openOnWeb': 'Open',
+        'detail.noIssues': 'No open issues',
+        'detail.noPulls': 'No open pull requests',
+        'detail.sizeKb': '{size} KB',
+        'detail.defaultBranch': 'default {name}',
+        'detail.stars': '★ {count}',
+        'detail.forks': '⑂ {count}',
+        'detail.sectionFailed': 'Could not load {section}: {message}',
         'remote.title': 'Accounts & repositories',
         'remote.addAccount': 'Add account',
         'remote.addAccountOn': 'Add a {provider} account',
@@ -1707,6 +1764,7 @@ window.__ModuleLoader__.load({
         'error.notRepository': 'Not a Git repository',
         'error.timeout': 'Operation timed out',
         'error.outsideRoot': 'Path outside the repository',
+        'error.openFailed': 'Could not open the link (blocked or unsupported): {url}',
         'error.generic': 'Something went wrong: {message}'
       }
 
@@ -1761,8 +1819,10 @@ window.__ModuleLoader__.load({
       const { CommitBox } = __m("./components/CommitBox.js");
       const { SettingsView } = __m("./components/SettingsView.js");
       const { RemotePane } = __m("./components/RemotePane.js");
+      const { RemoteDetail } = __m("./components/RemoteDetail.js");
       const { MODE, usePref, useLatestGuard } = __m("./store.js");
       const api = __m("./api.js");
+      const { openExternalUrl } = __m("./util/openUrl.js");
       const { reconcileSelection } = __m("./util/changes.js");
       const { webUrlOf } = __m("./util/remote.js");
       const { formatClock } = __m("./util/time.js");
@@ -1823,6 +1883,9 @@ window.__ModuleLoader__.load({
         const [cloneState, setCloneState] = useState(null)
         const [cloneNow, setCloneNow] = useState(0)
         const [providers, setProviders] = useState([])
+        // 右侧详情：选中的仓库与它的数据
+        const [remoteSelection, setRemoteSelection] = useState(null)
+        const [remoteDetail, setRemoteDetail] = useState(null)
         const [accountsBusy, setAccountsBusy] = useState(false)
         const [accountsError, setAccountsError] = useState(null)
         const [accountsNotice, setAccountsNotice] = useState(null)
@@ -2579,11 +2642,46 @@ window.__ModuleLoader__.load({
           }
         }, [])
 
+        /** 读选中仓库的详情（代码 / issues / PR）。 */
+        const loadRemoteDetail = useCallback(async (selection) => {
+          if (selection === null) {
+            setRemoteDetail(null)
+            return
+          }
+          setRemoteDetail({ loading: true, error: null, data: null })
+          try {
+            const data = await api.remoteDetail({ accountId: selection.accountId, fullName: selection.fullName })
+            setRemoteDetail({ loading: false, error: null, data })
+          } catch (error) {
+            setRemoteDetail({ loading: false, error: api.describeError(error, tRef.current), data: null })
+          }
+        }, [])
+
+        /** 选中仓库：右侧立刻进入加载态再拉数据。 */
+        const selectRemoteRepo = useCallback((repo) => {
+          const selection = { accountId: repo.accountId, fullName: repo.fullName, name: repo.name }
+          setRemoteSelection(selection)
+          loadRemoteDetail(selection)
+        }, [loadRemoteDetail])
+
+        const openExternal = useCallback((url) => {
+          const result = openExternalUrl(url)
+          if (result.opened !== true) setStatusError(tRef.current('error.openFailed', { url }))
+        }, [])
+
         /** 进「远端」页签且还没读过账号时读一次。 */
         useEffect(() => {
           if (mode !== MODE.remote || accountsLoaded) return
           loadAccounts()
         }, [mode, accountsLoaded, loadAccounts])
+
+        /** 仓库列表刷新后：当前选中不在列表里就选第一个，右侧不留空。 */
+        useEffect(() => {
+          if (mode !== MODE.remote || remoteRepos.length === 0) return
+          const exists = remoteSelection !== null && remoteRepos.some((repo) => repo.fullName === remoteSelection.fullName)
+          if (exists) return
+          selectRemoteRepo(remoteRepos[0])
+        }, [mode, remoteRepos, remoteSelection, selectRemoteRepo])
 
         /** 切账号或首次进入时读第一页。 */
         useEffect(() => {
@@ -2973,6 +3071,8 @@ window.__ModuleLoader__.load({
               loadAccounts()
             },
             onClone: cloneRepo,
+            selectedFullName: remoteSelection === null ? null : remoteSelection.fullName,
+            onSelectRepo: selectRemoteRepo,
             providers,
             onAddAccount: addAccount,
             t
@@ -3055,16 +3155,18 @@ window.__ModuleLoader__.load({
 
         let rightPane
         if (mode === MODE.remote) {
-          // 远端页签只需要说明「拉下来的东西会落在哪」，选中仓库时右侧不承载 diff
-          rightPane = h('div', { className: 'dgp-viewer' },
-            h(EmptyState, {
-              icon: 'folder-open',
-              title: t('remote.cloneTargetTitle'),
-              description: project.projectRoot === null
-                ? t('status.noCwd')
-                : t('remote.cloneTargetDesc', { path: project.projectRoot }),
-              t
-            }))
+          rightPane = h(RemoteDetail, {
+            selection: remoteSelection,
+            detail: remoteDetail,
+            onRetry: () => loadRemoteDetail(remoteSelection),
+            onClone: (selection) => cloneRepo({
+              accountId: selection.accountId,
+              fullName: selection.fullName,
+              name: selection.name
+            }, ''),
+            onOpenUrl: openExternal,
+            t
+          })
         } else if (mode === MODE.changes) {
           if (selection === null) {
             // 和 DiffView 用同一个容器壳，空态与有内容时的几何完全一致（居中，不贴左上角）
@@ -5518,6 +5620,11 @@ window.__ModuleLoader__.load({
         return call('remote/repos', payload, options)
       }
 
+      /** 仓库详情：代码概况 + 未关闭 issue/PR 数量 + 最近条目。 */
+      function remoteDetail(payload, options) {
+        return call('remote/detail', payload, options)
+      }
+
       /** 把远端仓库克隆到项目根下的子目录。 */
       function cloneRemoteRepo(payload, options) {
         return call('remote/clone', payload, options)
@@ -5589,7 +5696,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -7295,6 +7402,7 @@ window.__ModuleLoader__.load({
         const error = typeof source.error === 'string' && source.error !== '' ? source.error : null
         const hasMore = source.hasMore === true
         const filter = typeof source.filter === 'string' ? source.filter : ''
+        const selectedFullName = typeof source.selectedFullName === 'string' ? source.selectedFullName : null
         const clone = source.clone === null || source.clone === undefined ? null : source.clone
         const now = typeof source.now === 'number' ? source.now : 0
         const [folderFor, setFolderFor] = useState(null)
@@ -7468,7 +7576,16 @@ window.__ModuleLoader__.load({
           body = h('div', { className: 'dgp-list', 'data-dgp-remote': 'list', role: 'list' },
             repos.map((repo) => {
               const cloning = clone !== null && clone.fullName === repo.fullName
-              return h('div', { key: repo.fullName, className: 'dgp-remote-item', role: 'listitem' },
+              return h('div', {
+                key: repo.fullName,
+                className: 'dgp-remote-item',
+                role: 'listitem',
+                'data-dgp-remote-item': repo.fullName,
+                'data-active': repo.fullName === selectedFullName ? 'true' : undefined,
+                onClick: () => {
+                  if (typeof source.onSelectRepo === 'function') source.onSelectRepo(repo)
+                }
+              },
                 h('div', { className: 'dgp-remote-row' },
                   h('span', { className: 'dgp-remote-name dgp-oneline', title: repo.fullName }, repo.name),
                   repo.private === true
@@ -7481,14 +7598,20 @@ window.__ModuleLoader__.load({
                     'data-dgp-remote-clone': repo.fullName,
                     disabled: cloning || folderFor !== null,
                     title: translate('remote.cloneTitle'),
-                    onClick: () => beginClone(repo)
+                    onClick: (event) => {
+                      event.stopPropagation()
+                      beginClone(repo)
+                    }
                   }, translate('remote.clone'))),
                 h('div', { className: 'dgp-remote-meta dgp-oneline' },
                   repo.description !== '' ? repo.description + ' · ' : '',
                   repo.language !== '' ? repo.language + ' · ' : '',
                   repo.updatedAt !== '' ? translate('remote.updatedAt', { time: formatClock(Date.parse(repo.updatedAt)) }) : ''),
                 folderFor === repo.fullName
-                  ? h('div', { className: 'dgp-remote-cloneform' },
+                  ? h('div', {
+                    className: 'dgp-remote-cloneform',
+                    onClick: (event) => event.stopPropagation()
+                  },
                     h('label', { className: 'dgp-remote-cloneform-label' }, translate('remote.cloneFolder')),
                     h('input', {
                       className: 'dgp-input dgp-remote-cloneform-input',
@@ -7583,6 +7706,163 @@ window.__ModuleLoader__.load({
       }
 
       Object.assign(exports, { RemotePane });
+
+    });
+    __define("./components/RemoteDetail.js", (exports, module) => {
+      /**
+       * src/components/RemoteDetail.js —— 远端仓库右侧详情：代码 / Issues / PR
+       *
+       * 只负责展示：数据由 Panel 拉（remote/detail），这里把「数量、最近条目、
+       * 打开网页」三件事排清楚；拿不到总数的区块如实写「数量未知」。
+       */
+      const { h } = __m("./platform.js");
+      const { Icon } = __m("./ui/Icon.js");
+      const { formatClock } = __m("./util/time.js");
+
+      function Section(props) {
+        const { title, total, itemsTheLabel, items, emptyLabel, openLabel, onOpen, t, kind } = props
+        const countText = total === null ? t('detail.countUnknown') : t('detail.countOf', { count: total })
+        return h('section', { className: 'dgp-detail-section', 'data-dgp-section': kind },
+          h('div', { className: 'dgp-detail-head' },
+            h('span', { className: 'dgp-detail-title' }, title),
+            h('span', { className: 'dgp-detail-count', 'data-dgp-count': kind }, countText),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'ghost',
+              'data-dgp-open': kind,
+              onClick: () => onOpen()
+            }, openLabel, h(Icon, { name: 'external', size: 12 }))),
+          items.length === 0
+            ? h('p', { className: 'dgp-detail-empty' }, emptyLabel)
+            : h('ul', { className: 'dgp-detail-list' },
+              items.map((item, index) => h('li', { key: String(item.number ?? index), className: 'dgp-detail-item' },
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-detail-link dgp-oneline',
+                  title: item.title,
+                  'data-dgp-item': kind,
+                  onClick: () => onOpen(item.url)
+                }, (item.number === null ? '' : '#' + item.number + ' ') + item.title),
+                h('span', { className: 'dgp-detail-meta dgp-oneline' },
+                  item.author === '' ? '' : item.author + ' · ',
+                  item.createdAt === '' ? '' : formatClock(Date.parse(item.createdAt)))))))
+      }
+
+      function RemoteDetail(props) {
+        const source = props === null || props === undefined ? {} : props
+        const t = source.t
+        const selection = source.selection === null || source.selection === undefined ? null : source.selection
+        const detail = source.detail === null || source.detail === undefined ? null : source.detail
+
+        if (selection === null) {
+          return h('div', { className: 'dgp-viewer' },
+            h('div', { className: 'dgp-state', 'data-dgp-detail': 'empty' },
+              h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'file-diff', size: 22 })),
+              h('div', { className: 'dgp-state-title' }, t('detail.pickRepo')),
+              h('div', { className: 'dgp-state-desc' }, t('detail.pickRepoHint'))))
+        }
+
+        if (detail === null || detail.loading === true) {
+          return h('div', { className: 'dgp-viewer' },
+            h('div', { className: 'dgp-state', 'data-dgp-detail': 'loading' },
+              h('div', { className: 'dgp-state-icon' }, h('span', { className: 'dgp-spinner' })),
+              h('div', { className: 'dgp-state-title' }, t('detail.loading', { name: selection.fullName }))))
+        }
+
+        if (detail.error !== null) {
+          return h('div', { className: 'dgp-viewer' },
+            h('div', { className: 'dgp-state', 'data-dgp-detail': 'error' },
+              h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+              h('div', { className: 'dgp-state-title' }, t('detail.failed')),
+              h('div', { className: 'dgp-state-desc' }, detail.error),
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                onClick: () => {
+                  if (typeof source.onRetry === 'function') source.onRetry()
+                }
+              }, t('action.retry'))))
+        }
+
+        const data = detail.data
+        const repo = data.repo
+        const sizeText = repo.sizeKb > 0 ? t('detail.sizeKb', { size: repo.sizeKb }) : ''
+        const meta = [repo.language, sizeText, repo.defaultBranch === '' ? '' : repo.defaultBranch]
+          .filter((part) => part !== '').join(' · ')
+
+        return h('div', { className: 'dgp-detail', 'data-dgp-detail': 'repo' },
+          h('div', { className: 'dgp-detail-top' },
+            h('div', { className: 'dgp-detail-name-row' },
+              h('span', { className: 'dgp-detail-name dgp-oneline', title: repo.fullName }, repo.fullName),
+              repo.private === true ? h('span', { className: 'dgp-remote-badge' }, t('remote.private')) : null),
+            h('div', { className: 'dgp-detail-actions' },
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'primary',
+                'data-dgp-detail-clone': repo.fullName,
+                onClick: () => {
+                  if (typeof source.onClone === 'function') source.onClone(selection)
+                }
+              }, t('remote.clone')),
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-dgp-detail-open': 'repo',
+                onClick: () => {
+                  if (typeof source.onOpenUrl === 'function') source.onOpenUrl(repo.htmlUrl)
+                }
+              }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 })))),
+          repo.description === '' ? null : h('p', { className: 'dgp-detail-desc' }, repo.description),
+          h('div', { className: 'dgp-detail-meta' },
+            meta === '' ? null : h('span', null, meta),
+            h('span', null, t('detail.stars', { count: repo.stars })),
+            h('span', null, t('detail.forks', { count: repo.forks })),
+            repo.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatClock(Date.parse(repo.updatedAt)) }))),
+
+          (Array.isArray(data.failures) ? data.failures : []).map((failure) => h('p', {
+            key: failure.section,
+            className: 'dgp-detail-failure'
+          }, t('detail.sectionFailed', { section: failure.section, message: failure.message }))),
+
+          h('div', { className: 'dgp-detail-code' },
+            h('span', { className: 'dgp-detail-title' }, t('detail.code')),
+            h('span', { className: 'dgp-detail-meta' },
+              [repo.language === '' ? '' : repo.language, sizeText, repo.defaultBranch === '' ? '' : t('detail.defaultBranch', { name: repo.defaultBranch })]
+                .filter((part) => part !== '').join(' · '))),
+
+          h(Section, {
+            kind: 'issues',
+            title: t('detail.issues'),
+            total: data.issues.total,
+            items: data.issues.items,
+            emptyLabel: t('detail.noIssues'),
+            openLabel: t('detail.openOnWeb'),
+            onOpen: (url) => {
+              if (typeof source.onOpenUrl === 'function') source.onOpenUrl(url ?? repo.issuesUrl)
+            },
+            t
+          }),
+          h(Section, {
+            kind: 'pulls',
+            title: t('detail.pulls'),
+            total: data.pulls.total,
+            items: data.pulls.items,
+            emptyLabel: t('detail.noPulls'),
+            openLabel: t('detail.openOnWeb'),
+            onOpen: (url) => {
+              if (typeof source.onOpenUrl === 'function') source.onOpenUrl(url ?? repo.pullsUrl)
+            },
+            t
+          }))
+      }
+
+      Object.assign(exports, { RemoteDetail });
 
     });
     __define("./store.js", (exports, module) => {

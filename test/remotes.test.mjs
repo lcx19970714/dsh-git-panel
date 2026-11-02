@@ -380,6 +380,150 @@ await test('仓库详情：某一块失败只标记那一块，其余照常返�
   assert.equal(detail.failures[0].section, 'pulls')
 })
 
+await test('PR 详情：返回基础信息、审查记录与平台能力', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/api\.github\.com\/repos\/alice\/app\/pulls\/7\/reviews$/, {
+      json: [{ user: { login: 'bob' }, state: 'APPROVED', body: 'LGTM', submitted_at: '2026-02-01T00:00:00Z' }]
+    }],
+    [/api\.github\.com\/repos\/alice\/app\/pulls\/7$/, {
+      json: {
+        number: 7, title: 'Add remote panel', body: 'body text', state: 'open', user: { login: 'alice' },
+        base: { ref: 'main' }, head: { ref: 'feature/remote' }, mergeable: true, merged: false,
+        additions: 120, deletions: 8, changed_files: 6, commits: 3,
+        created_at: '2026-01-30T00:00:00Z', updated_at: '2026-02-01T00:00:00Z',
+        html_url: 'https://github.com/alice/app/pull/7'
+      }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+
+  const detail = await remotes.pullDetail({ accountId: 'github:alice', fullName: 'alice/app', number: 7 })
+  assert.equal(detail.pull.headBranch, 'feature/remote')
+  assert.equal(detail.pull.additions, 120)
+  assert.equal(detail.reviews.length, 1)
+  assert.equal(detail.reviews[0].state, 'APPROVED')
+  assert.deepEqual(detail.capabilities.verdicts, ['approve', 'request-changes', 'comment'])
+  assert.deepEqual(detail.capabilities.mergeMethods, ['merge', 'squash', 'rebase'])
+  assert.equal(detail.capabilities.reviews, true)
+})
+
+await test('审查：GitHub 三种结论都能发；请求修改必须带说明', async () => {
+  const credentials = fakeCredentials()
+  const posts = []
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/api\.github\.com\/repos\/alice\/app\/pulls\/7\/reviews$/, (url, options) => {
+      posts.push(JSON.parse(options.body))
+      return { status: 200, json: { id: 1 } }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+
+  await remotes.reviewPull({ accountId: 'github:alice', fullName: 'alice/app', number: 7, verdict: 'approve' })
+  assert.deepEqual(posts[0], { event: 'APPROVE' })
+
+  await remotes.reviewPull({ accountId: 'github:alice', fullName: 'alice/app', number: 7, verdict: 'request-changes', body: '修一下' })
+  assert.deepEqual(posts[1], { event: 'REQUEST_CHANGES', body: '修一下' })
+
+  await assert.rejects(
+    () => remotes.reviewPull({ accountId: 'github:alice', fullName: 'alice/app', number: 7, verdict: 'request-changes' }),
+    (error) => error.code === 'bad-request'
+  )
+})
+
+await test('合并：已合并/非打开/不可合并都拒绝；成功时带方法与删分支', async () => {
+  const credentials = fakeCredentials()
+  const calls = []
+  let state = { merged: false, state: 'open', mergeable: true }
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/pulls\/7\/merge$/, (url, options) => {
+      calls.push({ url, method: options.method, body: JSON.parse(options.body) })
+      return { json: { merged: true, message: 'Pull Request successfully merged' } }
+    }],
+    [/\/git\/refs\/heads\/feature%2Fremote$/, (url, options) => {
+      calls.push({ url, method: options.method })
+      return { json: {} }
+    }],
+    [/\/pulls\/7$/, () => ({
+      json: {
+        number: 7, title: 'T', state: state.state, merged: state.merged, mergeable: state.mergeable,
+        base: { ref: 'main' }, head: { ref: 'feature/remote' }, html_url: 'https://x'
+      }
+    })]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+  const base = { accountId: 'github:alice', fullName: 'alice/app', number: 7 }
+
+  state = { merged: true, state: 'closed', mergeable: true }
+  await assert.rejects(() => remotes.mergePull(base), (error) => error.code === 'already-merged')
+
+  state = { merged: false, state: 'closed', mergeable: true }
+  await assert.rejects(() => remotes.mergePull(base), (error) => error.code === 'not-open')
+
+  state = { merged: false, state: 'open', mergeable: false }
+  await assert.rejects(() => remotes.mergePull(base), (error) => error.code === 'not-mergeable')
+
+  state = { merged: false, state: 'open', mergeable: true }
+  const result = await remotes.mergePull({ ...base, method: 'squash', deleteBranch: true })
+  assert.equal(result.merged, true)
+  assert.equal(result.branchDeleted, true)
+  assert.deepEqual(calls[0].body, { merge_method: 'squash' }, 'GitHub 不认 prune 参数')
+  assert.equal(calls[0].url.includes('/pulls/7/merge'), true)
+  assert.equal(calls[1].method, 'DELETE', '删源分支单独调 git refs')
+
+  await assert.rejects(
+    () => remotes.mergePull({ ...base, method: 'fast-forward' }),
+    (error) => error.code === 'bad-request'
+  )
+})
+
+await test('Gitee：审查只有「通过」，合并用 prune_source_branch 删分支', async () => {
+  const credentials = fakeCredentials()
+  const calls = []
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/pulls\/3\/review\?/, (url, options) => {
+      calls.push({ url, method: options.method, body: options.body ?? null })
+      return { json: {} }
+    }],
+    [/\/pulls\/3\/comments\?/, (url, options) => {
+      calls.push({ url, method: options.method, body: JSON.parse(options.body) })
+      return { json: {} }
+    }],
+    [/\/pulls\/3\/merge\?/, (url, options) => {
+      calls.push({ url, method: options.method, body: JSON.parse(options.body) })
+      return { json: { merged: true } }
+    }],
+    [/\/pulls\/3\?/, {
+      json: { number: 3, title: 'T', state: 'open', merged: false, mergeable: true, base: { ref: 'master' }, head: { ref: 'dev' }, html_url: 'https://gitee.com/bob/tool/pulls/3' }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 'gt' })
+  const base = { accountId: 'gitee:bob', fullName: 'bob/tool', number: 3 }
+
+  await assert.rejects(
+    () => remotes.reviewPull({ ...base, verdict: 'request-changes', body: 'x' }),
+    (error) => error.code === 'bad-request'
+  )
+
+  await remotes.reviewPull({ ...base, verdict: 'approve', body: '看起来不错' })
+  const comment = calls.find((call) => call.url.includes('/comments'))
+  const review = calls.find((call) => call.url.includes('/review'))
+  assert.equal(comment.body.body, '看起来不错', 'Gitee 的说明走评论接口')
+  assert.equal(review.body, null, 'Gitee 的审查接口不需要 body')
+
+  await remotes.mergePull({ ...base, method: 'merge', deleteBranch: true })
+  const merge = calls.find((call) => call.url.includes('/merge'))
+  assert.deepEqual(merge.body, { merge_method: 'merge', prune_source_branch: true })
+})
+
 await test('克隆：把本地裸仓库拉到项目根下的子目录，名字可改', async () => {
   const credentials = fakeCredentials()
   const fetchImpl = fakeFetch([[/api\.github\.com\/user$/, { json: { login: 'alice' } }]])

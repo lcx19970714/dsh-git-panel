@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 27 个 */
+/* 模块: 28 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -1234,6 +1234,16 @@ window.__ModuleLoader__.load({
       }
       .dgp-account-inline-head { display: flex; align-items: center; gap: 8px; }
       .dgp-account-inline .dgp-account-form { margin-top: 0; }
+      /* 令牌原文：等宽展示，长了横向滚动（复制按钮在它上面） */
+      .dgp-account-token {
+        overflow-x: auto;
+        padding: 4px 6px;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-layer-2);
+        color: var(--dsw-alias-label-primary);
+        font-family: var(--ds-font-family-code);
+        font-size: 11px;
+      }
       .dgp-account-form .dgp-btn { flex: 0 0 auto; white-space: nowrap; }
       /* 设置页：获取令牌的三步引导 */
       .dgp-account-guide {
@@ -1415,6 +1425,18 @@ window.__ModuleLoader__.load({
         'accounts.token': '访问令牌',
         'accounts.add': '添加账号',
         'accounts.adding': '正在验证令牌…',
+        'accounts.edit': '编辑账号 {name}',
+        'accounts.saveLabel': '保存',
+        'accounts.editLabel': '备注名',
+        'accounts.tokenLabel': '令牌',
+        'accounts.reveal': '显示令牌',
+        'accounts.hide': '隐藏',
+        'accounts.copy': '复制令牌',
+        'accounts.copied': '已复制到剪贴板',
+        'accounts.copyFailed': '无法访问剪贴板，令牌已展开，可手动选中复制',
+        'accounts.tokenReplaceHint': '留空表示不改；要换令牌就粘贴新的（会先验证）',
+        'accounts.tokenMismatch': '令牌与账号不符',
+        'accounts.updated': '已保存',
         'accounts.remove': '移除账号 {name}',
         'accounts.empty': '还没有账号',
         'accounts.failed': '添加失败：{message}',
@@ -1613,6 +1635,18 @@ window.__ModuleLoader__.load({
         'accounts.token': 'Access token',
         'accounts.add': 'Add account',
         'accounts.adding': 'Validating token…',
+        'accounts.edit': 'Edit account {name}',
+        'accounts.saveLabel': 'Save',
+        'accounts.editLabel': 'Label',
+        'accounts.tokenLabel': 'Token',
+        'accounts.reveal': 'Show token',
+        'accounts.hide': 'Hide',
+        'accounts.copy': 'Copy token',
+        'accounts.copied': 'Copied to clipboard',
+        'accounts.copyFailed': 'Clipboard unavailable — the token is shown below, copy it manually',
+        'accounts.tokenReplaceHint': 'Leave empty to keep the current token; paste a new one to replace it (it is verified first)',
+        'accounts.tokenMismatch': 'Token belongs to a different account',
+        'accounts.updated': 'Saved',
         'accounts.remove': 'Remove account {name}',
         'accounts.empty': 'No accounts yet',
         'accounts.failed': 'Could not add: {message}',
@@ -1759,6 +1793,8 @@ window.__ModuleLoader__.load({
         const t = props.t
         const tRef = useRef(t)
         tRef.current = t
+        /** loadAccounts 定义在 openSettings 之后，这里留一个最新引用供打开设置时调用。 */
+        const loadAccountsRef = useRef(null)
 
         const sessionId = props.sessionId
 
@@ -2397,6 +2433,8 @@ window.__ModuleLoader__.load({
         const openSettings = useCallback(async () => {
           setShowSettings(true)
           setSettingsState({ loading: true, models: [], commitModel: null, error: null, saved: false })
+          // 设置页也管理账号：进来就确保账号列表是最新的（只读列表接口，很便宜）
+          loadAccountsRef.current?.()
           try {
             const [catalog, settings] = await Promise.all([api.listModels({}), api.readSettings({})])
             const modelError = Array.isArray(catalog.failed) && catalog.failed.length > 0
@@ -2522,6 +2560,7 @@ window.__ModuleLoader__.load({
             setRemoteError(api.describeError(error, tRef.current))
           }
         }, [])
+        loadAccountsRef.current = loadAccounts
 
         /** 读某个账号的仓库；append 用于「加载更多」。 */
         const loadRepos = useCallback(async (accountId, page, append) => {
@@ -2612,6 +2651,31 @@ window.__ModuleLoader__.load({
             setAccountsBusy(false)
           }
         }, [reloadAccounts])
+
+        const updateAccount = useCallback(async (input) => {
+          setAccountsError(null)
+          setAccountsNotice(null)
+          try {
+            const value = await api.updateAccount(input)
+            setAccountsNotice(tRef.current('accounts.updated'))
+            await reloadAccounts()
+            return { ok: true, account: value.account }
+          } catch (error) {
+            const message = api.describeError(error, tRef.current)
+            setAccountsError(message)
+            return { ok: false, error: message }
+          }
+        }, [reloadAccounts])
+
+        /** 只在用户点「显示令牌」时取原文；列表接口永远不含 token。 */
+        const readAccountToken = useCallback(async (id) => {
+          try {
+            const value = await api.readAccountToken({ id })
+            return { ok: true, token: value.token }
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current) }
+          }
+        }, [])
 
         const removeAccount = useCallback(async (id) => {
           setAccountsBusy(true)
@@ -3225,6 +3289,8 @@ window.__ModuleLoader__.load({
             accountsError,
             accountsNotice,
             onAddAccount: addAccount,
+            onUpdateAccount: updateAccount,
+            onReadToken: readAccountToken,
             onRemoveAccount: removeAccount,
             onBack: () => setShowSettings(false),
             t
@@ -5424,13 +5490,23 @@ window.__ModuleLoader__.load({
         return call('index/stage-group', payload, options)
       }
 
-      /** 代码托管账号（token 只在宿主侧，客户端永远拿不到）。 */
+      /** 代码托管账号列表（列表接口不含 token）。 */
       function listAccounts(payload, options) {
         return call('accounts/list', payload, options)
       }
 
       function addAccount(payload, options) {
         return call('accounts/add', payload, options)
+      }
+
+      /** 改备注名 / 换令牌（换令牌会先验证）。 */
+      function updateAccount(payload, options) {
+        return call('accounts/update', payload, options)
+      }
+
+      /** 取令牌原文：只在用户点「显示」时调用。 */
+      function readAccountToken(payload, options) {
+        return call('accounts/token', payload, options)
       }
 
       function removeAccount(payload, options) {
@@ -5513,7 +5589,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, removeAccount, listRemoteRepos, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -6815,6 +6891,7 @@ window.__ModuleLoader__.load({
        */
       const { h, useState } = __m("./platform.js");
       const { openExternalUrl } = __m("./util/openUrl.js");
+      const { copyText } = __m("./util/clipboard.js");
       const { Icon } = __m("./ui/Icon.js");
       const { InlineNote } = __m("./components/States.js");
 
@@ -6837,6 +6914,8 @@ window.__ModuleLoader__.load({
         const [token, setToken] = useState('')
         // 点过「获取令牌」之后给什么提示：'opened' 或拦截时的地址
         const [tokenHint, setTokenHint] = useState(null)
+        // 正在编辑的账号：{ id, label, token, tokenText, revealed, busy, error, notice }
+        const [editing, setEditing] = useState(null)
 
         const selected = providers.find((item) => item.id === provider) ?? { id: provider, label: provider }
         // 每个平台的三步都不同（菜单路径、scope 名都不一样），文案按平台 id 取
@@ -6924,6 +7003,25 @@ window.__ModuleLoader__.load({
                   h('button', {
                     type: 'button',
                     className: 'dgp-row-action',
+                    'data-dgp-account-edit': account.id,
+                    title: translate('accounts.edit', { name: account.label }),
+                    'aria-label': translate('accounts.edit', { name: account.label }),
+                    onClick: () => {
+                      setEditing({
+                        id: account.id,
+                        label: account.label,
+                        token: '',
+                        tokenText: null,
+                        revealed: false,
+                        busy: false,
+                        error: null,
+                        notice: null
+                      })
+                    }
+                  }, h(Icon, { name: 'file', size: 13 })),
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-row-action',
                     'data-dgp-account-remove': account.id,
                     title: translate('accounts.remove', { name: account.label }),
                     'aria-label': translate('accounts.remove', { name: account.label }),
@@ -6931,6 +7029,114 @@ window.__ModuleLoader__.load({
                       if (typeof source.onRemoveAccount === 'function') source.onRemoveAccount(account.id)
                     }
                   }, h(Icon, { name: 'trash', size: 13 }))))),
+            editing === null
+              ? null
+              : h('div', { className: 'dgp-account-inline', 'data-dgp-accounts': 'editor' },
+                h('div', { className: 'dgp-account-inline-head' },
+                  h('span', { className: 'dgp-account-guide-title' },
+                    translate('accounts.edit', { name: editing.label })),
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-variant': 'ghost',
+                    'data-dgp-accounts': 'hide-token',
+                    onClick: () => setEditing({ ...editing, revealed: false, tokenText: null })
+                  }, translate('accounts.hide'))),
+                h('div', { className: 'dgp-account-form' },
+                  h('input', {
+                    className: 'dgp-input',
+                    'data-dgp-accounts': 'edit-label',
+                    placeholder: translate('accounts.editLabel'),
+                    value: editing.label,
+                    onChange: (event) => setEditing({ ...editing, label: event.target.value })
+                  }),
+                  h('input', {
+                    className: 'dgp-input',
+                    'data-dgp-accounts': 'edit-token',
+                    placeholder: translate('accounts.tokenReplaceHint'),
+                    value: editing.token,
+                    onChange: (event) => setEditing({ ...editing, token: event.target.value })
+                  }),
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-dgp-accounts': 'reveal-token',
+                    disabled: editing.busy,
+                    onClick: async () => {
+                      if (editing.revealed) {
+                        setEditing({ ...editing, revealed: false, tokenText: null })
+                        return
+                      }
+                      if (typeof source.onReadToken !== 'function') return
+                      setEditing({ ...editing, busy: true, error: null })
+                      const result = await source.onReadToken(editing.id)
+                      if (result !== null && result !== undefined && result.ok === true) {
+                        setEditing({ ...editing, busy: false, revealed: true, tokenText: result.token })
+                        return
+                      }
+                      setEditing({ ...editing, busy: false, error: result === null || result === undefined ? '读取失败' : result.error })
+                    }
+                  }, translate(editing.revealed ? 'accounts.hide' : 'accounts.reveal')),
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-dgp-accounts': 'copy-token',
+                    disabled: editing.tokenText === null,
+                    onClick: async () => {
+                      const copied = await copyText(editing.tokenText)
+                      setEditing({
+                        ...editing,
+                        notice: copied.ok ? translate('accounts.copied') : translate('accounts.copyFailed'),
+                        error: null
+                      })
+                    }
+                  }, translate('accounts.copy')),
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-variant': 'primary',
+                    'data-dgp-accounts': 'save-account',
+                    disabled: editing.busy,
+                    onClick: async () => {
+                      if (typeof source.onUpdateAccount !== 'function') return
+                      setEditing({ ...editing, busy: true, error: null, notice: null })
+                      const result = await source.onUpdateAccount({
+                        id: editing.id,
+                        label: editing.label,
+                        token: editing.token
+                      })
+                      if (result !== null && result !== undefined && result.ok === true) {
+                        setEditing({ ...editing, busy: false, token: '', notice: translate('accounts.updated') })
+                        return
+                      }
+                      setEditing({ ...editing, busy: false, error: result === null || result === undefined ? '保存失败' : result.error })
+                    }
+                  }, translate(accountsBusy ? 'accounts.adding' : 'accounts.saveLabel')),
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    onClick: () => setEditing(null)
+                  }, translate('remote.cloneCancel'))),
+                editing.revealed && editing.tokenText !== null
+                  ? h('code', {
+                    className: 'dgp-account-token dgp-oneline',
+                    'data-dgp-accounts': 'token-value',
+                    title: editing.tokenText
+                  }, editing.tokenText)
+                  : null,
+                editing.notice !== null
+                  ? h('div', { className: 'dgp-remote-status', 'data-dgp-accounts': 'editor-notice' },
+                    h('span', null, editing.notice))
+                  : null,
+                editing.error !== null
+                  ? h('div', { className: 'dgp-remote-status', 'data-tone': 'error' }, h('span', null, editing.error))
+                  : null),
+
             accountsError !== null
               ? h(InlineNote, { tone: 'error' }, accountsError)
               : null,
@@ -7024,6 +7230,31 @@ window.__ModuleLoader__.load({
       }
 
       Object.assign(exports, { openExternalUrl });
+
+    });
+    __define("./util/clipboard.js", (exports, module) => {
+      /**
+       * src/util/clipboard.js —— 复制文本到剪贴板
+       *
+       * 浏览器只给 `navigator.clipboard`，且在非安全上下文/无权限时会拒绝。
+       * 复制失败必须能被界面看见（用户手里那段令牌是唯一副本，不能「点了没反应」）。
+       */
+      async function copyText(text) {
+        const value = typeof text === 'string' ? text : ''
+        if (value === '') return { ok: false, reason: 'empty' }
+        const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard
+        if (clipboard === undefined || clipboard === null || typeof clipboard.writeText !== 'function') {
+          return { ok: false, reason: 'unsupported' }
+        }
+        try {
+          await clipboard.writeText(value)
+          return { ok: true, reason: null }
+        } catch {
+          return { ok: false, reason: 'denied' }
+        }
+      }
+
+      Object.assign(exports, { copyText });
 
     });
     __define("./components/RemotePane.js", (exports, module) => {

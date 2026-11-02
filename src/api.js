@@ -121,13 +121,23 @@ export function stageGroup(payload, options) {
   return call('index/stage-group', payload, options)
 }
 
-/** 代码托管账号（token 只在宿主侧，客户端永远拿不到）。 */
+/** 代码托管账号列表（列表接口不含 token）。 */
 export function listAccounts(payload, options) {
   return call('accounts/list', payload, options)
 }
 
 export function addAccount(payload, options) {
   return call('accounts/add', payload, options)
+}
+
+/** 改备注名 / 换令牌（换令牌会先验证）。 */
+export function updateAccount(payload, options) {
+  return call('accounts/update', payload, options)
+}
+
+/** 取令牌原文：只在用户点「显示」时调用。 */
+export function readAccountToken(payload, options) {
+  return call('accounts/token', payload, options)
 }
 
 export function removeAccount(payload, options) {

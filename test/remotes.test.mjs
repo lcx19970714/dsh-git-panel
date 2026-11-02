@@ -164,6 +164,63 @@ await test('移除账号：从记录里删掉，其它账号保留', async () =>
   assert.deepEqual(after.accounts.map((account) => account.id), ['gitee:dave'])
 })
 
+await test('改账号：备注名可以随时修改，id 与登录名不变', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([[/api\.github\.com\/user$/, { json: { login: 'alice' } }]])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'ghp_x', label: '旧名字' })
+
+  const updated = await remotes.updateAccount({ id: 'github:alice', label: '新名字' })
+  assert.equal(updated.account.label, '新名字')
+  assert.equal(updated.account.id, 'github:alice')
+
+  const listed = await remotes.listAccounts()
+  assert.equal(listed.accounts[0].label, '新名字')
+  assert.equal(listed.accounts[0].login, 'alice')
+
+  // 备注名清空 → 显示登录名
+  const cleared = await remotes.updateAccount({ id: 'github:alice', label: '' })
+  assert.equal(cleared.account.label, 'alice')
+})
+
+await test('改账号：换令牌前会验证，且必须属于同一账号', async () => {
+  const credentials = fakeCredentials()
+  let login = 'alice'
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, () => ({ json: { login } })]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'ghp_old' })
+
+  // 新令牌属于另一个账号 → 拒绝，且不落库
+  login = 'bob'
+  await assert.rejects(
+    () => remotes.updateAccount({ id: 'github:alice', token: 'ghp_other' }),
+    (error) => error.code === 'token-mismatch' && /bob/.test(error.message)
+  )
+  assert.equal((await remotes.readToken({ id: 'github:alice' })).token, 'ghp_old')
+
+  // 同账号的新令牌 → 通过并替换
+  login = 'alice'
+  await remotes.updateAccount({ id: 'github:alice', token: 'ghp_new' })
+  assert.equal((await remotes.readToken({ id: 'github:alice' })).token, 'ghp_new')
+})
+
+await test('读令牌：返回原文，未知账号直接报错', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([[/api\.github\.com\/user$/, { json: { login: 'alice' } }]])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'ghp_secret' })
+
+  const value = await remotes.readToken({ id: 'github:alice' })
+  assert.equal(value.token, 'ghp_secret')
+
+  await assert.rejects(
+    () => remotes.readToken({ id: 'github:nobody' }),
+    (error) => error.code === 'bad-request'
+  )
+})
+
 await test('列仓库：两个平台的字段都被归一成同一形状', async () => {
   const credentials = fakeCredentials()
   const fetchImpl = fakeFetch([

@@ -703,6 +703,34 @@ await test('PR 文件 diff：平台没给 patch 的文件标 patchAvailable=fals
   assert.equal(diff.files[1].changes, 1300, '改动行数要保留，界面要显示它有多大')
 })
 
+await test('仓库详情的 PR 列表：created_at 与 updated_at 都要归一化（前者是提交时间，后者是最后动静）', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/repos\/bob\/tool\/pulls\?state=open&per_page=1&access_token=/, {
+      json: [], headers: { total_count: '1' }
+    }],
+    [/\/repos\/bob\/tool\/issues\?state=open&per_page=1&access_token=/, {
+      json: [], headers: { total_count: '0' }
+    }],
+    [/\/repos\/bob\/tool\/pulls\?/, {
+      json: [{
+        number: 2, title: 'PR two', html_url: 'https://gitee.com/bob/tool/pulls/2', user: { login: 'bob' },
+        created_at: '2026-10-01T08:00:00Z', updated_at: '2026-11-02T12:00:00Z'
+      }]
+    }],
+    [/\/repos\/bob\/tool\/issues\?/, { json: [] }],
+    [/\/repos\/bob\/tool\?/, { json: { full_name: 'bob/tool', language: 'Go', html_url: 'https://gitee.com/bob/tool' } }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+
+  const detail = await remotes.repoDetail({ accountId: 'gitee:bob', fullName: 'bob/tool' })
+  const pull = detail.pulls.items[0]
+  assert.equal(pull.createdAt, '2026-10-01T08:00:00Z', '创建时间 = 提交 PR 的时间')
+  assert.equal(pull.updatedAt, '2026-11-02T12:00:00Z', '更新时间 = 最后一次有动静')
+})
+
 await test('PR 评论：GitHub 走 issues 评论接口、Gitee 走 pulls，且都是 JSON 请求体', async () => {
   const credentials = fakeCredentials()
   const calls = []

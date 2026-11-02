@@ -42,7 +42,11 @@ function Section(props) {
           }, (item.number === null ? '' : '#' + item.number + ' ') + item.title),
           h('span', { className: 'dgp-detail-meta dgp-oneline' },
             item.author === '' ? '' : item.author + ' · ',
-            item.createdAt === '' ? '' : formatDateTime(Date.parse(item.createdAt)))))))
+            // 明确区分：创建 = 提交 PR 的时间，更新 = 最后一次有动静
+            item.createdAt === '' ? '' : t('detail.created', { time: formatDateTime(Date.parse(item.createdAt)) }),
+            item.updatedAt === '' || item.updatedAt === item.createdAt
+              ? ''
+              : ' · ' + t('detail.updated', { time: formatDateTime(Date.parse(item.updatedAt)) }))))))
 }
 
 export function RemoteDetail(props) {

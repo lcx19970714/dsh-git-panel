@@ -1652,6 +1652,8 @@ window.__ModuleLoader__.load({
         'detail.loading': '正在读取 {name}…',
         'detail.failed': '读取仓库详情失败',
         'detail.code': '代码',
+        'detail.created': '创建 {time}',
+        'detail.updated': '更新 {time}',
         'detail.issues': 'Issues',
         'detail.pulls': 'Pull Requests',
         'detail.countOf': '{count} 个未关闭',
@@ -1965,6 +1967,8 @@ window.__ModuleLoader__.load({
         'detail.loading': 'Loading {name}…',
         'detail.failed': 'Could not load the repository',
         'detail.code': 'Code',
+        'detail.created': 'opened {time}',
+        'detail.updated': 'updated {time}',
         'detail.issues': 'Issues',
         'detail.pulls': 'Pull Requests',
         'detail.countOf': '{count} open',
@@ -8659,7 +8663,11 @@ window.__ModuleLoader__.load({
                 }, (item.number === null ? '' : '#' + item.number + ' ') + item.title),
                 h('span', { className: 'dgp-detail-meta dgp-oneline' },
                   item.author === '' ? '' : item.author + ' · ',
-                  item.createdAt === '' ? '' : formatDateTime(Date.parse(item.createdAt)))))))
+                  // 明确区分：创建 = 提交 PR 的时间，更新 = 最后一次有动静
+                  item.createdAt === '' ? '' : t('detail.created', { time: formatDateTime(Date.parse(item.createdAt)) }),
+                  item.updatedAt === '' || item.updatedAt === item.createdAt
+                    ? ''
+                    : ' · ' + t('detail.updated', { time: formatDateTime(Date.parse(item.updatedAt)) }))))))
       }
 
       function RemoteDetail(props) {
@@ -8997,7 +9005,8 @@ window.__ModuleLoader__.load({
             h('span', null, '+' + statText(pull.additions) + ' / −' + statText(pull.deletions)),
             h('span', null, t('pull.filesChanged', { count: statText(pull.changedFiles) })),
             h('span', null, t('pull.commits', { count: pull.commits })),
-            pull.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatDateTime(Date.parse(pull.updatedAt)) }))),
+            pull.createdAt === '' ? null : h('span', null, t('detail.created', { time: formatDateTime(Date.parse(pull.createdAt)) })),
+            pull.updatedAt === '' ? null : h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(pull.updatedAt)) }))),
 
           pull.body === ''
             ? null

@@ -104,6 +104,8 @@ export function Panel(props) {
   const [accountsBusy, setAccountsBusy] = useState(false)
   const [accountsError, setAccountsError] = useState(null)
   const [accountsNotice, setAccountsNotice] = useState(null)
+  // 合并后 PR 会自动关闭，提示放在右侧顶部（PullDetail 已卸载，它的本地提示会丢）
+  const [remoteNotice, setRemoteNotice] = useState(null)
 
   /* ------------------------------- 根 ------------------------------- */
   const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -997,13 +999,19 @@ export function Panel(props) {
       fullName: remoteSelection.fullName,
       number
     }
-    setOpenPull(selection)
+    openPullWith(selection)
     loadPullDetail(selection)
   }, [remoteSelection, loadPullDetail])
 
   const closePull = useCallback(() => {
     setOpenPull(null)
     setPullDetail(null)
+  }, [])
+
+  /** 打开某个 PR 时清掉上次合并的提示。 */
+  const openPullWith = useCallback((selection) => {
+    setRemoteNotice(null)
+    setOpenPull(selection)
   }, [])
 
   /** 审查：统一把失败包成 { ok:false, error }，界面就地显示。 */
@@ -1063,11 +1071,17 @@ export function Panel(props) {
   const mergePull = useCallback(async (input) => {
     try {
       const result = await api.remotePullMerge(input)
-      await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+      // PR 合并后就关闭了：直接回到仓库详情，不再停在已关闭的 PR 上
+      closePull()
+      setRemoteNotice(tRef.current('pull.mergedClosed', {
+        number: input.number,
+        branch: result.headBranch === '' ? '' : result.headBranch
+      }))
       await loadRemoteDetail({ accountId: input.accountId, fullName: input.fullName })
       // 合并后未合并数量会变，角标要跟着刷新
       await loadPullCounts(input.accountId, remoteReposRef.current)
-      return { ok: true, message: tRef.current('pull.mergedDone', { branch: result.headBranch }) }
+      // closed:true 让 PullDetail 不要在被卸载后再写自己的提示
+    return { ok: true, closed: true, message: tRef.current('pull.mergedDone', { branch: result.headBranch }) }
     } catch (error) {
       return { ok: false, error: api.describeError(error, tRef.current) }
     }
@@ -1784,7 +1798,19 @@ function buildUpdateNote(updateState, t) {
       }
     }
   }),
-  h('div', { className: 'dgp-pane-right' }, rightPane))
+  h('div', { className: 'dgp-pane-right' },
+    mode === MODE.remote && remoteNotice !== null
+      ? h('div', { className: 'dgp-remote-notice', 'data-dgp-remote': 'notice' },
+        h('span', { className: 'dgp-oneline' }, remoteNotice),
+        h('button', {
+          type: 'button',
+          className: 'dgp-row-action',
+          'data-dgp-remote': 'notice-dismiss',
+          title: t('action.close'),
+          onClick: () => setRemoteNotice(null)
+        }, h(Icon, { name: 'close', size: 12 })))
+      : null,
+    rightPane))
 
   let content
   if (noSession) {

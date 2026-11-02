@@ -99,6 +99,8 @@ export function PullDetail(props) {
     setNotice(null)
     const result = await action()
     setBusy(null)
+    // 合并成功时宿主已经把详情关掉了（closed:true），这里不再写任何提示
+    if (result !== null && result !== undefined && result.ok === true && result.closed === true) return
     if (result !== null && result !== undefined && result.ok === true) {
       setNotice(result.message ?? null)
       if (typeof source.onChanged === 'function') source.onChanged()

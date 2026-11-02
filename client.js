@@ -1217,6 +1217,20 @@ window.__ModuleLoader__.load({
       .dgp-remote-more { align-self: center; margin: 6px 0; }
 
       /* ── 设置页：账号列表与添加表单 ── */
+      /* 设置页：获取令牌的三步引导 */
+      .dgp-account-guide {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin: 2px 0 6px;
+        padding: 8px 10px;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+      }
+      .dgp-account-guide-head { display: flex; align-items: center; gap: 8px; }
+      .dgp-account-guide-title { flex: 1 1 auto; min-width: 0; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+      .dgp-account-steps { margin: 0; padding-left: 18px; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.7; }
+      .dgp-account-steps li { margin: 0; }
       .dgp-account-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
       .dgp-account-item { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: var(--dsw-radius-xs); }
       .dgp-account-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
@@ -1360,6 +1374,17 @@ window.__ModuleLoader__.load({
         'commit.unmerged': '有未解决的冲突，先把冲突解决掉再提交',
         'commit.generateFailed': '生成提交说明失败：{message}',
 
+        'accounts.guideTitle': '怎么拿到令牌',
+        'accounts.guideGithub1': '点右上角「打开令牌页面」，Scope 已预填 repo',
+        'accounts.guideGithub2': '只需要浏览公开仓库的话，public_repo 就够；组织仓库还需要 SSO 授权',
+        'accounts.guideGithub3': '生成后复制整串令牌（ghp_ 或 github_pat_ 开头），粘贴到输入框',
+        'accounts.guideGitee1': '点右上角「打开令牌页面」，再点「生成新令牌」',
+        'accounts.guideGitee2': '勾选 projects（读取仓库列表足够）',
+        'accounts.guideGitee3': '生成后复制令牌，粘贴到输入框',
+        'accounts.openTokenPage': '打开令牌页面',
+        'accounts.tokenPlaceholder': '粘贴访问令牌',
+        'accounts.success': '已连接：{login}',
+        'accounts.verifyHint': '添加时会先用这个令牌调一次 /user 验证，失败不会保存',
         'accounts.title': '代码托管账号',
         'accounts.hint': 'token 存在 DSH 凭据服务里，本插件不保存明文；只需要只读权限即可列出仓库',
         'accounts.provider': '平台',
@@ -1542,6 +1567,17 @@ window.__ModuleLoader__.load({
         'commit.unmerged': 'Resolve the conflicts before committing',
         'commit.generateFailed': 'Could not generate a commit message: {message}',
 
+        'accounts.guideTitle': 'How to get a token',
+        'accounts.guideGithub1': 'Click "Open token page" at the top right; the repo scope is pre-filled',
+        'accounts.guideGithub2': 'For public repositories only, public_repo is enough; organization repositories also need SSO',
+        'accounts.guideGithub3': 'Copy the whole token (starts with ghp_ or github_pat_) and paste it below',
+        'accounts.guideGitee1': 'Click "Open token page" at the top right, then create a new token',
+        'accounts.guideGitee2': 'Select the projects scope (enough to list repositories)',
+        'accounts.guideGitee3': 'Copy the token and paste it below',
+        'accounts.openTokenPage': 'Open token page',
+        'accounts.tokenPlaceholder': 'Paste access token',
+        'accounts.success': 'Connected: {login}',
+        'accounts.verifyHint': 'The token is verified against /user before it is saved; a failed check stores nothing',
         'accounts.title': 'Code hosting accounts',
         'accounts.hint': 'Tokens live in the DSH credential store; this plugin never persists them. Read-only scope is enough to list repositories.',
         'accounts.provider': 'Provider',
@@ -1725,6 +1761,7 @@ window.__ModuleLoader__.load({
         const [providers, setProviders] = useState([])
         const [accountsBusy, setAccountsBusy] = useState(false)
         const [accountsError, setAccountsError] = useState(null)
+        const [accountsNotice, setAccountsNotice] = useState(null)
 
         /* ------------------------------- 根 ------------------------------- */
         const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -2532,8 +2569,10 @@ window.__ModuleLoader__.load({
         const addAccount = useCallback(async (input) => {
           setAccountsBusy(true)
           setAccountsError(null)
+          setAccountsNotice(null)
           try {
-            await api.addAccount(input)
+            const value = await api.addAccount(input)
+            setAccountsNotice(tRef.current('accounts.success', { login: value.account.login }))
             await reloadAccounts()
           } catch (error) {
             setAccountsError(api.describeError(error, tRef.current))
@@ -3150,6 +3189,7 @@ window.__ModuleLoader__.load({
             providers,
             accountsBusy,
             accountsError,
+            accountsNotice,
             onAddAccount: addAccount,
             onRemoveAccount: removeAccount,
             onBack: () => setShowSettings(false),
@@ -6761,6 +6801,12 @@ window.__ModuleLoader__.load({
         const [label, setLabel] = useState('')
         const [token, setToken] = useState('')
 
+        const selected = providers.find((item) => item.id === provider) ?? { id: provider, label: provider }
+        // 每个平台的三步都不同（菜单路径、scope 名都不一样），文案按平台 id 取
+        const steps = provider === 'gitee'
+          ? ['accounts.guideGitee1', 'accounts.guideGitee2', 'accounts.guideGitee3'].map((key) => translate(key))
+          : ['accounts.guideGithub1', 'accounts.guideGithub2', 'accounts.guideGithub3'].map((key) => translate(key))
+
         const submitAccount = () => {
           if (typeof source.onAddAccount !== 'function' || token.trim() === '') return
           source.onAddAccount({ provider, label: label.trim(), token: token.trim() })
@@ -6851,6 +6897,29 @@ window.__ModuleLoader__.load({
             accountsError !== null
               ? h(InlineNote, { tone: 'error' }, accountsError)
               : null,
+            typeof source.accountsNotice === 'string' && source.accountsNotice !== ''
+              ? h(InlineNote, { tone: 'info' }, source.accountsNotice)
+              : null,
+            /* 引导：按当前平台给三步 + 一键打开令牌页，免得用户自己去翻设置菜单 */
+            h('div', { className: 'dgp-account-guide', 'data-dgp-accounts': 'guide' },
+              h('div', { className: 'dgp-account-guide-head' },
+                h('span', { className: 'dgp-account-guide-title' },
+                  translate('accounts.guideTitle') + ' · ' + selected.label),
+                selected.tokenUrl === undefined
+                  ? null
+                  : h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-dgp-accounts': 'open-token-page',
+                    onClick: () => {
+                      window.open(selected.tokenUrl, '_blank', 'noopener,noreferrer')
+                    }
+                  }, translate('accounts.openTokenPage'), h(Icon, { name: 'external', size: 12 }))),
+              h('ol', { className: 'dgp-account-steps' },
+                steps.map((step, index) => h('li', { key: String(index) }, step))),
+              h('p', { className: 'dgp-settings-hint' }, translate('accounts.verifyHint'))),
+
             h('div', { className: 'dgp-account-form' },
               h('select', {
                 className: 'dgp-select dgp-account-provider',
@@ -6870,9 +6939,12 @@ window.__ModuleLoader__.load({
                 className: 'dgp-input',
                 'data-dgp-accounts': 'token',
                 type: 'password',
-                placeholder: translate('accounts.token'),
+                placeholder: translate('accounts.tokenPlaceholder'),
                 value: token,
-                onChange: (event) => setToken(event.target.value)
+                onChange: (event) => setToken(event.target.value),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter' && !accountsBusy && token.trim() !== '') submitAccount()
+                }
               }),
               h('button', {
                 type: 'button',

@@ -1658,6 +1658,67 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
   })
 })
 
+test('用例 1E：设置页的账号引导按平台给三步，并能一键打开令牌页面', async () => {
+  const added = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'models/list': () => sayOk({ models: [], failed: [] }),
+      'settings/get': () => sayOk({ commitModel: null }),
+      'accounts/list': () => sayOk({
+        accounts: [],
+        providers: [
+          { id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new?scopes=repo' },
+          { id: 'gitee', label: 'Gitee', tokenUrl: 'https://gitee.com/profile/personal_access_tokens' }
+        ]
+      }),
+      'accounts/add': (payload) => {
+        added.push(payload)
+        return sayOk({ account: { id: 'github:alice', provider: 'github', login: 'alice', label: 'alice' } })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    // 进「远端」页签 → 空态 → 去设置
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'open-settings'))
+    await panel.flush()
+
+    const guide = panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'guide')
+    assert(guide !== null, '设置页应有获取令牌的引导')
+    const steps = findOne(guide, (node) => isHost(node) && node.type === 'ol')
+    assert(steps !== null, '引导里应有序步骤')
+    eq(findAll(steps, (node) => isHost(node) && node.type === 'li').length, 3, '三步')
+    assert(textOf(guide).includes('repo'), 'GitHub 引导应提到 repo scope')
+
+    // 一键打开令牌页面
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'open-token-page'))
+    await panel.flush()
+    eq(panel.window.opened.length, 1, '应打开一次新页面')
+    assert(panel.window.opened[0].url.includes('github.com/settings/tokens'), '打开的是 GitHub 令牌页')
+
+    // 切到 Gitee：步骤跟着换
+    const providerSelect = panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'provider')
+    providerSelect.props.onChange({ target: { value: 'gitee' } })
+    await panel.flush()
+    const guideAfter = panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'guide')
+    assert(textOf(guideAfter).includes('projects'), 'Gitee 引导应提到 projects scope')
+
+    // 填令牌并添加：成功后给出「已连接」
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'token')
+      .props.onChange({ target: { value: 'ghp_abc' } })
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'add'))
+    await panel.flush()
+    eq(added.length, 1, '应调用一次 accounts/add')
+    eq(added[0].provider, 'gitee', '用的是当前选择的平台')
+    eq(added[0].token, 'ghp_abc')
+    assert(textOf(panel.tree).includes('已连接：alice'), '添加成功应有反馈')
+  })
+})
+
 test('用例 1v：多仓库时储存库列表列出全部，点另一个仓库切走变更区', async () => {
   await withPanel({
     routes: {

@@ -1035,6 +1035,20 @@ export const CSS = `
 .dgp-remote-more { align-self: center; margin: 6px 0; }
 
 /* ── 设置页：账号列表与添加表单 ── */
+/* 设置页：获取令牌的三步引导 */
+.dgp-account-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 6px;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dgp-account-guide-head { display: flex; align-items: center; gap: 8px; }
+.dgp-account-guide-title { flex: 1 1 auto; min-width: 0; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+.dgp-account-steps { margin: 0; padding-left: 18px; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.7; }
+.dgp-account-steps li { margin: 0; }
 .dgp-account-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .dgp-account-item { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: var(--dsw-radius-xs); }
 .dgp-account-item:hover { background: var(--dsw-alias-interactive-bg-hover); }

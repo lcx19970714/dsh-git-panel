@@ -27,6 +27,12 @@ export function SettingsView(props) {
   const [label, setLabel] = useState('')
   const [token, setToken] = useState('')
 
+  const selected = providers.find((item) => item.id === provider) ?? { id: provider, label: provider }
+  // 每个平台的三步都不同（菜单路径、scope 名都不一样），文案按平台 id 取
+  const steps = provider === 'gitee'
+    ? ['accounts.guideGitee1', 'accounts.guideGitee2', 'accounts.guideGitee3'].map((key) => translate(key))
+    : ['accounts.guideGithub1', 'accounts.guideGithub2', 'accounts.guideGithub3'].map((key) => translate(key))
+
   const submitAccount = () => {
     if (typeof source.onAddAccount !== 'function' || token.trim() === '') return
     source.onAddAccount({ provider, label: label.trim(), token: token.trim() })
@@ -117,6 +123,29 @@ export function SettingsView(props) {
       accountsError !== null
         ? h(InlineNote, { tone: 'error' }, accountsError)
         : null,
+      typeof source.accountsNotice === 'string' && source.accountsNotice !== ''
+        ? h(InlineNote, { tone: 'info' }, source.accountsNotice)
+        : null,
+      /* 引导：按当前平台给三步 + 一键打开令牌页，免得用户自己去翻设置菜单 */
+      h('div', { className: 'dgp-account-guide', 'data-dgp-accounts': 'guide' },
+        h('div', { className: 'dgp-account-guide-head' },
+          h('span', { className: 'dgp-account-guide-title' },
+            translate('accounts.guideTitle') + ' · ' + selected.label),
+          selected.tokenUrl === undefined
+            ? null
+            : h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-dgp-accounts': 'open-token-page',
+              onClick: () => {
+                window.open(selected.tokenUrl, '_blank', 'noopener,noreferrer')
+              }
+            }, translate('accounts.openTokenPage'), h(Icon, { name: 'external', size: 12 }))),
+        h('ol', { className: 'dgp-account-steps' },
+          steps.map((step, index) => h('li', { key: String(index) }, step))),
+        h('p', { className: 'dgp-settings-hint' }, translate('accounts.verifyHint'))),
+
       h('div', { className: 'dgp-account-form' },
         h('select', {
           className: 'dgp-select dgp-account-provider',
@@ -136,9 +165,12 @@ export function SettingsView(props) {
           className: 'dgp-input',
           'data-dgp-accounts': 'token',
           type: 'password',
-          placeholder: translate('accounts.token'),
+          placeholder: translate('accounts.tokenPlaceholder'),
           value: token,
-          onChange: (event) => setToken(event.target.value)
+          onChange: (event) => setToken(event.target.value),
+          onKeyDown: (event) => {
+            if (event.key === 'Enter' && !accountsBusy && token.trim() !== '') submitAccount()
+          }
         }),
         h('button', {
           type: 'button',

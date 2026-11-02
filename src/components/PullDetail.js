@@ -216,8 +216,12 @@ export function PullDetail(props) {
       h('span', null, '+' + statText(pull.additions) + ' / −' + statText(pull.deletions)),
       h('span', null, t('pull.filesChanged', { count: statText(pull.changedFiles) })),
       h('span', null, t('pull.commits', { count: pull.commits })),
-      pull.createdAt === '' ? null : h('span', null, t('detail.created', { time: formatDateTime(Date.parse(pull.createdAt)) })),
-      pull.updatedAt === '' ? null : h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(pull.updatedAt)) }))),
+      typeof pull.createdAt === 'string' && pull.createdAt !== ''
+        ? h('span', null, t('detail.created', { time: formatDateTime(Date.parse(pull.createdAt)) }))
+        : null,
+      typeof pull.updatedAt === 'string' && pull.updatedAt !== ''
+        ? h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(pull.updatedAt)) }))
+        : null),
 
     pull.body === ''
       ? null

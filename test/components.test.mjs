@@ -578,6 +578,58 @@ test('样式表覆盖了代码里用到的所有 dgp- class', () => {
   eq(missing, [], '有 class 在代码里用到但样式表没定义')
 })
 
+test('RemoteDetail：有更新时间才显示「更新」，缺失时不出现占位符', () => {
+  const { RemoteDetail } = loadModule('./components/RemoteDetail.js')
+  const base = {
+    selection: { accountId: 'github:alice', fullName: 'alice/app' },
+    detail: {
+      loading: false,
+      error: null,
+      data: {
+        repo: {
+          fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
+          issuesUrl: 'x', pullsUrl: 'x'
+        },
+        issues: { total: 0, items: [] },
+        pulls: {
+          total: 1,
+          items: [{
+            number: 5, title: 'PR five', url: 'x', author: 'zhouxn0513',
+            createdAt: '2026-10-31T13:48:00Z', updatedAt: ''
+          }]
+        },
+        failures: []
+      }
+    },
+    onOpenPull: () => {},
+    t: tKey
+  }
+
+  // 缺失更新时间：只出现「创建」，不出现「更新」，更不能出现占位符
+  const without = textOf(renderComponent(RemoteDetail, base))
+  assert(without.includes('detail.created'), '应显示创建时间：' + without)
+  assert(!without.includes('detail.updated'), '没有更新时间时不应显示更新：' + without)
+  assert(!without.includes('—'), '不应出现占位符：' + without)
+
+  // 有更新时间：两个都显示
+  const withUpdated = textOf(renderComponent(RemoteDetail, {
+    ...base,
+    detail: {
+      ...base.detail,
+      data: {
+        ...base.detail.data,
+        pulls: {
+          total: 1,
+          items: [{ ...base.detail.data.pulls.items[0], updatedAt: '2026-11-02T12:00:00Z' }]
+        }
+      }
+    }
+  }))
+  assert(withUpdated.includes('detail.created') && withUpdated.includes('detail.updated'),
+    '两个时间都要显示：' + withUpdated)
+})
+
 console.log('')
 if (failures.length > 0) {
   console.error(failures.length + ' failed, ' + passed + ' passed')

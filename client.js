@@ -8698,10 +8698,13 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'dgp-detail-meta' },
                   item.author === '' ? null : h('span', { className: 'dgp-detail-author' }, item.author),
                   // 明确区分：创建 = 提交 PR 的时间，更新 = 最后一次有动静
-                  item.createdAt === '' ? null : h('span', null, t('detail.created', { time: formatDateTime(Date.parse(item.createdAt)) })),
-                  item.updatedAt === '' || item.updatedAt === item.createdAt
-                    ? null
-                    : h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(item.updatedAt)) })))))))
+                  typeof item.createdAt === 'string' && item.createdAt !== ''
+                    ? h('span', null, t('detail.created', { time: formatDateTime(Date.parse(item.createdAt)) }))
+                    : null,
+                  // 只有确实给了更新时间、且与创建时间不同才显示；缺失就不显示（不要占位符）
+                  typeof item.updatedAt === 'string' && item.updatedAt !== '' && item.updatedAt !== item.createdAt
+                    ? h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(item.updatedAt)) }))
+                    : null)))))
       }
 
       function RemoteDetail(props) {
@@ -9039,8 +9042,12 @@ window.__ModuleLoader__.load({
             h('span', null, '+' + statText(pull.additions) + ' / −' + statText(pull.deletions)),
             h('span', null, t('pull.filesChanged', { count: statText(pull.changedFiles) })),
             h('span', null, t('pull.commits', { count: pull.commits })),
-            pull.createdAt === '' ? null : h('span', null, t('detail.created', { time: formatDateTime(Date.parse(pull.createdAt)) })),
-            pull.updatedAt === '' ? null : h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(pull.updatedAt)) }))),
+            typeof pull.createdAt === 'string' && pull.createdAt !== ''
+              ? h('span', null, t('detail.created', { time: formatDateTime(Date.parse(pull.createdAt)) }))
+              : null,
+            typeof pull.updatedAt === 'string' && pull.updatedAt !== ''
+              ? h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(pull.updatedAt)) }))
+              : null),
 
           pull.body === ''
             ? null

@@ -43,10 +43,13 @@ function Section(props) {
           h('span', { className: 'dgp-detail-meta' },
             item.author === '' ? null : h('span', { className: 'dgp-detail-author' }, item.author),
             // 明确区分：创建 = 提交 PR 的时间，更新 = 最后一次有动静
-            item.createdAt === '' ? null : h('span', null, t('detail.created', { time: formatDateTime(Date.parse(item.createdAt)) })),
-            item.updatedAt === '' || item.updatedAt === item.createdAt
-              ? null
-              : h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(item.updatedAt)) })))))))
+            typeof item.createdAt === 'string' && item.createdAt !== ''
+              ? h('span', null, t('detail.created', { time: formatDateTime(Date.parse(item.createdAt)) }))
+              : null,
+            // 只有确实给了更新时间、且与创建时间不同才显示；缺失就不显示（不要占位符）
+            typeof item.updatedAt === 'string' && item.updatedAt !== '' && item.updatedAt !== item.createdAt
+              ? h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(item.updatedAt)) }))
+              : null)))))
 }
 
 export function RemoteDetail(props) {

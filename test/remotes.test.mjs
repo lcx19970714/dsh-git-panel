@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import os from 'node:os'
 import path from 'node:path'
 
-import { createRemotes, PROVIDER_IDS } from '../host/remotes.js'
+import { createRemotes, PROVIDER_IDS } from '../host/remotes/index.js'
 
 const tempDir = (prefix) => mkdtempSync(path.join(os.tmpdir(), prefix))
 
@@ -481,6 +481,54 @@ await test('合并：已合并/非打开/不可合并都拒绝；成功时带方
     () => remotes.mergePull({ ...base, method: 'fast-forward' }),
     (error) => error.code === 'bad-request'
   )
+})
+
+await test('mergeable 三态：GitHub 的 null（计算中）不阻止合并，false 才阻止', async () => {
+  const credentials = fakeCredentials()
+  let mergeable = null
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/pulls\/9\/merge$/, { json: { merged: true, message: 'ok' } }],
+    [/\/pulls\/9\/reviews$/, { json: [] }],
+    [/\/pulls\/9$/, () => ({
+      json: { number: 9, title: 'T', state: 'open', merged: false, mergeable, base: { ref: 'main' }, head: { ref: 'feat' } }
+    })]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+  const base = { accountId: 'github:alice', fullName: 'alice/app', number: 9 }
+
+  const unknown = await remotes.pullDetail(base)
+  assert.equal(unknown.pull.mergeable, null, 'null 要原样保留，不能塌成 false')
+  const merged = await remotes.mergePull(base)
+  assert.equal(merged.merged, true, 'mergeable=null 时允许尝试合并')
+
+  mergeable = false
+  await assert.rejects(
+    () => remotes.mergePull(base),
+    (error) => error.code === 'not-mergeable'
+  )
+})
+
+await test('Gitee 的 merged 可能只体现在 state 或 merged_at；统计缺字段时标记 statsComplete=false', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/pulls\/4\?[^/]*$/, {
+      json: {
+        number: 4, title: 'T', state: 'merged', merged_at: '2026-01-01T00:00:00Z',
+        base: { ref: 'master' }, head: { ref: 'dev' }, html_url: 'https://gitee.com/bob/tool/pulls/4'
+      }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+
+  const detail = await remotes.pullDetail({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 4 })
+  assert.equal(detail.pull.merged, true, 'state=merged / merged_at 都算已合并')
+  assert.equal(detail.pull.statsComplete, false, '没有增删行字段时不能声称统计完整')
+  assert.deepEqual(detail.capabilities.verdicts, ['approve'])
+  assert.equal(detail.capabilities.reviews, false, 'Gitee 没有审查记录接口')
 })
 
 await test('Gitee：审查只有「通过」，合并用 prune_source_branch 删分支', async () => {

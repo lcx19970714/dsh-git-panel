@@ -145,7 +145,13 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 ├─ index.js                 宿主入口：ctx.inject(['connection']) + 精确 Fetch 路由
 ├─ host/
 │  ├─ git.js                零依赖 git 引擎（spawn git；porcelain=v2 -z 解析、unified diff、目录、仓库发现、文件读写）
-│  ├─ remotes.js            GitHub / Gitee 账号与远端仓库（令牌存 DSH 凭据服务，克隆不落盘令牌）
+│  ├─ remotes/              GitHub / Gitee 远端能力（令牌存 DSH 凭据服务，克隆不落盘令牌）
+│  │  ├─ index.js           门面：账号增删改 + 组装下面几块
+│  │  ├─ providers.js       平台差异表（鉴权/路径/字段归一/PR 能力），加载时校验契约
+│  │  ├─ accounts.js        凭据服务里的账号记录（token 不出宿主）
+│  │  ├─ repos.js           列仓库 / 仓库详情 / 克隆
+│  │  ├─ pulls.js           PR 详情 / 审查 / 合并
+│  │  └─ http.js            带超时的请求、错误归一、分页 Link
 │  ├─ roots.js              三种根的解析（primary / discovered / extra）
 │  └─ config.js             外部根持久化（原子写、损坏自动备份）
 ├─ src/                     ← 客户端源码（ESM，构建成 client.js）

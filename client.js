@@ -1418,6 +1418,7 @@ window.__ModuleLoader__.load({
         'pull.merge': '合并',
         'pull.mergeable': '可以合并',
         'pull.notMergeable': '当前不可合并（冲突或缺少审查）',
+        'pull.mergeableUnknown': '平台还在计算能否合并，可以直接尝试',
         'pull.method.merge': '普通合并',
         'pull.method.squash': '压缩为一个提交',
         'pull.method.rebase': '变基合并',
@@ -1675,6 +1676,7 @@ window.__ModuleLoader__.load({
         'pull.merge': 'Merge',
         'pull.mergeable': 'Ready to merge',
         'pull.notMergeable': 'Not mergeable right now (conflicts or missing reviews)',
+        'pull.mergeableUnknown': 'Mergeability still being computed — you can try merging',
         'pull.method.merge': 'Merge commit',
         'pull.method.squash': 'Squash and merge',
         'pull.method.rebase': 'Rebase and merge',
@@ -8122,6 +8124,13 @@ window.__ModuleLoader__.load({
         const pull = data.pull
         const caps = data.capabilities
         const canMerge = pull.state === 'open' && pull.merged !== true
+        // mergeable：true 可以、false 明确不行、null 表示平台还在算 —— null 不该禁用按钮
+        const mergeBlocked = pull.mergeable === false
+        const mergeableText = pull.mergeable === true
+          ? t('pull.mergeable')
+          : (pull.mergeable === false ? t('pull.notMergeable') : t('pull.mergeableUnknown'))
+        // 平台不一定给增删行/文件数，缺了显示 —— 而不是 0
+        const statText = (value) => (pull.statsComplete === true ? String(value) : '—')
 
         const run = async (kind, action) => {
           setBusy(kind)
@@ -8181,8 +8190,8 @@ window.__ModuleLoader__.load({
             pull.merged === true ? h('span', null, t('pull.merged')) : null,
             h('span', null, pull.author),
             h('span', null, pull.headBranch + ' → ' + pull.baseBranch),
-            h('span', null, '+' + pull.additions + ' / −' + pull.deletions),
-            h('span', null, t('pull.filesChanged', { count: pull.changedFiles })),
+            h('span', null, '+' + statText(pull.additions) + ' / −' + statText(pull.deletions)),
+            h('span', null, t('pull.filesChanged', { count: statText(pull.changedFiles) })),
             h('span', null, t('pull.commits', { count: pull.commits })),
             pull.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatClock(Date.parse(pull.updatedAt)) }))),
 
@@ -8230,8 +8239,7 @@ window.__ModuleLoader__.load({
             ? h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'merge' },
               h('div', { className: 'dgp-detail-head' },
                 h('span', { className: 'dgp-detail-title' }, t('pull.merge')),
-                h('span', { className: 'dgp-detail-count' },
-                  pull.mergeable === true ? t('pull.mergeable') : t('pull.notMergeable'))),
+                h('span', { className: 'dgp-detail-count' }, mergeableText)),
               h('div', { className: 'dgp-pull-actions' },
                 h('select', {
                   className: 'dgp-select dgp-pull-method',
@@ -8254,7 +8262,7 @@ window.__ModuleLoader__.load({
                   'data-size': 'sm',
                   'data-variant': 'primary',
                   'data-dgp-pull': 'merge-run',
-                  disabled: busy !== null || pull.mergeable !== true,
+                  disabled: busy !== null || mergeBlocked,
                   onClick: submitMerge
                 }, t(busy === 'merge' ? 'pull.merging' : 'pull.mergeRun'))))
             : null,

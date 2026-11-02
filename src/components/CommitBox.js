@@ -31,7 +31,7 @@ export function commitInputHeight(scrollHeight) {
 }
 
 export function CommitBox(props) {
-  const source = props === null || props === undefined ? {} : props
+  const source = props
   const translate = source.t
   const message = typeof source.message === 'string' ? source.message : ''
   const stagedCount = typeof source.stagedCount === 'number' ? source.stagedCount : 0

@@ -31,8 +31,6 @@
  * v1 没有 Config（不需要 schemastery），也没有 AI-facing tool。
  */
 import { stat } from 'node:fs/promises'
-import { appendFileSync, writeFileSync } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 
 import {
@@ -715,84 +713,62 @@ function createDispatcher(ctx) {
   }
 
   /* 路由 -------------------------------------------------------------- */
-  return async function dispatch(endpoint, payload, signal) {
-    const request = asObject(payload)
-    switch (endpoint) {
-      case 'project/resolve':
-        return projectResolve(request)
-      case 'roots/add':
-        return rootsAdd(request)
-      case 'roots/remove':
-        return rootsRemove(request)
-      case 'roots/hide':
-        return rootsHide(request)
-      case 'roots/unhide':
-        return rootsUnhide(request)
-      case 'status':
-        return status(request, signal)
-      case 'remote/fetch':
-        return remoteFetch(request, signal)
-      case 'diff':
-        return diff(request, signal)
-      case 'file/read':
-        return fileRead(request, signal)
-      case 'file/write':
-        return fileWrite(request, signal)
-      case 'index/stage':
-        return indexStage(request, signal)
-      case 'index/stage-group':
-        return indexStageGroup(request, signal)
-      case 'accounts/list':
-        return accountsList()
-      case 'accounts/add':
-        return accountsAdd(request, signal)
-      case 'accounts/update':
-        return accountsUpdate(request, signal)
-      case 'accounts/token':
-        return accountsToken(request)
-      case 'accounts/remove':
-        return accountsRemove(request)
-      case 'remote/repos':
-        return remoteRepos(request, signal)
-      case 'remote/detail':
-        return remoteDetail(request, signal)
-      case 'remote/pr-counts':
-        return remotePullCounts(request, signal)
-      case 'remote/pull':
-        return remotePull(request, signal)
-      case 'remote/pull/review':
-        return remotePullReview(request, signal)
-      case 'remote/pull/pass':
-        return remotePullPass(request, signal)
-      case 'remote/pull/test':
-        return remotePullTest(request, signal)
-      case 'remote/pull/merge':
-        return remotePullMerge(request, signal)
-      case 'remote/clone':
-        return remoteClone(request, signal)
-      case 'branches/list':
-        return branchesList(request, signal)
-      case 'branch/switch':
-        return branchSwitch(request, signal)
-      case 'branch/track':
-        return branchTrack(request, signal)
-      case 'branch/create':
-        return branchCreate(request, signal)
-      case 'commit':
-        return commit(request, signal)
-      case 'commit/message':
-        return commitMessage(request, signal)
-      case 'models/list':
-        return modelsList()
-      case 'settings/get':
-        return settingsGet()
-      case 'settings/set':
-        return settingsSet(request)
-      case 'tree/list':
-        return treeList(request, signal)
-      default:
-        throw new GitError('unknown-endpoint', `未知的 RPC 端点：${String(endpoint)}`)
+
+  /**
+   * 端点 → 处理函数。与 ENDPOINTS 一一对应：构造时逐个校验，缺一个就立即抛错
+   * （注册路由阶段失败，而不是等用户点到那个按钮才暴露）。
+   */
+  const HANDLERS = {
+    'project/resolve': (request, signal) => projectResolve(request),
+    'roots/add': (request, signal) => rootsAdd(request),
+    'roots/remove': (request, signal) => rootsRemove(request),
+    'roots/hide': (request, signal) => rootsHide(request),
+    'roots/unhide': (request, signal) => rootsUnhide(request),
+    'status': (request, signal) => status(request, signal),
+    'remote/fetch': (request, signal) => remoteFetch(request, signal),
+    'diff': (request, signal) => diff(request, signal),
+    'file/read': (request, signal) => fileRead(request, signal),
+    'file/write': (request, signal) => fileWrite(request, signal),
+    'index/stage': (request, signal) => indexStage(request, signal),
+    'index/stage-group': (request, signal) => indexStageGroup(request, signal),
+    'accounts/list': () => accountsList(),
+    'accounts/add': (request, signal) => accountsAdd(request, signal),
+    'accounts/update': (request, signal) => accountsUpdate(request, signal),
+    'accounts/token': (request, signal) => accountsToken(request),
+    'accounts/remove': (request, signal) => accountsRemove(request),
+    'remote/repos': (request, signal) => remoteRepos(request, signal),
+    'remote/detail': (request, signal) => remoteDetail(request, signal),
+    'remote/pr-counts': (request, signal) => remotePullCounts(request, signal),
+    'remote/pull': (request, signal) => remotePull(request, signal),
+    'remote/pull/review': (request, signal) => remotePullReview(request, signal),
+    'remote/pull/pass': (request, signal) => remotePullPass(request, signal),
+    'remote/pull/test': (request, signal) => remotePullTest(request, signal),
+    'remote/pull/merge': (request, signal) => remotePullMerge(request, signal),
+    'remote/clone': (request, signal) => remoteClone(request, signal),
+    'branches/list': (request, signal) => branchesList(request, signal),
+    'branch/switch': (request, signal) => branchSwitch(request, signal),
+    'branch/track': (request, signal) => branchTrack(request, signal),
+    'branch/create': (request, signal) => branchCreate(request, signal),
+    'commit': (request, signal) => commit(request, signal),
+    'commit/message': (request, signal) => commitMessage(request, signal),
+    'models/list': () => modelsList(),
+    'settings/get': () => settingsGet(),
+    'settings/set': (request, signal) => settingsSet(request),
+    'tree/list': (request, signal) => treeList(request, signal),
+  }
+
+  for (const endpoint of ENDPOINTS) {
+    if (typeof HANDLERS[endpoint] !== 'function') {
+      throw new Error('缺少端点的处理函数：' + endpoint)
     }
+  }
+
+  return async function dispatch(endpoint, payload, signal) {
+    const handler = HANDLERS[endpoint]
+    if (handler === undefined) {
+      throw new GitError('unknown-endpoint', `未知的 RPC 端点：${String(endpoint)}`)
+    }
+    return handler(asObject(payload), signal)
   }
 }
 
@@ -829,9 +805,6 @@ function createHandler(ctx) {
  * 然后在回调里为每个 endpoint 注册一条精确 Fetch 路由。
  */
 export function apply(ctx) {
-  hostApplyCount += 1
-  appendHostLog('apply #' + hostApplyCount + ' inject=' + typeof ctx.inject)
-
   // LLM 服务只用于「生成提交说明」：单独注入并留住引用，
   // 这样 profile 没挂 llm 时面板其余功能照常可用，缺失只会在生成时报明确错误。
   ctx.inject(['llm'], (scope) => {
@@ -855,21 +828,13 @@ export function apply(ctx) {
   })
 
   ctx.inject(['connection'], (scope) => {
-    try {
-      scope.effect(() => acquireRoutes(scope), `${name}: fetch routes`)
-    } catch (error) {
-      // 排障：异常原文落到追加日志里，然后照旧抛出（失败必须可见）
-      appendHostLog('register-failed: ' + (error && error.stack ? error.stack : describe(error)))
-      throw error
-    }
-    appendHostLog('registered ' + ENDPOINTS.length + ' routes under ' + RPC_CHANNEL + '/' + RPC_NAMESPACE)
+    scope.effect(() => acquireRoutes(scope), `${name}: fetch routes`)
     scope.logger?.info?.(`dsh-git-panel: 已注册 ${ENDPOINTS.length} 条 Fetch 路由（${RPC_CHANNEL}/${RPC_NAMESPACE}/*）`)
   })
 }
 
 /* ------------------------------------------------- 路由注册（进程内单例） */
 
-let hostApplyCount = 0
 let routeRefs = 0
 let routeDisposers = []
 /** 宿主注入的 LLM 服务；未挂载时为 null（生成时报 no-llm）。 */
@@ -949,54 +914,6 @@ function acquireRoutes(ctx) {
   }
 }
 
-/* ------------------------------------------------------- 启动诊断（排障用） */
 
-/** DSH_HOME（调用时解析，测试会指到临时目录）。 */
-function dshHomeDir() {
-  const fromEnv = process.env.DSH_HOME
-  if (typeof fromEnv === 'string' && fromEnv !== '') return fromEnv
-  try {
-    return path.join(os.homedir(), '.dsh')
-  } catch {
-    return os.tmpdir()
-  }
-}
-
-/** 宿主排障日志（放在 DSH_HOME 下，避免被测试进程覆盖）。 */
-function hostLogPath() {
-  return path.join(dshHomeDir(), 'dsh-git-panel-host.log')
-}
-
-/**
- * 模块被 import 时就落一个标记。
- * 有标记 = 模块成功加载；没标记 = 加载器根本没加载到这个包（那是组合层的问题，不是插件代码的问题）。
- */
-try {
-  writeFileSync(path.join(dshHomeDir(), 'dsh-git-panel-host-import.json'), JSON.stringify({
-    pid: process.pid,
-    at: new Date().toISOString(),
-    dshHome: dshHomeDir(),
-    argv: process.argv.slice(0, 3)
-  }, null, 2), 'utf8')
-} catch {
-  /* 诊断不能反过来影响加载 */
-}
-
-/**
- * 宿主半体的启动日志（临时排障用，链路确认后删除）。
- *
- * 追加写，所以能看到完整的调用序列 —— 例如 apply 是否被调用了两次：
- *   apply
- *   registered
- *   apply            ← 第二次 apply
- *   register-failed: webserver: duplicate prefix route "/dsh-git"
- */
-function appendHostLog(event) {
-  try {
-    appendFileSync(hostLogPath(), `${new Date().toISOString()} pid=${process.pid} ${event}\n`, 'utf8')
-  } catch {
-    /* 排障写入失败不能影响插件 */
-  }
-}
 
 

@@ -26,7 +26,7 @@ function secondsOf(startedAt, now) {
 }
 
 export function RemotePane(props) {
-  const source = props === null || props === undefined ? {} : props
+  const source = props
   const translate = source.t
   const accounts = Array.isArray(source.accounts) ? source.accounts : []
   const accountId = typeof source.accountId === 'string' ? source.accountId : null

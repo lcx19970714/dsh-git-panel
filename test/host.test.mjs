@@ -209,6 +209,15 @@ function test(name, fn) {
   tests.push({ name, fn })
 }
 
+test('文档与端点清单必须一致：数量一致，且每个端点都在文档端点表里', async () => {
+  const doc = readFileSync(new URL('../docs/ARCHITECTURE.md', import.meta.url), 'utf8')
+  const claimed = /通过 (\d+) 个 RPC 端点通信/.exec(doc)
+  assert.ok(claimed !== null, '文档里找不到端点数量声明')
+  assert.equal(Number(claimed[1]), plugin.ENDPOINTS.length, '文档写的端点数量与实际不一致')
+  const absent = plugin.ENDPOINTS.filter((endpoint) => !doc.includes('`' + endpoint + '`'))
+  assert.deepEqual(absent, [], '这些端点没有写进文档端点表：' + absent.join(', '))
+})
+
 test('apply() 为每个 endpoint 注册一条 /api/dsh-git/* 的精确 Fetch 路由', async () => {
   assert.equal(plugin.name, 'dsh-git-panel')
   for (const endpoint of ['project/resolve', 'roots/add', 'roots/remove', 'status', 'diff', 'file/read', 'tree/list']) {
@@ -727,7 +736,7 @@ test('tree/list：目录优先 + 自然序 + truncated', async () => {
   assert.ok(srcNames.includes('renamed'))
   const appEntry = srcListing.entries.find((entry) => entry.name === 'app.js')
   assert.equal(appEntry.type, 'file')
-  assert.equal(appEntry.path, 'app.js')
+  assert.equal(appEntry.path, undefined, '不再返回与 name 重复的 path 字段')
 
   // 省略 path 等价于根目录
   const implicit = await callOk('tree/list', { rootPath: FIXTURE })

@@ -20,25 +20,13 @@ import { childPath, orderTreeEntries } from '../util/changes.js'
 import { describeError } from '../api.js'
 import { EmptyState, InlineNote } from './States.js'
 
-/** props.t 缺失时的兜底（本地字典，永不返回 undefined）。 */
-
-/** 某个 key 是否真的在字典里（宿主/本地字典都没有时会回显 key 本身）。 */
-function hasKey(translate, key) {
-  return translate(key) !== key
-}
-
 function messageOf(error, translate) {
-  try {
-    const text = describeError(error, translate)
-    if (typeof text === 'string' && text !== '') return text
-  } catch {
-    /* describeError 不该抛，兜底继续 */
-  }
-  return translate('error.generic', { message: '' })
+  const text = describeError(error, translate)
+  return typeof text === 'string' && text !== '' ? text : translate('error.generic', { message: '' })
 }
 
 export function FileTree(props) {
-  const source = props === null || props === undefined ? {} : props
+  const source = props
   const rootPath = typeof source.rootPath === 'string' && source.rootPath !== '' ? source.rootPath : null
   const selectedPath = typeof source.selectedPath === 'string' && source.selectedPath !== ''
     ? source.selectedPath
@@ -237,7 +225,7 @@ export function FileTree(props) {
     if (ordered.length === 0) {
       let text = null
       if (filter !== '') text = translate('status.emptyFilter', { filter })
-      else if (hasKey(translate, 'status.emptyDir')) text = translate('status.emptyDir')
+      else text = translate('status.emptyDir')
       if (text !== null) out.push({ kind: 'note', key: baseKey + ':empty', tone: 'info', text, depth })
     }
 
@@ -274,9 +262,7 @@ export function FileTree(props) {
   const rootFailed = rootLevel !== undefined && rootLevel !== null && rootLevel.status === 'failed'
   const rootReady = rootLevel !== undefined && rootLevel !== null && rootLevel.status === 'ok'
   const hasVisibleRows = rows.some((row) => row.kind === 'dir' || row.kind === 'file')
-  const filterNote = filter !== '' && hasKey(translate, 'filter.loadedOnly')
-    ? translate('filter.loadedOnly')
-    : null
+  const filterNote = filter !== '' ? translate('filter.loadedOnly') : null
   const filterEmpty = filter !== '' && rootReady && !hasVisibleRows
 
   /* ------------------------------ 副作用（光标） ------------------------------ */

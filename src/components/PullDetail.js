@@ -15,7 +15,7 @@ const VERDICT_LABEL = {
 }
 
 export function PullDetail(props) {
-  const source = props === null || props === undefined ? {} : props
+  const source = props
   const t = source.t
   const selection = source.selection === null || source.selection === undefined ? null : source.selection
   const detail = source.detail === null || source.detail === undefined ? null : source.detail

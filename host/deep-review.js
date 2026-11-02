@@ -55,25 +55,27 @@ export async function materializePull(source, options = {}) {
   const useLocal = localRoot !== null && await localRepoMatches(localRoot, source.fullName)
 
   if (useLocal) {
-    const tree = await mkdtemp(path.join(tempRoot ?? os.tmpdir(), 'dsh-deep-review-tree-'))
-    const localRef = 'refs/dsh/review-' + randomBytes(4).toString('hex')
+    const base = await mkdtemp(path.join(tempRoot ?? os.tmpdir(), 'dsh-deep-review-local-'))
+    const repoDir = path.join(base, 'repo')
+    const tree = path.join(base, 'tree')
     const cleanup = async () => {
-      await runGit(localRoot, ['worktree', 'remove', '--force', tree], { allowFailure: true })
-      await runGit(localRoot, ['update-ref', '-d', localRef], { allowFailure: true })
-      await rm(tree, { recursive: true, force: true })
+      await rm(base, { recursive: true, force: true })
     }
     try {
-      await runGit(localRoot, [
+      // --shared：用 alternates 借用本地对象库，不复制、不改动源仓库
+      await runGit(base, ['clone', '-q', '--shared', '--no-checkout', localRoot, repoDir], { signal })
+      await runGit(base, [
+        '-C', repoDir,
         ...authArgs(source.user, source.token),
-        'fetch', '--no-tags', 'origin', '+' + source.remoteRef + ':' + localRef
+        'fetch', '--depth=1', '--no-tags', source.url, '+' + source.remoteRef + ':refs/dsh/review'
       ], { signal, timeoutMs: FETCH_TIMEOUT_MS })
-      await runGit(localRoot, ['worktree', 'add', '--detach', tree, localRef], { signal })
+      await runGit(base, ['-C', repoDir, 'worktree', 'add', '--detach', tree, 'refs/dsh/review'], { signal })
     } catch (error) {
       await cleanup()
       if (error instanceof GitError) throw error
       throw new GitError('deep-review-failed', '从本地仓库取 PR 代码失败：' + (error instanceof Error ? error.message : String(error)))
     }
-    return { root: localRoot, tree, objectSource: 'local', cleanup }
+    return { root: base, tree, objectSource: 'local', cleanup }
   }
 
   const base = await mkdtemp(path.join(tempRoot ?? os.tmpdir(), 'dsh-deep-review-'))

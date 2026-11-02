@@ -217,6 +217,12 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 **深度审阅约定**：`remote/pull/deep-review` 不只发 diff：宿主把 PR 的 head 拉到临时目录，
 读**改动文件的完整内容**后再交给模型（输入上限 600k 字符、单文件 80k）。
 
+- 拉取方式：本地仓库的 origin 与 PR 仓库一致时，用 `git clone --shared` 在临时目录借用它的对象库
+  （用户仓库零写入：不新增 ref、不注册 worktree），再 `--depth=1` fetch 只下载缺失对象；
+  不一致或没有本地仓库时，在系统临时目录建裸仓库 `git fetch --depth=1`，用完整个目录删除；
+- 绝不切换用户当前分支、不写用户工作区：全程只读对象 + 临时 worktree，finally 里清理；
+- 二进制、超过 2MB、已删除的文件不读完整内容，原因随 `fullFilesSkipped` 返回并显示在界面上。
+
 - 拉取方式：本地仓库的 origin 与 PR 仓库一致时，直接复用它的对象库（`git fetch origin` + 临时 worktree），
   已经有的提交不会再下载；不一致时在系统临时目录建裸仓库 `git fetch --depth=1`，用完删除；
 - 绝不切换用户当前分支、不写用户工作区：全程只读对象 + 临时 worktree，finally 里清理；
@@ -290,7 +296,6 @@ node scripts/install-profile.mjs --dry-run
 | 套件 | 覆盖 |
 |---|---|
 | `paths` | 路径/树构建/折叠/过滤/排序 |
-| `diff` | hunk 解析、并排配对、词级高亮、行预算 |
 | `tree` | 分组规则（`MM` 双组、冲突只进冲突组）、单文件组、树展开 |
 | `remote` | 远端地址 → 网页地址（scp/ssh/https/git 形式）、凭据不入地址栏、本地路径 → null |
 | `build` | 打包器：产物无残留 import/export、能真跑、循环依赖报错 |

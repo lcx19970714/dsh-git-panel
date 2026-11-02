@@ -1507,6 +1507,92 @@ test('用例 1u：设置按钮打开设置页，选择模型即保存', async ()
 /* 用例 2：点选 → diff 载荷 → diff 行                                  */
 /* ================================================================== */
 
+test('用例 1C：远端页签列出账号与仓库，点「拉取」把仓库克隆到项目里', async () => {
+  const clones = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub' }, { id: 'gitee', label: 'Gitee' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '演示仓库', language: 'TypeScript',
+          updatedAt: '2026-01-02T03:04:05Z', sizeKb: 120, defaultBranch: 'main',
+          htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git',
+          provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/clone': (payload) => {
+        clones.push(payload)
+        return sayOk({ path: PROJECT + '/app', name: 'app', fullName: 'alice/app' })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const tabs = panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))
+    click(tabs[2])
+    await panel.flush()
+
+    const chip = panel.one((node) => isHost(node) && attr(node, 'data-dgp-account') === 'github:alice')
+    assert(chip !== null, '应有账号 chip')
+    assert(textOf(chip).includes('工作号'), 'chip 显示账号备注名')
+
+    const rows = panel.all((node) => isHost(node) && hasClass(node, 'dgp-remote-item'))
+    eq(rows.length, 1, '应列出仓库')
+    assert(textOf(rows[0]).includes('app'), '行里显示仓库名')
+    assert(textOf(rows[0]).includes('演示仓库'), '行里显示描述')
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote-clone') === 'alice/app'))
+    await panel.flush()
+    const folderInput = panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote-folder') === 'alice/app')
+    assert(folderInput !== null, '应出现目标文件夹输入框')
+    eq(folderInput.props.value, 'app', '默认用仓库名')
+
+    folderInput.props.onChange({ target: { value: 'my-app' } })
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote-confirm') === 'alice/app'))
+    await panel.flush()
+
+    eq(clones.length, 1, '应调用一次 remote/clone')
+    eq(clones[0], {
+      accountId: 'github:alice',
+      fullName: 'alice/app',
+      cloneUrl: 'https://github.com/alice/app.git',
+      projectRoot: PROJECT,
+      targetName: 'my-app'
+    }, '克隆载荷')
+  })
+})
+
+test('用例 1D：没有账号时远端页签给空态，可直接去设置', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({ accounts: [], providers: [{ id: 'github', label: 'GitHub' }] })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+
+    const empty = panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'no-accounts')
+    assert(empty !== null, '应给空态')
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'open-settings'))
+    await panel.flush()
+
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-view') === 'settings') !== null,
+      '点「去设置」应打开设置页')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'add') !== null,
+      '设置页应有添加账号的入口')
+  })
+})
+
 test('用例 1A：文件模式没有仓库选择器，固定浏览项目根', async () => {
   const calls = []
   await withPanel({

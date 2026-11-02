@@ -121,6 +121,29 @@ export function stageGroup(payload, options) {
   return call('index/stage-group', payload, options)
 }
 
+/** 代码托管账号（token 只在宿主侧，客户端永远拿不到）。 */
+export function listAccounts(payload, options) {
+  return call('accounts/list', payload, options)
+}
+
+export function addAccount(payload, options) {
+  return call('accounts/add', payload, options)
+}
+
+export function removeAccount(payload, options) {
+  return call('accounts/remove', payload, options)
+}
+
+/** 列某个账号下的仓库（一页 100 条）。 */
+export function listRemoteRepos(payload, options) {
+  return call('remote/repos', payload, options)
+}
+
+/** 把远端仓库克隆到项目根下的子目录。 */
+export function cloneRemoteRepo(payload, options) {
+  return call('remote/clone', payload, options)
+}
+
 /** 列出本地分支。 */
 export function listBranches(payload, options) {
   return call('branches/list', payload, options)

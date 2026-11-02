@@ -51,6 +51,7 @@ import {
   switchBranch,
   writeTextFile
 } from './host/git.js'
+import { createRemotes } from './host/remotes.js'
 import {
   listModels,
   parseRef,
@@ -99,6 +100,11 @@ export const ENDPOINTS = Object.freeze([
   'index/stage-group',
   'branches/list',
   'branch/switch',
+  'accounts/list',
+  'accounts/add',
+  'accounts/remove',
+  'remote/repos',
+  'remote/clone',
   'commit',
   'commit/message',
   'models/list',
@@ -421,6 +427,45 @@ function createDispatcher(ctx) {
     return result
   }
 
+  /* accounts/* · remote/* ----------------------------------------------- */
+  /** 每次调用都现建门面：凭据服务是延迟注入的，不能在模块加载时固定住。 */
+  function remotesOf() {
+    return createRemotes({ credentials: credentialsService })
+  }
+
+  async function accountsList() {
+    return remotesOf().listAccounts()
+  }
+
+  async function accountsAdd(request, signal) {
+    return remotesOf().addAccount({
+      provider: requireString(request.provider, 'provider'),
+      label: typeof request.label === 'string' ? request.label : '',
+      token: requireString(request.token, 'token')
+    }, { signal })
+  }
+
+  async function accountsRemove(request) {
+    return remotesOf().removeAccount({ id: requireString(request.id, 'id') })
+  }
+
+  async function remoteRepos(request, signal) {
+    return remotesOf().listRepos({
+      accountId: requireString(request.accountId, 'accountId'),
+      page: Number.isInteger(request.page) ? request.page : 1
+    }, { signal })
+  }
+
+  async function remoteClone(request, signal) {
+    return remotesOf().cloneRepo({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullName: requireString(request.fullName, 'fullName'),
+      cloneUrl: requireString(request.cloneUrl, 'cloneUrl'),
+      projectRoot: requireAbsolute(request.projectRoot, 'projectRoot'),
+      targetName: typeof request.targetName === 'string' ? request.targetName : ''
+    }, { signal })
+  }
+
   /* branches/list · branch/switch -------------------------------------- */
   async function branchesList(request, signal) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
@@ -561,6 +606,16 @@ function createDispatcher(ctx) {
         return indexStage(request, signal)
       case 'index/stage-group':
         return indexStageGroup(request, signal)
+      case 'accounts/list':
+        return accountsList()
+      case 'accounts/add':
+        return accountsAdd(request, signal)
+      case 'accounts/remove':
+        return accountsRemove(request)
+      case 'remote/repos':
+        return remoteRepos(request, signal)
+      case 'remote/clone':
+        return remoteClone(request, signal)
       case 'branches/list':
         return branchesList(request, signal)
       case 'branch/switch':
@@ -630,6 +685,17 @@ export function apply(ctx) {
     }, `${name}: llm service`)
   })
 
+  // 凭据服务只用于「代码托管账号的令牌」：单独注入并留住引用。
+  // 这个组合没有凭据服务时，面板其余功能照常，账号相关端点会明确报 no-credentials。
+  ctx.inject(['credentials'], (scope) => {
+    scope.effect(() => {
+      credentialsService = scope.credentials
+      return () => {
+        credentialsService = null
+      }
+    }, `${name}: credentials service`)
+  })
+
   ctx.inject(['connection'], (scope) => {
     try {
       scope.effect(() => acquireRoutes(scope), `${name}: fetch routes`)
@@ -650,6 +716,8 @@ let routeRefs = 0
 let routeDisposers = []
 /** 宿主注入的 LLM 服务；未挂载时为 null（生成时报 no-llm）。 */
 let llmService = null
+/** 宿主注入的凭据服务；未挂载时为 null（账号相关端点报 no-credentials）。 */
+let credentialsService = null
 
 /** endpoint → 精确路由路径。 */
 export function routePathOf(endpoint) {

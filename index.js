@@ -49,6 +49,7 @@ import {
   commitDiffText,
   listBranches,
   switchBranch,
+  createBranch,
   writeTextFile
 } from './host/git.js'
 import { createRemotes } from './host/remotes/index.js'
@@ -100,6 +101,7 @@ export const ENDPOINTS = Object.freeze([
   'index/stage-group',
   'branches/list',
   'branch/switch',
+  'branch/create',
   'accounts/list',
   'accounts/add',
   'accounts/update',
@@ -567,6 +569,17 @@ function createDispatcher(ctx) {
     return result
   }
 
+  async function branchCreate(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const branch = requireString(request.name, 'name')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
+    const result = await createBranch(normalizeSlashes(repo.repoRoot), branch, { signal })
+    clearStatusCache()
+    return result
+  }
+
   /* commit ------------------------------------------------------------ */
   /** 提交：有暂存只提交暂存；没有暂存则先把全部改动暂存再提交（smart commit）。 */
   async function commit(request, signal) {
@@ -720,6 +733,8 @@ function createDispatcher(ctx) {
         return branchesList(request, signal)
       case 'branch/switch':
         return branchSwitch(request, signal)
+      case 'branch/create':
+        return branchCreate(request, signal)
       case 'commit':
         return commit(request, signal)
       case 'commit/message':

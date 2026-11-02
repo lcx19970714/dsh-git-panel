@@ -1271,9 +1271,11 @@ test('用例 1：挂载 → 解析根 → status → 分组与行', async () => 
     eq(repoRows.length, 1, '只有一个仓库时应有一行')
     eq(attr(repoRows[0], 'data-active'), 'true', '当前仓库应高亮')
     assert(textOf(repoRows[0]).includes('project'), '行里应有仓库名，实际 ' + textOf(repoRows[0]))
-    const branchButton = byAttr(repoList, 'data-dgp-branch')[0]
-    assert(branchButton !== undefined, '仓库行应有分支按钮')
-    assert(textOf(branchButton).includes('main'), '分支按钮显示当前分支，实际 ' + textOf(branchButton))
+    const branchMark = byAttr(repoList, 'data-dgp-branch')[0]
+    assert(branchMark !== undefined, '仓库行最右侧应有分支按钮')
+    eq(branchMark.type, 'button', '当前分支是独立按钮')
+    assert(textOf(branchMark).includes('main'), '分支按钮显示当前分支，实际 ' + textOf(branchMark))
+    eq(textOf(repoRows[0]).includes('main'), false, '点仓库名的那一截不含分支名')
 
     // 顶层结构
     eq(panel.class('dgp-root').length, 1, '.dgp-root 数量')
@@ -1641,6 +1643,10 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
   }, async (panel) => {
     await panel.flush()
     const before = resolveCalls
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-repo') !== undefined))
+    await panel.flush()
+    eq(panel.all((node) => isHost(node) && hasClass(node, 'dgp-menu')).length, 0, '点仓库名不应打开分支菜单')
+
     const branchButton = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined)
     click(branchButton)
     await panel.flush()
@@ -1657,6 +1663,51 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
     eq(switches[0], { rootPath: PROJECT, name: 'feature' }, '切换载荷')
     eq(panel.all((node) => isHost(node) && hasClass(node, 'dgp-menu-item')).length, 0, '切完菜单应关闭')
     assert(resolveCalls > before, '切完要重新解析根，分支名才会更新')
+  })
+})
+
+test('用例 1C：分支菜单底部输入名字后创建并切过去', async () => {
+  const created = []
+  let resolveCalls = 0
+  await withPanel({
+    routes: {
+      'project/resolve': () => {
+        resolveCalls += 1
+        return resolveOk([ROOT], PROJECT)
+      },
+      status: () => sayOk(statusThree()),
+      'branches/list': () => sayOk({
+        branches: [{ name: 'main', current: true }]
+      }),
+      'branch/create': (payload) => {
+        created.push(payload)
+        return sayOk({ branch: payload.name, head: 'bbb2222' })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const before = resolveCalls
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined))
+    await panel.flush()
+
+    const form = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-create') === 'true')
+    assert(form !== null, '分支菜单底部应有创建表单')
+    const submit = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-create-submit') === 'true')
+    eq(attr(submit, 'disabled'), true, '没填名字时不能创建')
+
+    const input = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-name') === 'true')
+    input.props.onChange({ target: { value: '  topic  ' } })
+    await panel.flush()
+    const ready = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-create-submit') === 'true')
+    eq(attr(ready, 'disabled'), false, '填了名字就可以创建')
+
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-create') === 'true')
+      .props.onSubmit({ preventDefault() {} })
+    await panel.flush()
+    eq(created.length, 1, '应调用一次 branch/create')
+    eq(created[0], { rootPath: PROJECT, name: 'topic' }, '名字要去掉首尾空白')
+    eq(panel.all((node) => isHost(node) && hasClass(node, 'dgp-menu')).length, 0, '创建后菜单应关闭')
+    assert(resolveCalls > before, '创建后要重新解析根，行上的分支名才会换成新的')
   })
 })
 

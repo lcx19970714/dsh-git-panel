@@ -190,7 +190,9 @@ InlineNote({ tone: 'info'|'warn'|'error', children })
 ### 变更模式的「储存库」区
 `dgp-changes`（左栏容器：储存库 + 提交框 + 列表）、`dgp-repolist`、`dgp-repolist-head`、
 `dgp-repolist-toggle[data-dgp-repolist-toggle][data-open]`、`dgp-repolist-title`、
-`dgp-repolist-rows`、`dgp-repo-row[data-dgp-repo][data-active]`、`dgp-repo-branch`、
+`dgp-repolist-rows`、`dgp-repo-row[data-dgp-repo][data-active]`（只选中仓库）、
+`dgp-repo-branch[data-dgp-branch]`（行最右侧；只有点它才打开分支菜单）、
+`dgp-branch-create[data-dgp-branch-create]`（菜单底部：输入名字创建并切换）、
 `dgp-row-action[data-dgp-repo-remove]`（仅外部仓库）、`dgp-addform` + `dgp-addform-actions`
 
 ### 左侧列表 / 树

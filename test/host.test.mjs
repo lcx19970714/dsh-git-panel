@@ -1105,30 +1105,61 @@ test('project/resolve：项目子目录里的仓库都要被发现（深层 / ve
   )
 })
 
-test('外部根：经目录联接添加后，按联接写法移除与去重都必须命中同一条记录', async () => {
-  // 不变量：外部根的键一律是**规范化后的真实路径**。
-  // 于是「用联接写法添加 / 再用联接写法移除」必须命中同一条记录，
-  // 否则面板里会留下一条永远删不掉的僵尸根（曾经就是这样）。
+test('外部根：存的就是用户给的路径，按同一路径移除一定命中', async () => {
+  // 不变量：add 存什么，remove 就按什么删 —— 两侧同一个键，不会留下删不掉的僵尸根。
+  // 不再做 realpath 归一：不同写法视为不同根（更简单，也不会把用户给的路径换成别的）。
   const realRepo = makeRepo(path.join(tempDir('dgp-link-'), 'real-repo'))
   const linkPath = path.join(tempDir('dgp-link-home-'), 'linked-repo')
   symlinkSync(realRepo, linkPath, process.platform === 'win32' ? 'junction' : 'dir')
 
   await callOk('roots/add', { projectRoot: FIXTURE, path: linkPath })
 
-  const stored = await config.listExtras(FIXTURE)
+  const stored = (await config.listExtras(FIXTURE)).filter((item) => eqPath(item, linkPath))
   assert.equal(stored.length, 1, '应只有一条外部根记录')
-  assert.equal(stored[0], repoPath(realRepo), '入库键应是 realpath 后的真实路径，实际 ' + stored[0])
+  assert.equal(stored[0], toPosix(path.resolve(linkPath)), '入库键就是用户给的路径，实际 ' + stored[0])
 
-  // 再用真实路径添加同一个仓库：去重（不能出现两条指向同一目录的根）
-  const deduped = await callOk('roots/add', { projectRoot: FIXTURE, path: realRepo })
-  assert.equal(deduped.roots.filter((root) => root.kind === 'extra').length, 1, '同一仓库不应出现两条外部根')
-  assert.equal((await config.listExtras(FIXTURE)).length, 1, '配置里也只应有一条')
+  const listed = await callOk('project/resolve', { cwd: FIXTURE })
+  const extra = listed.roots.find((root) => root.kind === 'extra')
+  assert.ok(extra, '应出现 extra 根')
+  assert.equal(extra.isGit, true, '联接指向真实仓库，应识别为仓库')
+  assert.equal(extra.path, toPosix(path.resolve(linkPath)), '展示路径也是用户给的那一个')
 
-  // 用联接写法移除：必须命中
+  // 同一路径重复添加不产生第二条
+  await callOk('roots/add', { projectRoot: FIXTURE, path: linkPath })
+  assert.equal((await config.listExtras(FIXTURE)).length, 1)
+
+  // 用同一路径移除：必须命中并清空
   const after = await callOk('roots/remove', { projectRoot: FIXTURE, path: linkPath })
   assert.deepEqual(after.roots.filter((root) => root.kind === 'extra'), [], '移除后不应再有外部根')
   assert.deepEqual(await config.listExtras(FIXTURE), [], '配置里也必须清干净')
 })
+
+test('外部根：只认这个目录自身 —— 不向上找祖先仓库、不向下扫子仓库', async () => {
+  const repo = makeRepo(path.join(tempDir('dgp-extra-scope-'), 'outer'))
+
+  // 1) 加仓库里的子目录：不能悄悄换成上层仓库，直接拒绝
+  const subDir = path.join(repo, 'src')
+  mkdirSync(subDir, { recursive: true })
+  const failed = await callFail('roots/add', { projectRoot: FIXTURE, path: subDir })
+  assert.equal(failed.code, 'not-a-repository', '子目录不是仓库根，必须拒绝')
+  assert.match(failed.message, /缺少 \.git/, '错误要说明原因：' + failed.message)
+
+  // 2) 外部根内部还有嵌套仓库：只列外部根这一条，不扫描它的子仓库
+  const nested = makeRepo(path.join(repo, 'packages', 'inner'))
+  assert.ok(nested)
+  const added = await callOk('roots/add', { projectRoot: FIXTURE, path: repo })
+  const extras = added.roots.filter((root) => root.kind === 'extra' && eqPath(root.path, repo))
+  assert.equal(extras.length, 1, '只应有外部根自身那一条')
+  assert.equal(extras[0].path, repoPath(repo))
+  assert.equal(
+    added.roots.filter((root) => root.kind === 'discovered' && eqPath(root.path, nested)).length,
+    0,
+    '外部根内部不应被扫描出子仓库'
+  )
+
+  await callOk('roots/remove', { projectRoot: FIXTURE, path: repo })
+})
+
 test('index/stage：未暂存点加号进入已暂存，已暂存点减号回到未暂存', async () => {
   const dir = makeRepo(path.join(tempDir('dgp-stage-'), 'repo'))
   // hello.txt 已在初始提交里：改它的内容才是「未暂存」；fresh.txt 是全新文件，走未跟踪
@@ -1313,6 +1344,39 @@ test('branch/switch：改动会被覆盖时由 git 拒绝，错误原样上抛�
   assert.match(failed.error.message, /overwritten|local changes/i, '要带 git 的原话：' + failed.error.message)
   // 与 VS Code 的默认行为一致：不自动 stash、不 force，改动还在原处
   assert.equal(readFileSync(path.join(dir, 'hello.txt'), 'utf8'), 'dirty\n', '未提交的改动不能被悄悄丢掉')
+})
+
+test('roots/hide 与 roots/unhide：隐藏只改列表标记，仓库本身不动；项目本身不能隐藏', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-hide-'), 'repo'))
+  const nested = path.join(dir, 'nested')
+  mkdirSync(nested, { recursive: true })
+  const nestedGit = (...args) => execFileSync('git', args, { cwd: nested, stdio: 'pipe' })
+  nestedGit('init', '-q', '-b', 'main')
+  nestedGit('config', 'user.email', 'nested@example.com')
+  nestedGit('config', 'user.name', 'Nested')
+  writeFileSync(path.join(nested, 'a.txt'), 'a\n')
+  nestedGit('add', '-A')
+  nestedGit('commit', '-q', '-m', 'nested init')
+
+  const before = await callOk('project/resolve', { cwd: dir })
+  const nestedRoot = before.roots.find((root) => root.kind === 'discovered')
+  assert.ok(nestedRoot !== undefined, '应先发现子仓库：' + JSON.stringify(before.roots.map((root) => root.kind)))
+  assert.equal(nestedRoot.hidden, false, '默认不隐藏')
+  assert.equal(before.roots.find((root) => root.kind === 'primary').hidden, false, 'primary 默认不隐藏')
+
+  const hidden = await callOk('roots/hide', { projectRoot: dir, path: nestedRoot.path })
+  assert.equal(hidden.roots.find((root) => root.kind === 'discovered').hidden, true, '隐藏后带 hidden 标记')
+  assert.equal(existsSync(path.join(nested, '.git')), true, '隐藏不能动仓库本身')
+
+  const again = await callOk('project/resolve', { cwd: dir })
+  assert.equal(again.roots.find((root) => root.kind === 'discovered').hidden, true, '隐藏状态要持久化')
+
+  const restored = await callOk('roots/unhide', { projectRoot: dir, path: nestedRoot.path })
+  assert.equal(restored.roots.find((root) => root.kind === 'discovered').hidden, false, '取消隐藏后回到列表')
+
+  const denied = await callRoute('roots/hide', { projectRoot: dir, path: dir })
+  assert.equal(denied.ok, false, '项目本身不能隐藏')
+  assert.equal(denied.error.code, 'cannot-hide')
 })
 
 test('commitDiffText：有暂存看暂存；没有则看工作区并带上未跟踪文件清单', async () => {

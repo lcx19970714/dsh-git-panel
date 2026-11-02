@@ -396,6 +396,15 @@ window.__ModuleLoader__.load({
       .dgp-repolist-rows { padding-bottom: 4px; }
       .dgp-repo-row { min-height: 26px; padding-top: 3px; padding-bottom: 3px; }
       .dgp-repo-row > .dgp-ico { color: var(--dsw-alias-label-tertiary); }
+      /* 「显示已隐藏」开关：图标 + 数字，跟标题行的计数同一档字号 */
+      .dgp-repolist-hidden-count {
+        font-family: var(--ds-font-family-code);
+        font-size: 10px;
+        line-height: 1;
+        color: var(--dsw-alias-label-tertiary);
+      }
+      /* 已隐藏的行：弱化，明确「它现在不在列表里」 */
+      .dgp-repo-row[data-hidden="true"] .dgp-name { color: var(--dsw-alias-label-tertiary); }
       /* 当前分支：贴在仓库行最右侧的按钮。只有点它才打开分支菜单，点仓库名只选中仓库。 */
       .dgp-repo-branch {
         flex: 0 1 auto;
@@ -1428,7 +1437,7 @@ window.__ModuleLoader__.load({
         'toolbar.context': '上下文行数',
         'toolbar.ignoreWhitespace': '忽略空白差异',
         'toolbar.more': '更多',
-        'toolbar.addRoot': '添加外部仓库…',
+        'toolbar.addRoot': '添加本机目录…',
         'toolbar.removeRoot': '从列表移除「{name}」',
         'toolbar.collapseAll': '全部折叠',
 
@@ -1436,11 +1445,16 @@ window.__ModuleLoader__.load({
         'filter.clear': '清除筛选',
         'filter.loadedOnly': '只搜索已展开的目录',
 
+        'roots.hiddenShow': '显示已隐藏的仓库（{count}）',
+        'roots.hiddenCollapse': '收起已隐藏的仓库',
+        'roots.hide': '隐藏「{name}」（只从储存库移除，不影响仓库本身）',
+        'roots.unhide': '取消隐藏「{name}」',
+
         'root.noBranch': '未命名分支',
-        'root.addPlaceholder': '输入或粘贴 Git 仓库目录的绝对路径',
+        'root.addPlaceholder': '输入本机目录的绝对路径，例如 D:\\code\\my-repo',
         'root.addConfirm': '添加',
         'root.addCancel': '取消',
-        'root.addHint': '支持任意位置的本机目录；添加后会与项目内仓库并列显示。',
+        'root.addHint': '只识别这一个目录（它自己必须含 .git）：不向上找上级仓库，也不扫描它的子目录。',
 
         'branch.hint': '当前分支 {branch} · 点击切换或新建',
         'branch.title': '分支 · {name}',
@@ -1706,7 +1720,7 @@ window.__ModuleLoader__.load({
         'toolbar.context': 'Context lines',
         'toolbar.ignoreWhitespace': 'Ignore whitespace',
         'toolbar.more': 'More',
-        'toolbar.addRoot': 'Add external repository…',
+        'toolbar.addRoot': 'Add a local folder…',
         'toolbar.removeRoot': 'Remove "{name}" from list',
         'toolbar.collapseAll': 'Collapse all',
 
@@ -1714,11 +1728,16 @@ window.__ModuleLoader__.load({
         'filter.clear': 'Clear filter',
         'filter.loadedOnly': 'Only loaded folders are searched',
 
+        'roots.hiddenShow': 'Show hidden repositories ({count})',
+        'roots.hiddenCollapse': 'Collapse hidden repositories',
+        'roots.hide': 'Hide "{name}" (only from the repository list)',
+        'roots.unhide': 'Unhide "{name}"',
+
         'root.noBranch': 'no branch',
-        'root.addPlaceholder': 'Absolute path of a Git repository folder',
+        'root.addPlaceholder': 'Absolute path of a folder, e.g. D:\\code\\my-repo',
         'root.addConfirm': 'Add',
         'root.addCancel': 'Cancel',
-        'root.addHint': 'Any local folder works; it will be listed next to project repositories.',
+        'root.addHint': 'Only this folder is used (it must contain .git). No parent lookup, no scanning inside it.',
 
         'branch.hint': 'On {branch} · click to switch or create',
         'branch.title': 'Branches · {name}',
@@ -2080,9 +2099,13 @@ window.__ModuleLoader__.load({
         const [rootsError, setRootsError] = useState(null)
 
         const roots = project.roots
+        /** 用户隐藏的根默认不出现，也不参与仓库切换与自动选中；「显示已隐藏」时才由 RepoList 渲染。 */
+        const visibleRoots = useMemo(() => roots.filter((root) => root.hidden !== true), [roots])
         /** 真正的仓库（排除只有文件浏览能力的「浏览根」）。变更模式只看这些。 */
-        const gitRoots = useMemo(() => roots.filter((root) => root.isGit === true), [roots])
-        const activeRoot = roots.find((root) => root.id === activeRootId) ?? roots[0] ?? null
+        const gitRoots = useMemo(() => visibleRoots.filter((root) => root.isGit === true), [visibleRoots])
+        /** 含已隐藏的仓库：储存库列表要能列出它们（带收起按钮），空态判断也用它。 */
+        const allGitRoots = useMemo(() => roots.filter((root) => root.isGit === true), [roots])
+        const activeRoot = visibleRoots.find((root) => root.id === activeRootId) ?? visibleRoots[0] ?? null
         /**
          * 文件模式固定浏览项目根（roots[0]：项目仓库根，或项目根不是仓库时的浏览根）。
          * 仓库切换只发生在变更模式的「储存库」列表里，文件模式不再有根选择器。
@@ -2768,6 +2791,37 @@ window.__ModuleLoader__.load({
           }
         }, [])
 
+        /** 隐藏 / 取消隐藏之后，若当前选中的那个根被藏起来了，落到第一个还看得见的根上。 */
+        const applyRootsChange = useCallback((value, hiddenRoot) => {
+          const nextRoots = value.roots
+          setProject({ projectRoot: value.projectRoot, roots: nextRoots, warnings: value.warnings })
+          setActiveRootId((previous) => {
+            if (previous !== hiddenRoot.id) return previous
+            const fallback = nextRoots.find((root) => root.hidden !== true)
+            return fallback === undefined ? null : fallback.id
+          })
+        }, [])
+
+        const hideRoot = useCallback(async (root) => {
+          const projectRoot = projectRef.current.projectRoot
+          if (root === null || typeof projectRoot !== 'string') return
+          try {
+            applyRootsChange(await api.hideRoot({ projectRoot, path: root.path }), root)
+          } catch (error) {
+            setRootsError(api.describeError(error, tRef.current))
+          }
+        }, [applyRootsChange])
+
+        const unhideRoot = useCallback(async (root) => {
+          const projectRoot = projectRef.current.projectRoot
+          if (root === null || typeof projectRoot !== 'string') return
+          try {
+            applyRootsChange(await api.unhideRoot({ projectRoot, path: root.path }), root)
+          } catch (error) {
+            setRootsError(api.describeError(error, tRef.current))
+          }
+        }, [applyRootsChange])
+
         /** 分支菜单：取数由面板做，组件只负责交互。 */
         const loadBranches = useCallback(async (root) => api.listBranches({ rootPath: root.path }), [])
 
@@ -3379,7 +3433,7 @@ window.__ModuleLoader__.load({
             t
           })
         } else if (mode === MODE.changes) {
-          if (gitRoots.length === 0) {
+          if (allGitRoots.length === 0) {
             // 整个项目里没有任何工作树：变更列表无从谈起，但文件浏览照常可用。
             leftPane = h(EmptyState, {
               icon: 'git-branch',
@@ -3398,13 +3452,15 @@ window.__ModuleLoader__.load({
             // VS Code 的排布：上面「储存库」，下面「变更」（提交框 + 分组）。
             leftPane = h('div', { className: 'dgp-changes' },
               h(RepoList, {
-                roots: gitRoots,
+                roots: allGitRoots,
                 activeRootId: activeRoot === null ? null : activeRoot.id,
                 open: repositoriesOpen === true,
                 onToggleOpen: () => setRepositoriesOpen(repositoriesOpen !== true),
                 onSelect: selectRoot,
                 onAdd: addExternalRoot,
                 onRemove: removeExternalRoot,
+                onHide: hideRoot,
+                onUnhide: unhideRoot,
                 onLoadBranches: loadBranches,
                 onSwitchBranch: switchBranch,
                 onCreateBranch: createBranch,
@@ -3777,6 +3833,8 @@ window.__ModuleLoader__.load({
         split: ['M2 3h12v10H2z', 'M8 3v10'],
         wrap: ['M2 4h12', 'M2 8h9a2 2 0 1 1 0 4H8', 'M10 10l-2 2 2 2'],
         trash: ['M3 5h10', 'M6 5V3h4v2', 'M4.5 5l.7 8h5.6l.7-8'],
+        eye: ['M1.5 8S4 4 8 4s6.5 4 6.5 4S12 12 8 12 1.5 8 1.5 8z', 'M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'],
+        'eye-off': ['M1.5 8S4 4 8 4s6.5 4 6.5 4S12 12 8 12 1.5 8 1.5 8z', 'M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z', 'M3 13L13 3'],
         clock: ['M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z', 'M8 5v3.5L10.5 10'],
         filter: ['M2 3h12l-4.5 5.5V13L6 11.5V8.5z'],
         sync: ['M13.5 8a5.5 5.5 0 0 1-9.4 3.9', 'M4 12v-3h3', 'M2.5 8a5.5 5.5 0 0 1 9.4-3.9', 'M12 4v3h-3'],
@@ -3972,12 +4030,15 @@ window.__ModuleLoader__.load({
        *   div.dgp-repolist
        *   ├─ div.dgp-repolist-head
        *   │  ├─ button.dgp-repolist-toggle   ← 折叠/展开，带数量
+       *   │  ├─ button[data-dgp-repolist-hidden] ← 有隐藏仓库时才出现：展开/收起它们
        *   │  └─ button[data-action=add-root] ← 添加外部仓库
        *   ├─ ul.dgp-level
        *   │  └─ li > div.dgp-row-wrap
-       *   │     ├─ button.dgp-repo-row[data-dgp-repo]   ← 只选中该仓库，不打开分支菜单
+       *   │     ├─ button.dgp-repo-row[data-dgp-repo][data-hidden] ← 只选中该仓库，不打开分支菜单
        *   │     ├─ button.dgp-repo-branch[data-dgp-branch] ← 贴在行的最右侧；只有点它才打开分支菜单
-       *   │     └─ button.dgp-row-action                ← 仅外部仓库：移除
+       *   │     ├─ button.dgp-row-action[data-dgp-repo-hide]   ← 从储存库隐藏（项目本身不可隐藏）
+       *   │     ├─ button.dgp-row-action[data-dgp-repo-unhide] ← 已隐藏的行：取消隐藏
+       *   │     └─ button.dgp-row-action[data-dgp-repo-remove] ← 仅外部仓库：移除
        *   ├─ AddRootForm（展开时）
        *   └─ PopupMenu（分支菜单：切换已有分支，或输入名字创建并切过去）
        *
@@ -3996,10 +4057,16 @@ window.__ModuleLoader__.load({
         const activeRootId = typeof source.activeRootId === 'string' ? source.activeRootId : null
         const open = source.open !== false
         const [formOpen, setFormOpen] = useState(false)
+        /** 已隐藏的仓库默认收起；这里只记「要不要放出来看」，持久化的是隐藏列表本身。 */
+        const [showHidden, setShowHidden] = useState(false)
         // 分支菜单：{ root, rect, list, loading, switching, creating, name, error }
         const [branchMenu, setBranchMenu] = useState(null)
 
         if (roots.length === 0) return null
+
+        const visibleRoots = roots.filter((root) => root.hidden !== true)
+        const hiddenRoots = roots.filter((root) => root.hidden === true)
+        const listedRoots = showHidden ? visibleRoots.concat(hiddenRoots) : visibleRoots
 
         const closeForm = () => setFormOpen(false)
         const closeBranches = () => setBranchMenu(null)
@@ -4126,7 +4193,21 @@ window.__ModuleLoader__.load({
             h('span', { className: 'dgp-caret', 'data-open': open ? 'true' : 'false' },
               h(Icon, { name: 'chevron-right', size: 12 })),
             h('span', { className: 'dgp-repolist-title' }, translate('roots.title')),
-            h('span', { className: 'dgp-group-count' }, String(roots.length))),
+            h('span', { className: 'dgp-group-count' }, String(visibleRoots.length))),
+            hiddenRoots.length === 0
+              ? null
+              : h('button', {
+                type: 'button',
+                className: 'dgp-iconbtn',
+                style: { width: 22, height: 22, gap: 2 },
+                'data-dgp-repolist-hidden': showHidden ? 'true' : 'false',
+                'aria-pressed': showHidden,
+                title: translate(showHidden ? 'roots.hiddenCollapse' : 'roots.hiddenShow', { count: hiddenRoots.length }),
+                'aria-label': translate(showHidden ? 'roots.hiddenCollapse' : 'roots.hiddenShow', { count: hiddenRoots.length }),
+                onClick: () => setShowHidden((previous) => !previous)
+              },
+              h(Icon, { name: showHidden ? 'eye-off' : 'eye', size: 13 }),
+              h('span', { className: 'dgp-repolist-hidden-count' }, String(hiddenRoots.length))),
             h('button', {
               type: 'button',
               className: 'dgp-iconbtn',
@@ -4139,7 +4220,8 @@ window.__ModuleLoader__.load({
 
           open
             ? h('ul', { className: 'dgp-level dgp-repolist-rows', role: 'none' },
-              roots.map((root) => {
+              listedRoots.map((root) => {
+                const hidden = root.hidden === true
                 const hasBranch = typeof root.branch === 'string' && root.branch !== ''
                 return h('li', { key: root.id, className: 'dgp-item' },
                   h('div', { className: 'dgp-row-wrap' },
@@ -4147,16 +4229,20 @@ window.__ModuleLoader__.load({
                       type: 'button',
                       className: 'dgp-row dgp-repo-row',
                       'data-dgp-repo': root.id,
-                      'data-active': root.id === activeRootId ? 'true' : 'false',
-                      'aria-current': root.id === activeRootId ? 'true' : undefined,
+                      'data-active': !hidden && root.id === activeRootId ? 'true' : 'false',
+                      'data-hidden': hidden ? 'true' : undefined,
+                      'aria-current': !hidden && root.id === activeRootId ? 'true' : undefined,
                       title: root.path,
                       onClick: () => {
+                        // 已隐藏的行不参与切换：先取消隐藏，才能重新成为当前仓库
+                        if (hidden) return
                         if (typeof source.onSelect === 'function') source.onSelect(root)
                       }
                     },
                     h(Icon, { name: 'git-branch', size: 13 }),
                     h('span', { className: 'dgp-name dgp-oneline' }, root.name)),
-                    root.isGit === false
+                    // 隐藏的行不提供分支菜单：它不参与切换，点开也只会让人以为切过去了
+                    hidden
                       ? null
                       : h('button', {
                         type: 'button',
@@ -4168,6 +4254,34 @@ window.__ModuleLoader__.load({
                           loadBranches(root, event.currentTarget.getBoundingClientRect())
                         }
                       }, hasBranch ? root.branch : translate('root.noBranch')),
+                    root.kind === 'primary'
+                      ? null
+                      : h('button', {
+                        type: 'button',
+                        className: 'dgp-row-action',
+                        'data-dgp-repo-hide': root.id,
+                        title: translate('roots.hide', { name: root.name }),
+                        'aria-label': translate('roots.hide', { name: root.name }),
+                        onClick: (event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          if (typeof source.onHide === 'function') source.onHide(root)
+                        }
+                      }, h(Icon, { name: 'eye-off', size: 13 })),
+                    hidden
+                      ? h('button', {
+                        type: 'button',
+                        className: 'dgp-row-action',
+                        'data-dgp-repo-unhide': root.id,
+                        title: translate('roots.unhide', { name: root.name }),
+                        'aria-label': translate('roots.unhide', { name: root.name }),
+                        onClick: (event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          if (typeof source.onUnhide === 'function') source.onUnhide(root)
+                        }
+                      }, h(Icon, { name: 'eye', size: 13 }))
+                      : null,
                     root.kind === 'extra'
                       ? h('button', {
                         type: 'button',
@@ -4206,10 +4320,10 @@ window.__ModuleLoader__.load({
     });
     __define("./components/AddRootForm.js", (exports, module) => {
       /**
-       * src/components/AddRootForm.js —— 「添加外部仓库」的内联表单
+       * src/components/AddRootForm.js —— 「添加本机目录」的内联表单
        *
-       * 只有一处实现：储存库列表底部与文件模式的根选择器共用同一个表单，
-       * 校验与错误显示的行为因此完全一致（不是仓库 / 路径不存在都在这里就地显示）。
+       * 语义很简单：加的是用户给的那一个目录，它自己必须含 .git。
+       * 不向上找上级仓库、不向下扫描子仓库 —— 校验失败的原因就地显示。
        */
       const { h, useCallback, useState } = __m("./platform.js");
 
@@ -6032,6 +6146,16 @@ window.__ModuleLoader__.load({
         return call('remote/clone', payload, options)
       }
 
+      /** 从储存库隐藏一个根（持久化；项目本身不可隐藏）。 */
+      function hideRoot(payload, options) {
+        return call('roots/hide', payload, options)
+      }
+
+      /** 取消隐藏。 */
+      function unhideRoot(payload, options) {
+        return call('roots/unhide', payload, options)
+      }
+
       /** 列出本地分支。 */
       function listBranches(payload, options) {
         return call('branches/list', payload, options)
@@ -6103,7 +6227,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullPass, remotePullMerge, cloneRemoteRepo, listBranches, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {

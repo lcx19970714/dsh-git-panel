@@ -214,6 +214,15 @@ export const CSS = `
 .dgp-repolist-rows { padding-bottom: 4px; }
 .dgp-repo-row { min-height: 26px; padding-top: 3px; padding-bottom: 3px; }
 .dgp-repo-row > .dgp-ico { color: var(--dsw-alias-label-tertiary); }
+/* 「显示已隐藏」开关：图标 + 数字，跟标题行的计数同一档字号 */
+.dgp-repolist-hidden-count {
+  font-family: var(--ds-font-family-code);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 已隐藏的行：弱化，明确「它现在不在列表里」 */
+.dgp-repo-row[data-hidden="true"] .dgp-name { color: var(--dsw-alias-label-tertiary); }
 /* 当前分支：贴在仓库行最右侧的按钮。只有点它才打开分支菜单，点仓库名只选中仓库。 */
 .dgp-repo-branch {
   flex: 0 1 auto;

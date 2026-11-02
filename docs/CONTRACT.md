@@ -55,6 +55,7 @@ interface Root {
   isGit: boolean
   branch?: string | null; head?: string | null; upstream?: string | null
   ahead?: number; behind?: number; dirty?: number
+  hidden: boolean       // 用户在储存库里隐藏了它（持久化；primary 永远为 false）
   error?: string | null
 }
 
@@ -190,9 +191,11 @@ InlineNote({ tone: 'info'|'warn'|'error', children })
 ### 变更模式的「储存库」区
 `dgp-changes`（左栏容器：储存库 + 提交框 + 列表）、`dgp-repolist`、`dgp-repolist-head`、
 `dgp-repolist-toggle[data-dgp-repolist-toggle][data-open]`、`dgp-repolist-title`、
-`dgp-repolist-rows`、`dgp-repo-row[data-dgp-repo][data-active]`（只选中仓库）、
+`dgp-repolist-rows`、`dgp-repo-row[data-dgp-repo][data-active][data-hidden]`（只选中仓库）、
 `dgp-repo-branch[data-dgp-branch]`（行最右侧；只有点它才打开分支菜单）、
 `dgp-branch-create[data-dgp-branch-create]`（菜单底部：输入名字创建并切换）、
+`dgp-repolist-hidden[data-dgp-repolist-hidden]` + `dgp-repolist-hidden-count`（展开/收起已隐藏的仓库）、
+`dgp-row-action[data-dgp-repo-hide]`（非 primary 可隐藏）、`dgp-row-action[data-dgp-repo-unhide]`（已隐藏的行）、
 `dgp-row-action[data-dgp-repo-remove]`（仅外部仓库）、`dgp-addform` + `dgp-addform-actions`
 
 ### 左侧列表 / 树

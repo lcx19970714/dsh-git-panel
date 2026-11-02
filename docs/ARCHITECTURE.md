@@ -122,7 +122,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 
 **通用**
 
-- 变更区顶部是「储存库」列表（VS Code 的 Repositories）：每个仓库一行，点选切换下方变更区，可折叠；外部仓库行尾可移除，标题行 `+` 添加。当前分支是贴在行最右侧的按钮，点仓库名只选中仓库，只有点这个按钮才打开分支菜单；菜单里可切到已有分支，也可在底部输入名字创建新分支并立刻切过去。文件模式固定浏览项目根，没有根选择器
+- 变更区顶部是「储存库」列表（VS Code 的 Repositories）：每个仓库一行，点选切换下方变更区，可折叠；外部仓库行尾可移除，标题行 `+` 添加。当前分支是贴在行最右侧的按钮，点仓库名只选中仓库，只有点这个按钮才打开分支菜单；菜单里可切到已有分支，也可在底部输入名字创建新分支并立刻切过去。用不上的根（测试夹具、vendor 仓库）可以在行尾隐藏：只是从储存库里收起，仓库本身不动，配置持久化在 `roots.json` 的 `hidden` 段；标题行的眼睛按钮展开「已隐藏」，在那里取消隐藏。项目根本身不给隐藏入口。文件模式固定浏览项目根，没有根选择器
 - 变更列表有两种显示方式，设置页与 `⋯` 菜单共用同一个偏好：**列表**（一行一个文件，文件名为主体、路径弱化在后，路径先截断）/ **树形**（按文件夹展开折叠）
 - 未跟踪文件有两种归属：**并进未暂存**（默认，VS Code 的 Changes 里同时有改动和新文件）或**单列未跟踪组**。批量按钮跟着分组内容走：合并模式是「全部暂存」（`git add -A`），分开模式才是「暂存已跟踪改动」（`git add -u`）+「只暂存新文件」（逐路径 `git add`）
 - 提交框只有两行：输入框（右上角生成按钮）+ 一行「状态 + 提交按钮」。输入框随内容自动长高（两行起步、约七行封顶，超出改为内部滚动），生成的说明有好几行时不会被压成两行只露一截
@@ -177,13 +177,14 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 33 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 35 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
 |---|---|---|
 | `project/resolve` | `{sessionId?} \| {cwd?}` | `{projectRoot, roots[], warnings[]}` |
 | `roots/add` / `roots/remove` | `{projectRoot, path}` | 同上 |
+| `roots/hide` / `roots/unhide` | `{projectRoot, path}` | 同上；隐藏只持久化「不在储存库里显示」，不动仓库；项目本身报 `cannot-hide` |
 | `status` | `{rootPath}` | `{branch, head, detached, upstream, ahead, behind, files[], counts, truncated}` |
 | `diff` | `{rootPath, path, staged, untracked, contextLines, ignoreWhitespace}` | `{kind, hunks[], stats, language}` |
 | `remote/fetch` | `{rootPath}` | `{url, branch, head, upstream, ahead, behind, fetchedAt}`（执行 git fetch --prune） |
@@ -204,6 +205,11 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 `Content-Type: application/json;charset=UTF-8`。fetch 对字符串 body 默认 `text/plain`，
 Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not supported."}`。
 不要手写 `body: JSON.stringify(...)`。
+
+**外部目录约定**：`roots/add` 只接受「含 .git 的目录」，存的就是用户给的那个路径本身
+（不做 realpath 归一、不向上找祖先仓库、不向下扫描子仓库）。因此 `add` 与 `remove` 用的是同一个键，
+不存在「两种写法各删一次」的兜底；用户加了仓库里的子目录会被明确拒绝（缺少 .git）。
+项目根的多仓库发现（discovered）只作用于**项目根**，不会扩展到外部目录。
 
 **空响应约定**：`readJson()` 对 `204` / 空体返回 `null`（成功但没有响应体）——Gitee 的审查通过接口就是这样。
 需要对象/数组的调用方用 `readObject()` / `readArray()`（空体直接报「平台没有返回 X」），
@@ -255,7 +261,7 @@ node scripts/install-profile.mjs --dry-run
 | `remote` | 远端地址 → 网页地址（scp/ssh/https/git 形式）、凭据不入地址栏、本地路径 → null |
 | `build` | 打包器：产物无残留 import/export、能真跑、循环依赖报错 |
 | `git` | git 引擎（需要 `_sandbox/repo` 夹具：`node test/make-fixture.mjs`） |
-| `host` | 33 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表、切换与创建、代码托管账号（令牌存 DSH 凭据服务）、远端仓库列表与克隆、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
+| `host` | 35 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表、切换与创建、代码托管账号（令牌存 DSH 凭据服务）、远端仓库列表与克隆、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
 | `client` | 产物装载 + `apply()` 契约 + 用假 react 真渲染 tab body（不需要浏览器）+ 样式表合法性（规则外不得有裸文本行，否则浏览器会吞掉下一条规则） |
 | `components` | 组件渲染契约：编辑器脏/冲突态、不可编辑占位、换行开关下的行号隐藏 |
 | `flow` | 面板端到端数据流：选根→status→diff→文件读→编辑保存→冲突→检测更新（假 fetch，不起服务） |

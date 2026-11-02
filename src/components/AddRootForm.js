@@ -1,8 +1,8 @@
 /**
- * src/components/AddRootForm.js —— 「添加外部仓库」的内联表单
+ * src/components/AddRootForm.js —— 「添加本机目录」的内联表单
  *
- * 只有一处实现：储存库列表底部与文件模式的根选择器共用同一个表单，
- * 校验与错误显示的行为因此完全一致（不是仓库 / 路径不存在都在这里就地显示）。
+ * 语义很简单：加的是用户给的那一个目录，它自己必须含 .git。
+ * 不向上找上级仓库、不向下扫描子仓库 —— 校验失败的原因就地显示。
  */
 import { h, useCallback, useState } from '../platform.js'
 

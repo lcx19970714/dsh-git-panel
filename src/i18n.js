@@ -48,7 +48,7 @@ export const zh = {
   'toolbar.context': '上下文行数',
   'toolbar.ignoreWhitespace': '忽略空白差异',
   'toolbar.more': '更多',
-  'toolbar.addRoot': '添加外部仓库…',
+  'toolbar.addRoot': '添加本机目录…',
   'toolbar.removeRoot': '从列表移除「{name}」',
   'toolbar.collapseAll': '全部折叠',
 
@@ -56,11 +56,16 @@ export const zh = {
   'filter.clear': '清除筛选',
   'filter.loadedOnly': '只搜索已展开的目录',
 
+  'roots.hiddenShow': '显示已隐藏的仓库（{count}）',
+  'roots.hiddenCollapse': '收起已隐藏的仓库',
+  'roots.hide': '隐藏「{name}」（只从储存库移除，不影响仓库本身）',
+  'roots.unhide': '取消隐藏「{name}」',
+
   'root.noBranch': '未命名分支',
-  'root.addPlaceholder': '输入或粘贴 Git 仓库目录的绝对路径',
+  'root.addPlaceholder': '输入本机目录的绝对路径，例如 D:\\code\\my-repo',
   'root.addConfirm': '添加',
   'root.addCancel': '取消',
-  'root.addHint': '支持任意位置的本机目录；添加后会与项目内仓库并列显示。',
+  'root.addHint': '只识别这一个目录（它自己必须含 .git）：不向上找上级仓库，也不扫描它的子目录。',
 
   'branch.hint': '当前分支 {branch} · 点击切换或新建',
   'branch.title': '分支 · {name}',
@@ -326,7 +331,7 @@ export const en = {
   'toolbar.context': 'Context lines',
   'toolbar.ignoreWhitespace': 'Ignore whitespace',
   'toolbar.more': 'More',
-  'toolbar.addRoot': 'Add external repository…',
+  'toolbar.addRoot': 'Add a local folder…',
   'toolbar.removeRoot': 'Remove "{name}" from list',
   'toolbar.collapseAll': 'Collapse all',
 
@@ -334,11 +339,16 @@ export const en = {
   'filter.clear': 'Clear filter',
   'filter.loadedOnly': 'Only loaded folders are searched',
 
+  'roots.hiddenShow': 'Show hidden repositories ({count})',
+  'roots.hiddenCollapse': 'Collapse hidden repositories',
+  'roots.hide': 'Hide "{name}" (only from the repository list)',
+  'roots.unhide': 'Unhide "{name}"',
+
   'root.noBranch': 'no branch',
-  'root.addPlaceholder': 'Absolute path of a Git repository folder',
+  'root.addPlaceholder': 'Absolute path of a folder, e.g. D:\\code\\my-repo',
   'root.addConfirm': 'Add',
   'root.addCancel': 'Cancel',
-  'root.addHint': 'Any local folder works; it will be listed next to project repositories.',
+  'root.addHint': 'Only this folder is used (it must contain .git). No parent lookup, no scanning inside it.',
 
   'branch.hint': 'On {branch} · click to switch or create',
   'branch.title': 'Branches · {name}',

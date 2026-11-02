@@ -12,6 +12,8 @@
  *   project/resolve { cwd?, sessionId? }        -> { projectRoot, roots, warnings }
  *   roots/add       { projectRoot, path }       -> { projectRoot, roots, warnings }
  *   roots/remove    { projectRoot, path }       -> { projectRoot, roots, warnings }
+ *   roots/hide      { projectRoot, path }       -> { projectRoot, roots, warnings }（持久化隐藏，项目本身不可隐藏）
+ *   roots/unhide    { projectRoot, path }       -> { projectRoot, roots, warnings }
  *   status          { rootPath }                -> StatusResult + dirty
  *   diff            { rootPath, path, … }       -> DiffResult
  *   remote/fetch    { rootPath }               -> {url, branch, head, upstream, ahead, behind, fetchedAt}（git fetch，只读）
@@ -61,7 +63,7 @@ import {
   writeCommitModel,
   generateCommitMessage
 } from './host/models.js'
-import { resolveRoots, addExtraRoot, removeExtraRoot } from './host/roots.js'
+import { resolveRoots, addExtraRoot, removeExtraRoot, hideRoot, unhideRoot } from './host/roots.js'
 
 export const name = 'dsh-git-panel'
 
@@ -92,6 +94,8 @@ export const ENDPOINTS = Object.freeze([
   'project/resolve',
   'roots/add',
   'roots/remove',
+  'roots/hide',
+  'roots/unhide',
   'status',
   'remote/fetch',
   'diff',
@@ -344,6 +348,26 @@ function createDispatcher(ctx) {
     const result = await removeExtraRoot(projectRoot, target, { logger: ctx.logger })
     clearStatusCache()
     ctx.logger?.info?.(`dsh-git-panel: 已移除外部仓库 ${normalizeSlashes(target)}`)
+    return result
+  }
+
+  /* roots/hide & roots/unhide ----------------------------------------- */
+  /** 隐藏 / 取消隐藏某个根：只持久化「不想在储存库里看到它」，不动仓库本身。 */
+  async function rootsHide(request) {
+    const projectRoot = requireAbsolute(request.projectRoot, 'projectRoot')
+    const target = requireAbsolute(request.path, 'path')
+    const result = await hideRoot(projectRoot, target, { logger: ctx.logger })
+    clearStatusCache()
+    ctx.logger?.info?.(`dsh-git-panel: 已隐藏仓库 ${normalizeSlashes(target)}`)
+    return result
+  }
+
+  async function rootsUnhide(request) {
+    const projectRoot = requireAbsolute(request.projectRoot, 'projectRoot')
+    const target = requireAbsolute(request.path, 'path')
+    const result = await unhideRoot(projectRoot, target, { logger: ctx.logger })
+    clearStatusCache()
+    ctx.logger?.info?.(`dsh-git-panel: 已取消隐藏 ${normalizeSlashes(target)}`)
     return result
   }
 
@@ -687,6 +711,10 @@ function createDispatcher(ctx) {
         return rootsAdd(request)
       case 'roots/remove':
         return rootsRemove(request)
+      case 'roots/hide':
+        return rootsHide(request)
+      case 'roots/unhide':
+        return rootsUnhide(request)
       case 'status':
         return status(request, signal)
       case 'remote/fetch':

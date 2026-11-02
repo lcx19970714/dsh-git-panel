@@ -202,7 +202,7 @@ export async function resolveRepo(dir) {
 }
 
 /** 目录内部是否有 .git（目录或 gitfile），不向上找祖先。 */
-function hasOwnGitDir(dir) {
+export function hasOwnGitDir(dir) {
   try {
     return existsSync(path.join(dir, '.git'))
   } catch {

@@ -5,12 +5,15 @@
  *   div.dgp-repolist
  *   ├─ div.dgp-repolist-head
  *   │  ├─ button.dgp-repolist-toggle   ← 折叠/展开，带数量
+ *   │  ├─ button[data-dgp-repolist-hidden] ← 有隐藏仓库时才出现：展开/收起它们
  *   │  └─ button[data-action=add-root] ← 添加外部仓库
  *   ├─ ul.dgp-level
  *   │  └─ li > div.dgp-row-wrap
- *   │     ├─ button.dgp-repo-row[data-dgp-repo]   ← 只选中该仓库，不打开分支菜单
+ *   │     ├─ button.dgp-repo-row[data-dgp-repo][data-hidden] ← 只选中该仓库，不打开分支菜单
  *   │     ├─ button.dgp-repo-branch[data-dgp-branch] ← 贴在行的最右侧；只有点它才打开分支菜单
- *   │     └─ button.dgp-row-action                ← 仅外部仓库：移除
+ *   │     ├─ button.dgp-row-action[data-dgp-repo-hide]   ← 从储存库隐藏（项目本身不可隐藏）
+ *   │     ├─ button.dgp-row-action[data-dgp-repo-unhide] ← 已隐藏的行：取消隐藏
+ *   │     └─ button.dgp-row-action[data-dgp-repo-remove] ← 仅外部仓库：移除
  *   ├─ AddRootForm（展开时）
  *   └─ PopupMenu（分支菜单：切换已有分支，或输入名字创建并切过去）
  *
@@ -29,10 +32,16 @@ export function RepoList(props) {
   const activeRootId = typeof source.activeRootId === 'string' ? source.activeRootId : null
   const open = source.open !== false
   const [formOpen, setFormOpen] = useState(false)
+  /** 已隐藏的仓库默认收起；这里只记「要不要放出来看」，持久化的是隐藏列表本身。 */
+  const [showHidden, setShowHidden] = useState(false)
   // 分支菜单：{ root, rect, list, loading, switching, creating, name, error }
   const [branchMenu, setBranchMenu] = useState(null)
 
   if (roots.length === 0) return null
+
+  const visibleRoots = roots.filter((root) => root.hidden !== true)
+  const hiddenRoots = roots.filter((root) => root.hidden === true)
+  const listedRoots = showHidden ? visibleRoots.concat(hiddenRoots) : visibleRoots
 
   const closeForm = () => setFormOpen(false)
   const closeBranches = () => setBranchMenu(null)
@@ -159,7 +168,21 @@ export function RepoList(props) {
       h('span', { className: 'dgp-caret', 'data-open': open ? 'true' : 'false' },
         h(Icon, { name: 'chevron-right', size: 12 })),
       h('span', { className: 'dgp-repolist-title' }, translate('roots.title')),
-      h('span', { className: 'dgp-group-count' }, String(roots.length))),
+      h('span', { className: 'dgp-group-count' }, String(visibleRoots.length))),
+      hiddenRoots.length === 0
+        ? null
+        : h('button', {
+          type: 'button',
+          className: 'dgp-iconbtn',
+          style: { width: 22, height: 22, gap: 2 },
+          'data-dgp-repolist-hidden': showHidden ? 'true' : 'false',
+          'aria-pressed': showHidden,
+          title: translate(showHidden ? 'roots.hiddenCollapse' : 'roots.hiddenShow', { count: hiddenRoots.length }),
+          'aria-label': translate(showHidden ? 'roots.hiddenCollapse' : 'roots.hiddenShow', { count: hiddenRoots.length }),
+          onClick: () => setShowHidden((previous) => !previous)
+        },
+        h(Icon, { name: showHidden ? 'eye-off' : 'eye', size: 13 }),
+        h('span', { className: 'dgp-repolist-hidden-count' }, String(hiddenRoots.length))),
       h('button', {
         type: 'button',
         className: 'dgp-iconbtn',
@@ -172,7 +195,8 @@ export function RepoList(props) {
 
     open
       ? h('ul', { className: 'dgp-level dgp-repolist-rows', role: 'none' },
-        roots.map((root) => {
+        listedRoots.map((root) => {
+          const hidden = root.hidden === true
           const hasBranch = typeof root.branch === 'string' && root.branch !== ''
           return h('li', { key: root.id, className: 'dgp-item' },
             h('div', { className: 'dgp-row-wrap' },
@@ -180,16 +204,20 @@ export function RepoList(props) {
                 type: 'button',
                 className: 'dgp-row dgp-repo-row',
                 'data-dgp-repo': root.id,
-                'data-active': root.id === activeRootId ? 'true' : 'false',
-                'aria-current': root.id === activeRootId ? 'true' : undefined,
+                'data-active': !hidden && root.id === activeRootId ? 'true' : 'false',
+                'data-hidden': hidden ? 'true' : undefined,
+                'aria-current': !hidden && root.id === activeRootId ? 'true' : undefined,
                 title: root.path,
                 onClick: () => {
+                  // 已隐藏的行不参与切换：先取消隐藏，才能重新成为当前仓库
+                  if (hidden) return
                   if (typeof source.onSelect === 'function') source.onSelect(root)
                 }
               },
               h(Icon, { name: 'git-branch', size: 13 }),
               h('span', { className: 'dgp-name dgp-oneline' }, root.name)),
-              root.isGit === false
+              // 隐藏的行不提供分支菜单：它不参与切换，点开也只会让人以为切过去了
+              hidden
                 ? null
                 : h('button', {
                   type: 'button',
@@ -201,6 +229,34 @@ export function RepoList(props) {
                     loadBranches(root, event.currentTarget.getBoundingClientRect())
                   }
                 }, hasBranch ? root.branch : translate('root.noBranch')),
+              root.kind === 'primary'
+                ? null
+                : h('button', {
+                  type: 'button',
+                  className: 'dgp-row-action',
+                  'data-dgp-repo-hide': root.id,
+                  title: translate('roots.hide', { name: root.name }),
+                  'aria-label': translate('roots.hide', { name: root.name }),
+                  onClick: (event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (typeof source.onHide === 'function') source.onHide(root)
+                  }
+                }, h(Icon, { name: 'eye-off', size: 13 })),
+              hidden
+                ? h('button', {
+                  type: 'button',
+                  className: 'dgp-row-action',
+                  'data-dgp-repo-unhide': root.id,
+                  title: translate('roots.unhide', { name: root.name }),
+                  'aria-label': translate('roots.unhide', { name: root.name }),
+                  onClick: (event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (typeof source.onUnhide === 'function') source.onUnhide(root)
+                  }
+                }, h(Icon, { name: 'eye', size: 13 }))
+                : null,
               root.kind === 'extra'
                 ? h('button', {
                   type: 'button',

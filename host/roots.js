@@ -8,6 +8,10 @@
  *   discovered 项目根下（深度 ≤ 2）发现的仓库；项目根本身是仓库时继续找子模块/嵌套仓库
  *   extra      用户手工添加并持久化到 config.js 的外部仓库
  *
+ * 隐藏：用户可以把某个根从「储存库」里藏起来（持久化在 config.js 的 hidden 段）。
+ * 被隐藏的根仍然解析、仍然带完整字段，只是多一个 `hidden: true` —— 由界面决定
+ * 默认不显示、以及用「显示已隐藏」把它们放出来。项目根（primary）永远不能隐藏。
+ *
  * 设计要点：
  *  - 只做「便宜」的探测：resolveRepo（1 次 git）+ readHead（最多 4 次 git），
  *    **不跑 status**（dirty 由客户端真正打开某个根时再查）。
@@ -23,12 +27,13 @@ import path from 'node:path'
 import {
   GitError,
   discoverRepos,
+  hasOwnGitDir,
   naturalCompare,
   normalizeSlashes,
   readHead,
   resolveRepo
 } from './git.js'
-import { addExtra, listExtras, removeExtra } from './config.js'
+import { addExtra, addHidden, listExtras, listHidden, removeExtra, removeHidden } from './config.js'
 
 /**
  * 子仓库扫描预算。
@@ -87,6 +92,7 @@ function makeRoot(fields) {
     upstream: fields.upstream ?? null,
     ahead: fields.ahead ?? 0,
     behind: fields.behind ?? 0,
+    hidden: fields.hidden === true,
     error: fields.error
   }
 }
@@ -245,6 +251,15 @@ export async function resolveRoots(projectRoot, options = {}) {
     }
   }
 
+  /* 2.5) 用户隐藏的根：读一次，最后统一打标记（不影响解析与字段填充） */
+  let hiddenKeys = new Set()
+  try {
+    const hidden = await listHidden(projectDir, { logger: options.logger })
+    hiddenKeys = new Set(hidden.map((item) => keyOf(item)))
+  } catch (error) {
+    warnings.push(`读取隐藏仓库配置失败：${describe(error)}`)
+  }
+
   /* 3) 持久化的外部根（失效的也保留，交给 UI 提示/移除） */
   let extras = []
   try {
@@ -272,8 +287,8 @@ export async function resolveRoots(projectRoot, options = {}) {
       continue
     }
 
-    const repo = await resolveRepo(listed)
-    if (!repo?.repoRoot) {
+    // 外部根就是用户加的那一个目录：它自己必须有 .git，不向上找祖先、不向下扫子仓库
+    if (!hasOwnGitDir(listed)) {
       extraDrafts.push(
         makeRoot({
           id: dir,
@@ -281,26 +296,24 @@ export async function resolveRoots(projectRoot, options = {}) {
           repoRoot: null,
           kind: 'extra',
           isGit: false,
-          error: '不是 git 仓库'
+          error: '这个路径不是 Git 仓库（缺少 .git）'
         })
       )
-      warnings.push(`外部目录不是 git 仓库：${dir}`)
+      warnings.push(`外部目录不是 Git 仓库：${dir}`)
       continue
     }
 
-    // 外部根的显示基准与 id 都取仓库根，和 add/remove 传回的路径保持一致
-    const repoRoot = toPosix(repo.repoRoot)
-    const repoKey = keyOf(repoRoot)
+    const repoKey = keyOf(dir)
     if (seenRepos.has(repoKey)) {
-      warnings.push(`外部仓库与项目内仓库重复，已忽略：${dir}`)
+      warnings.push(`外部目录与项目内仓库重复，已忽略：${dir}`)
       continue
     }
     seenRepos.add(repoKey)
     extraDrafts.push(
       makeRoot({
-        id: repoRoot,
-        path: repoRoot,
-        repoRoot,
+        id: dir,
+        path: dir,
+        repoRoot: dir,
         kind: 'extra',
         isGit: true
       })
@@ -331,6 +344,11 @@ export async function resolveRoots(projectRoot, options = {}) {
   )
 
   assignNames(uniqueDrafts)
+  // primary 是项目本身，隐藏它等于把面板关掉，没有意义 —— 只标记非 primary 的根
+  for (const draft of uniqueDrafts) {
+    if (draft.kind === 'primary') continue
+    draft.hidden = hiddenKeys.has(keyOf(draft.repoRoot ?? draft.path))
+  }
   return { projectRoot: normalizedProjectRoot, roots: uniqueDrafts, warnings }
 }
 
@@ -359,63 +377,67 @@ export async function addExtraRoot(projectRoot, dir, options = {}) {
   if (!info) throw new GitError('not-found', `目录不存在：${normalizeSlashes(target)}`)
   if (!info.isDirectory()) throw new GitError('not-a-repository', `不是目录：${normalizeSlashes(target)}`)
 
-  const repo = await resolveRepo(target)
-  if (!repo?.repoRoot) {
-    throw new GitError('not-a-repository', `不是 git 仓库：${normalizeSlashes(target)}`)
+  // 只认这个目录本身：含 .git 才算仓库。不向上找祖先仓库（否则用户加的子目录
+  // 会被悄悄换成上层仓库），也不向下扫描子仓库。
+  if (!hasOwnGitDir(target)) {
+    throw new GitError('not-a-repository', `这个路径不是 Git 仓库（缺少 .git）：${normalizeSlashes(target)}`)
   }
 
-  // 持久化仓库根（不是用户选中的子目录）：resolveRoots 的 path/id 也是仓库根，
-  // 这样客户端拿 root.path 调 roots/remove 能精确命中。
-  const repoRoot = toPosix(repo.repoRoot)
-  await addExtra(projectDir, repoRoot, { logger: options.logger })
+  await addExtra(projectDir, toPosix(target), { logger: options.logger })
   return resolveRoots(projectDir, options)
 }
-
-/**
- * 目录路径的规范化键。
- *
- * 为什么要它：外部根的**键**存的是规范化路径（join/8.3 短名都会被 realpath 展开成长路径），
- * 而移除时调用方只能给出它知道的原始写法。若目录已被删除，realpath 直接失败，
- * 两侧就一个是短名一个是长名 —— 记录永远删不掉。
- *
- * 做法：能 realpath 就 realpath；失败了就往上找最深的已存在祖先，realpath 它再拼回剩余部分。
- * 这样「已删除的目录」也能算出与当初入库时一致的键。
- */
-async function canonicalDirKey(absPath) {
-  const rest = []
-  let current = absPath
-  for (;;) {
-    try {
-      const real = await realpath(current)
-      return toPosix(path.join(real, ...rest.slice().reverse()))
-    } catch {
-      const parent = path.dirname(current)
-      if (parent === current) return toPosix(absPath)
-      rest.push(path.basename(current))
-      current = parent
-    }
-  }
-}
-
 
 /**
  * 移除外部仓库根。不校验存在性：目录被删掉之后用户仍然要能移除记录。
  * 同时尝试「传入路径」与「该路径所属仓库根」两种写法，兼容手工编辑过的配置。
  */
-export async function removeExtraRoot(projectRoot, dir, options = {}) {
+/**
+ * 项目自身的身份键集合：项目根目录，以及（项目根在工作树里时）它的仓库根。
+ * 这两个都不能被隐藏 —— 隐藏 primary 等于把面板关掉。
+ */
+async function projectIdentityKeys(projectDir) {
+  const keys = new Set([keyOf(projectDir)])
+  const repo = await resolveRepo(projectDir)
+  if (repo?.repoRoot) keys.add(keyOf(repo.repoRoot))
+  return keys
+}
+
+/**
+ * 把一个根从「储存库」里隐藏（持久化）。存的是仓库根：与 resolveRoots 里
+ * 用来匹配 `hidden` 的键一致，目录被移动/删除后记录也仍然有意义。
+ *
+ * 错误码：'bad-request' | 'cannot-hide'
+ */
+export async function hideRoot(projectRoot, dir, options = {}) {
   const projectDir = requireAbsolute(projectRoot, 'projectRoot')
   const target = requireAbsolute(dir, 'path')
 
-  // 先按规范化键移除（覆盖「目录已删除」的情况），再按仓库根移除（覆盖「传的是仓库子目录」）
-  const targetKey = await canonicalDirKey(target)
-  await removeExtra(projectDir, targetKey, { logger: options.logger })
+  const repo = await resolveRepo(target)
+  const repoRoot = repo?.repoRoot ? toPosix(repo.repoRoot) : toPosix(target)
+  const identity = await projectIdentityKeys(projectDir)
+  if (identity.has(keyOf(repoRoot)) || identity.has(keyOf(target))) {
+    throw new GitError('cannot-hide', `项目本身不能隐藏：${normalizeSlashes(target)}`)
+  }
+
+  await addHidden(projectDir, repoRoot, { logger: options.logger })
+  return resolveRoots(projectDir, options)
+}
+
+/** 取消隐藏（幂等）。 */
+export async function unhideRoot(projectRoot, dir, options = {}) {
+  const projectDir = requireAbsolute(projectRoot, 'projectRoot')
+  const target = requireAbsolute(dir, 'path')
 
   const repo = await resolveRepo(target)
-  if (repo?.repoRoot) {
-    const repoRoot = toPosix(repo.repoRoot)
-    if (keyOf(repoRoot) !== keyOf(targetKey)) {
-      await removeExtra(projectDir, repoRoot, { logger: options.logger })
-    }
-  }
+  const repoRoot = repo?.repoRoot ? toPosix(repo.repoRoot) : toPosix(target)
+  await removeHidden(projectDir, repoRoot, { logger: options.logger })
+  return resolveRoots(projectDir, options)
+}
+
+/** 移除外部根：存的与传的是同一个路径，按它删一次即可（目录已被删除也要能删）。 */
+export async function removeExtraRoot(projectRoot, dir, options = {}) {
+  const projectDir = requireAbsolute(projectRoot, 'projectRoot')
+  const target = requireAbsolute(dir, 'path')
+  await removeExtra(projectDir, toPosix(target), { logger: options.logger })
   return resolveRoots(projectDir, options)
 }

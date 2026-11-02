@@ -10,8 +10,14 @@
  *     "version": 1,
  *     "projects": {
  *       "<规范化的小写项目根>": ["<绝对路径，正斜杠，无尾斜杠>", ...]
+ *     },
+ *     "hidden": {
+ *       "<规范化的小写项目根>": ["<该项目的仓库根，正斜杠>", ...]
  *     }
  *   }
+ *
+ * `projects` 是用户手工添加的外部仓库；`hidden` 是用户在「储存库」里主动隐藏的根
+ * （例如项目里的测试夹具 / vendor 仓库）。两者都按项目隔离，路径都存规范化绝对路径。
  *
  * 约束：
  *  - 原子写：先写 <file>.tmp-<random>，再 rename 覆盖；rename 在 Windows 上同样覆盖已存在文件。
@@ -97,17 +103,13 @@ function describe(error) {
 /* ------------------------------------------------------------------ 读写 */
 
 function emptyConfig() {
-  return { version: CONFIG_VERSION, projects: {} }
+  return { version: CONFIG_VERSION, projects: {}, hidden: {} }
 }
 
-/** 把任意解析结果收敛成合法形状；不认识的东西直接丢弃。 */
-function normalizeConfig(parsed) {
-  const config = emptyConfig()
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return config
-  const projects = parsed.projects
-  if (!projects || typeof projects !== 'object' || Array.isArray(projects)) return config
-
-  for (const [rawKey, rawList] of Object.entries(projects)) {
+/** 一组「项目键 → 路径列表」的归一化（projects 与 hidden 共用同一套规则）。 */
+function normalizeProjectLists(raw, config, target) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return
+  for (const [rawKey, rawList] of Object.entries(raw)) {
     if (!Array.isArray(rawList)) continue
     let key
     try {
@@ -131,8 +133,17 @@ function normalizeConfig(parsed) {
       seen.add(itemKey)
       values.push(normalized)
     }
-    config.projects[key] = values
+    config[target][key] = values
   }
+}
+
+/** 把任意解析结果收敛成合法形状；不认识的东西直接丢弃。 */
+function normalizeConfig(parsed) {
+  const config = emptyConfig()
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return config
+  normalizeProjectLists(parsed.projects, config, 'projects')
+  // 老配置文件没有 hidden 段：解析结果就是空列表，不需要额外的兼容分支
+  normalizeProjectLists(parsed.hidden, config, 'hidden')
   return config
 }
 
@@ -251,6 +262,67 @@ export async function addExtra(projectRoot, dir, options = {}) {
       await writeConfig(config, options)
     }
     return config.projects[key].slice()
+  })
+}
+
+/** 某个项目已隐藏的根（副本）。 */
+export async function listHidden(projectRoot, options = {}) {
+  const key = projectKey(projectRoot)
+  const config = await readConfig(options)
+  const list = config.hidden[key]
+  return Array.isArray(list) ? list.slice() : []
+}
+
+/**
+ * 隐藏一个根；已存在则不重复写（幂等）。
+ * @returns {Promise<string[]>} 该项目完整的隐藏列表
+ */
+export async function addHidden(projectRoot, dir, options = {}) {
+  const key = projectKey(projectRoot)
+  const normalized = normalizeDirPath(dir)
+  const itemKey = projectKey(normalized)
+
+  return serialize(async () => {
+    const config = await readConfig(options)
+    const list = Array.isArray(config.hidden[key]) ? config.hidden[key] : (config.hidden[key] = [])
+    const exists = list.some((entry) => {
+      try {
+        return projectKey(entry) === itemKey
+      } catch {
+        return false
+      }
+    })
+    if (!exists) {
+      list.push(normalized)
+      await writeConfig(config, options)
+    }
+    return config.hidden[key].slice()
+  })
+}
+
+/**
+ * 取消隐藏；不存在时保持原样（幂等，不写盘）。
+ * @returns {Promise<string[]>} 该项目完整的隐藏列表
+ */
+export async function removeHidden(projectRoot, dir, options = {}) {
+  const key = projectKey(projectRoot)
+  const itemKey = projectKey(dir)
+
+  return serialize(async () => {
+    const config = await readConfig(options)
+    const list = Array.isArray(config.hidden[key]) ? config.hidden[key] : []
+    const next = list.filter((entry) => {
+      try {
+        return projectKey(entry) !== itemKey
+      } catch {
+        return true
+      }
+    })
+    if (next.length !== list.length) {
+      config.hidden[key] = next
+      await writeConfig(config, options)
+    }
+    return next.slice()
   })
 }
 

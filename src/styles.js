@@ -1180,10 +1180,44 @@ export const CSS = `
 .dgp-detail-count { flex: 1 1 auto; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .dgp-detail-empty { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .dgp-detail-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.dgp-detail-item { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.dgp-detail-link { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: 0 0; color: var(--dsw-alias-state-business-primary); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+/* 每项两行：标题在上，作者与时间在下；行高放宽，时间不会被省略号吃掉 */
+.dgp-detail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: var(--dsw-radius-xs);
+}
+.dgp-detail-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dgp-detail-link {
+  padding: 0;
+  border: 0;
+  background: 0 0;
+  color: var(--dsw-alias-state-business-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .dgp-detail-link:hover { text-decoration: underline; }
+.dgp-detail-item > .dgp-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+.dgp-detail-item > .dgp-detail-meta > .dgp-detail-author { color: var(--dsw-alias-label-secondary); }
 .dgp-detail-meta { flex: none; }
+
 .dgp-remote-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
 
 /* 未合并 PR 数量：红点角标 */

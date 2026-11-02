@@ -1126,9 +1126,19 @@ export const CSS = `
 }
 .dgp-finding-fix { color: var(--dsw-alias-label-primary); }
 .dgp-ai-comment { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.dgp-ai-comment-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 .dgp-ai-textarea {
   width: 100%;
-  resize: vertical;
+  /* 高度由内容决定（组件里按行数算），这里只兜住范围与滚动 */
+  min-height: 138px;
+  max-height: 60vh;
+  overflow-y: auto;
+  resize: none;
   font-family: var(--ds-font-family-code);
   font-size: 12px;
   line-height: 1.6;

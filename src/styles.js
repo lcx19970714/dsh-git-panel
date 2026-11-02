@@ -1045,6 +1045,8 @@ export const CSS = `
 .dgp-gate-chip[data-gate="test"][data-state="passed"] { color: var(--dsw-alias-state-success-primary); }
 .dgp-gate-chip[data-gate="review"][data-state="changes-requested"] { color: var(--dsw-alias-state-error-primary); }
 .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
+.dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dgp-ai-error > .dgp-detail-failure { margin: 0; }
 /* AI 审阅：平台没返回内容的文件 */
 .dgp-ai-skipped { display: flex; flex-direction: column; gap: 2px; }
 .dgp-skipped-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }

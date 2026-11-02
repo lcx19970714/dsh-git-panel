@@ -1227,6 +1227,8 @@ window.__ModuleLoader__.load({
       .dgp-gate-chip[data-gate="test"][data-state="passed"] { color: var(--dsw-alias-state-success-primary); }
       .dgp-gate-chip[data-gate="review"][data-state="changes-requested"] { color: var(--dsw-alias-state-error-primary); }
       .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
+      .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .dgp-ai-error > .dgp-detail-failure { margin: 0; }
       /* AI 审阅：平台没返回内容的文件 */
       .dgp-ai-skipped { display: flex; flex-direction: column; gap: 2px; }
       .dgp-skipped-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
@@ -1596,7 +1598,8 @@ window.__ModuleLoader__.load({
         'settings.reviewModelLabel': 'AI 审阅模型',
         'settings.reviewModelHint': '用于审阅 PR 的模型；建议选能力更强的，审阅比写提交说明难得多。两个模型互不影响。',
         'pull.aiTitle': 'AI 审阅',
-        'pull.aiRun': 'AI 审阅',
+        'pull.aiStart': '开始审阅',
+        'pull.aiOpenSettings': '去设置模型',
         'pull.aiRerun': '重新审阅',
         'pull.aiRunning': '正在读取 diff 并审阅，可能需要十几秒…',
         'pull.aiSkippedTitle': '有 {count} 个文件平台没有返回内容（二进制或改动过大），这些没有被审阅：',
@@ -1908,7 +1911,8 @@ window.__ModuleLoader__.load({
         'settings.reviewModelLabel': 'AI review model',
         'settings.reviewModelHint': 'Model used to review PRs; pick a stronger one — reviewing is harder than writing a commit message. The two models are independent.',
         'pull.aiTitle': 'AI review',
-        'pull.aiRun': 'Review with AI',
+        'pull.aiStart': 'Start review',
+        'pull.aiOpenSettings': 'Choose a model',
         'pull.aiRerun': 'Review again',
         'pull.aiRunning': 'Reading the diff and reviewing — this can take a while…',
         'pull.aiSkippedTitle': '{count} file(s) had no content from the platform (binary or too large) and were not reviewed:',
@@ -3172,7 +3176,7 @@ window.__ModuleLoader__.load({
             const review = await api.remotePullAiReview(input)
             return { ok: true, ...review }
           } catch (error) {
-            return { ok: false, error: api.describeError(error, tRef.current) }
+            return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
           }
         }, [])
 
@@ -3744,6 +3748,7 @@ window.__ModuleLoader__.load({
             onPass: passPull,
             onAiReview: aiReviewPull,
             onComment: commentPull,
+            onOpenSettings: openSettings,
             onMerge: mergePull,
             onChanged: () => loadPullDetail(openPull),
             onOpenUrl: openExternal,
@@ -8898,7 +8903,13 @@ window.__ModuleLoader__.load({
             setDraft(result.comment ?? '')
             return
           }
-          setAi({ status: 'error', result: null, error: result === null || result === undefined ? '审阅失败' : result.error })
+          setAi({
+            status: 'error',
+            result: null,
+            error: result === null || result === undefined ? '审阅失败' : result.error,
+            // 只有「没配审阅模型」这种情况值得给快捷入口，其它错误去设置页也没用
+            code: result === null || result === undefined ? null : (result.code ?? null)
+          })
         }
 
         /** 提交评论：内容就是输入框里的（用户可改过的）文本。 */
@@ -9007,9 +9018,21 @@ window.__ModuleLoader__.load({
                 'data-dgp-pull': 'ai-run',
                 disabled: ai.status === 'loading' || busy !== null,
                 onClick: runAi
-              }, t(ai.status === 'done' ? 'pull.aiRerun' : 'pull.aiRun'))),
+              }, t(ai.status === 'done' ? 'pull.aiRerun' : 'pull.aiStart'))),
             ai.status === 'loading' ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' }, t('pull.aiRunning')) : null,
-            ai.status === 'error' ? h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error) : null,
+            ai.status === 'error'
+              ? h('div', { className: 'dgp-ai-error' },
+                h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error),
+                ai.code === 'no-review-model' && typeof source.onOpenSettings === 'function'
+                  ? h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-dgp-pull': 'ai-open-settings',
+                    onClick: () => source.onOpenSettings()
+                  }, t('pull.aiOpenSettings'))
+                  : null)
+              : null,
             ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
               ai.result.truncated === true
                 ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))

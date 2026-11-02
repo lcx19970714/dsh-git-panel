@@ -1217,6 +1217,24 @@ window.__ModuleLoader__.load({
       .dgp-remote-more { align-self: center; margin: 6px 0; }
 
       /* ── 设置页：账号列表与添加表单 ── */
+      /* 空态里的按钮组（例如没账号时的两个平台入口） */
+      .dgp-state-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 4px; }
+      /* 按钮保持内容宽度：中文标签一旦被压窄就会溢出边框 */
+      .dgp-state-actions .dgp-btn { flex: 0 0 auto; white-space: nowrap; }
+
+      /* 远端页签里就地展开的账号表单 */
+      .dgp-account-inline {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 6px;
+        padding: 8px 10px;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+      }
+      .dgp-account-inline-head { display: flex; align-items: center; gap: 8px; }
+      .dgp-account-inline .dgp-account-form { margin-top: 0; }
+      .dgp-account-form .dgp-btn { flex: 0 0 auto; white-space: nowrap; }
       /* 设置页：获取令牌的三步引导 */
       .dgp-account-guide {
         display: flex;
@@ -1324,8 +1342,10 @@ window.__ModuleLoader__.load({
         'branch.switching': '正在切换到 {name}…',
         'branch.failed': '切换失败：{message}',
         'remote.title': '账号与仓库',
+        'remote.addAccount': '添加账号',
+        'remote.addAccountOn': '添加 {provider} 账号',
         'remote.noAccounts': '还没有添加代码托管账号',
-        'remote.noAccountsHint': '到设置里添加 GitHub / Gitee 账号（只需要一个只读 token）',
+        'remote.noAccountsHint': '点「添加账号」选平台、粘贴一个只读 token 即可，不用离开这个页签',
         'remote.openSettings': '去设置',
         'remote.loading': '正在读取仓库…',
         'remote.failed': '读取失败：{message}',
@@ -1517,8 +1537,10 @@ window.__ModuleLoader__.load({
         'branch.switching': 'Switching to {name}…',
         'branch.failed': 'Could not switch: {message}',
         'remote.title': 'Accounts & repositories',
+        'remote.addAccount': 'Add account',
+        'remote.addAccountOn': 'Add a {provider} account',
         'remote.noAccounts': 'No code hosting account yet',
-        'remote.noAccountsHint': 'Add a GitHub / Gitee account in Settings (a read-only token is enough)',
+        'remote.noAccountsHint': 'Click “Add account”, pick a provider and paste a read-only token — no need to leave this tab',
         'remote.openSettings': 'Open settings',
         'remote.loading': 'Loading repositories…',
         'remote.failed': 'Could not load: {message}',
@@ -2574,8 +2596,12 @@ window.__ModuleLoader__.load({
             const value = await api.addAccount(input)
             setAccountsNotice(tRef.current('accounts.success', { login: value.account.login }))
             await reloadAccounts()
+            return { ok: true, account: value.account }
           } catch (error) {
-            setAccountsError(api.describeError(error, tRef.current))
+            const message = api.describeError(error, tRef.current)
+            setAccountsError(message)
+            // 返回而不是抛出：设置页看 accountsError，远端页签的内联表单独看这个返回值
+            return { ok: false, error: message }
           } finally {
             setAccountsBusy(false)
           }
@@ -2877,6 +2903,8 @@ window.__ModuleLoader__.load({
               loadAccounts()
             },
             onClone: cloneRepo,
+            providers,
+            onAddAccount: addAccount,
             t
           })
         } else if (mode === MODE.changes) {
@@ -6973,6 +7001,9 @@ window.__ModuleLoader__.load({
        *
        * 拉取走行内表单：点「拉取」展开目标文件夹名（默认仓库名），确认后交给 Panel 执行；
        * 克隆期间这一行显示已等待秒数，失败原因直接显示在该行下方。
+       *
+       * 添加账号同样就地完成：没账号时空态里直接给两个平台按钮，有账号时账号行尾是 ＋；
+       * 表单里有「打开令牌页面」，提交结果就地显示（设置页那份引导仍然保留）。
        */
       const { h, useState } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
@@ -6998,6 +7029,36 @@ window.__ModuleLoader__.load({
         const now = typeof source.now === 'number' ? source.now : 0
         const [folderFor, setFolderFor] = useState(null)
         const [folderName, setFolderName] = useState('')
+        // 添加账号的行内表单：{ provider, label, token, busy, error }
+        const [form, setForm] = useState(null)
+
+        const providers = Array.isArray(source.providers) ? source.providers : []
+        const providerOf = (id) => providers.find((item) => item.id === id) ?? { id, label: id }
+
+        const openForm = (providerId) => {
+          const id = typeof providerId === 'string' && providerId !== ''
+            ? providerId
+            : (providers.length > 0 ? providers[0].id : 'github')
+          setForm({ provider: id, label: '', token: '', busy: false, error: null })
+        }
+
+        const closeForm = () => setForm(null)
+
+        const submitForm = async () => {
+          if (form === null || typeof source.onAddAccount !== 'function') return
+          if (form.token.trim() === '') return
+          setForm({ ...form, busy: true, error: null })
+          const result = await source.onAddAccount({
+            provider: form.provider,
+            label: form.label.trim(),
+            token: form.token.trim()
+          })
+          if (result !== null && result !== undefined && result.ok === true) {
+            setForm(null)
+            return
+          }
+          setForm({ ...form, busy: false, error: result === null || result === undefined ? '添加失败' : result.error })
+        }
 
         const beginClone = (repo) => {
           setFolderFor(repo.fullName)
@@ -7015,21 +7076,91 @@ window.__ModuleLoader__.load({
           source.onClone(repo, folderName.trim())
         }
 
+        const formNode = form === null
+          ? null
+          : h('div', { className: 'dgp-account-inline', 'data-dgp-remote': 'account-form' },
+            h('div', { className: 'dgp-account-inline-head' },
+              h('span', { className: 'dgp-account-guide-title' },
+                translate('remote.addAccountOn', { provider: providerOf(form.provider).label })),
+              providerOf(form.provider).tokenUrl === undefined
+                ? null
+                : h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-dgp-remote': 'open-token-page',
+                  onClick: () => window.open(providerOf(form.provider).tokenUrl, '_blank', 'noopener,noreferrer')
+                }, translate('accounts.openTokenPage'), h(Icon, { name: 'external', size: 12 }))),
+            h('div', { className: 'dgp-account-form' },
+              h('select', {
+                className: 'dgp-select dgp-account-provider',
+                'data-dgp-remote': 'account-provider',
+                value: form.provider,
+                onChange: (event) => setForm({ ...form, provider: event.target.value })
+              },
+              providers.map((item) => h('option', { key: item.id, value: item.id }, item.label))),
+              h('input', {
+                className: 'dgp-input',
+                'data-dgp-remote': 'account-label',
+                placeholder: translate('accounts.label'),
+                value: form.label,
+                onChange: (event) => setForm({ ...form, label: event.target.value })
+              }),
+              h('input', {
+                className: 'dgp-input',
+                'data-dgp-remote': 'account-token',
+                type: 'password',
+                placeholder: translate('accounts.tokenPlaceholder'),
+                value: form.token,
+                onChange: (event) => setForm({ ...form, token: event.target.value }),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') submitForm()
+                }
+              }),
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'primary',
+                'data-dgp-remote': 'account-submit',
+                disabled: form.busy || form.token.trim() === '',
+                onClick: submitForm
+              }, translate(form.busy ? 'accounts.adding' : 'accounts.add')),
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-dgp-remote': 'account-cancel',
+                onClick: closeForm
+              }, translate('remote.cloneCancel'))),
+            form.error === null
+              ? null
+              : h('div', { className: 'dgp-remote-status', 'data-tone': 'error' },
+                h('span', null, translate('accounts.failed', { message: form.error }))))
+
         let body = null
         if (accounts.length === 0) {
           body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'no-accounts' },
             h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'external', size: 22 })),
             h('div', { className: 'dgp-state-title' }, translate('remote.noAccounts')),
             h('div', { className: 'dgp-state-desc' }, translate('remote.noAccountsHint')),
-            typeof source.onOpenSettings === 'function'
-              ? h('button', {
+            h('div', { className: 'dgp-state-actions' },
+              h('button', {
                 type: 'button',
                 className: 'dgp-btn',
-                'data-size': 'sm',
-                'data-dgp-remote': 'open-settings',
-                onClick: () => source.onOpenSettings()
-              }, translate('remote.openSettings'))
-              : null)
+                'data-variant': 'primary',
+                'data-dgp-remote': 'add-account',
+                onClick: () => openForm(null)
+              }, translate('remote.addAccount')),
+              typeof source.onOpenSettings === 'function'
+                ? h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-variant': 'ghost',
+                  'data-dgp-remote': 'open-settings',
+                  onClick: () => source.onOpenSettings()
+                }, translate('accounts.guideTitle'))
+                : null))
         } else if (error !== null) {
           body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'error' },
             h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
@@ -7122,6 +7253,7 @@ window.__ModuleLoader__.load({
         }
 
         return h('div', { className: 'dgp-remote', 'data-dgp-view': 'remote' },
+          formNode,
           accounts.length === 0
             ? null
             : h('div', { className: 'dgp-remote-head' },
@@ -7140,6 +7272,14 @@ window.__ModuleLoader__.load({
               h('button', {
                 type: 'button',
                 className: 'dgp-iconbtn dgp-remote-refresh',
+                title: translate('remote.addAccount'),
+                'aria-label': translate('remote.addAccount'),
+                'data-dgp-remote': 'add-account',
+                onClick: () => openForm(providerOf(accountId).id)
+              }, h(Icon, { name: 'plus', size: 13 })),
+              h('button', {
+                type: 'button',
+                className: 'dgp-iconbtn',
                 title: translate('remote.refresh'),
                 'aria-label': translate('remote.refresh'),
                 onClick: () => {

@@ -901,8 +901,12 @@ export function Panel(props) {
       const value = await api.addAccount(input)
       setAccountsNotice(tRef.current('accounts.success', { login: value.account.login }))
       await reloadAccounts()
+      return { ok: true, account: value.account }
     } catch (error) {
-      setAccountsError(api.describeError(error, tRef.current))
+      const message = api.describeError(error, tRef.current)
+      setAccountsError(message)
+      // 返回而不是抛出：设置页看 accountsError，远端页签的内联表单独看这个返回值
+      return { ok: false, error: message }
     } finally {
       setAccountsBusy(false)
     }
@@ -1204,6 +1208,8 @@ function buildUpdateNote(updateState, t) {
         loadAccounts()
       },
       onClone: cloneRepo,
+      providers,
+      onAddAccount: addAccount,
       t
     })
   } else if (mode === MODE.changes) {

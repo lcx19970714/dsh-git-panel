@@ -1402,6 +1402,18 @@ window.__ModuleLoader__.load({
 
       .dgp-remote-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
 
+      /* 远端页签顶部的操作提示（例如合并后自动返回） */
+      .dgp-remote-notice {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 8px;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+        color: var(--dsw-alias-label-secondary);
+        font-size: 11px;
+      }
+      .dgp-remote-notice > .dgp-oneline { flex: 1 1 auto; min-width: 0; }
       /* 未合并 PR 数量：红点角标 */
       .dgp-remote-prcount {
         flex: none;
@@ -1675,6 +1687,7 @@ window.__ModuleLoader__.load({
         'pull.merged': '已合并',
         'pull.reviewDone': '已提交审查（{verdict}）',
         'pull.mergedDone': '已合并，源分支 {branch}',
+        'pull.mergedClosed': '已合并 PR #{number}（{branch}），已返回仓库详情',
         'pull.filesChanged': '{count} 个文件',
         'pull.commits': '{count} 个提交',
         'pull.state.open': '打开',
@@ -1990,6 +2003,7 @@ window.__ModuleLoader__.load({
         'pull.merged': 'Merged',
         'pull.reviewDone': 'Review submitted ({verdict})',
         'pull.mergedDone': 'Merged, source branch {branch}',
+        'pull.mergedClosed': 'Merged #{number} ({branch}) — back to the repository',
         'pull.filesChanged': '{count} files',
         'pull.commits': '{count} commits',
         'pull.state.open': 'Open',
@@ -2295,6 +2309,8 @@ window.__ModuleLoader__.load({
         const [accountsBusy, setAccountsBusy] = useState(false)
         const [accountsError, setAccountsError] = useState(null)
         const [accountsNotice, setAccountsNotice] = useState(null)
+        // 合并后 PR 会自动关闭，提示放在右侧顶部（PullDetail 已卸载，它的本地提示会丢）
+        const [remoteNotice, setRemoteNotice] = useState(null)
 
         /* ------------------------------- 根 ------------------------------- */
         const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -3188,13 +3204,19 @@ window.__ModuleLoader__.load({
             fullName: remoteSelection.fullName,
             number
           }
-          setOpenPull(selection)
+          openPullWith(selection)
           loadPullDetail(selection)
         }, [remoteSelection, loadPullDetail])
 
         const closePull = useCallback(() => {
           setOpenPull(null)
           setPullDetail(null)
+        }, [])
+
+        /** 打开某个 PR 时清掉上次合并的提示。 */
+        const openPullWith = useCallback((selection) => {
+          setRemoteNotice(null)
+          setOpenPull(selection)
         }, [])
 
         /** 审查：统一把失败包成 { ok:false, error }，界面就地显示。 */
@@ -3254,11 +3276,17 @@ window.__ModuleLoader__.load({
         const mergePull = useCallback(async (input) => {
           try {
             const result = await api.remotePullMerge(input)
-            await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+            // PR 合并后就关闭了：直接回到仓库详情，不再停在已关闭的 PR 上
+            closePull()
+            setRemoteNotice(tRef.current('pull.mergedClosed', {
+              number: input.number,
+              branch: result.headBranch === '' ? '' : result.headBranch
+            }))
             await loadRemoteDetail({ accountId: input.accountId, fullName: input.fullName })
             // 合并后未合并数量会变，角标要跟着刷新
             await loadPullCounts(input.accountId, remoteReposRef.current)
-            return { ok: true, message: tRef.current('pull.mergedDone', { branch: result.headBranch }) }
+            // closed:true 让 PullDetail 不要在被卸载后再写自己的提示
+          return { ok: true, closed: true, message: tRef.current('pull.mergedDone', { branch: result.headBranch }) }
           } catch (error) {
             return { ok: false, error: api.describeError(error, tRef.current) }
           }
@@ -3975,7 +4003,19 @@ window.__ModuleLoader__.load({
             }
           }
         }),
-        h('div', { className: 'dgp-pane-right' }, rightPane))
+        h('div', { className: 'dgp-pane-right' },
+          mode === MODE.remote && remoteNotice !== null
+            ? h('div', { className: 'dgp-remote-notice', 'data-dgp-remote': 'notice' },
+              h('span', { className: 'dgp-oneline' }, remoteNotice),
+              h('button', {
+                type: 'button',
+                className: 'dgp-row-action',
+                'data-dgp-remote': 'notice-dismiss',
+                title: t('action.close'),
+                onClick: () => setRemoteNotice(null)
+              }, h(Icon, { name: 'close', size: 12 })))
+            : null,
+          rightPane))
 
         let content
         if (noSession) {
@@ -8925,6 +8965,8 @@ window.__ModuleLoader__.load({
           setNotice(null)
           const result = await action()
           setBusy(null)
+          // 合并成功时宿主已经把详情关掉了（closed:true），这里不再写任何提示
+          if (result !== null && result !== undefined && result.ok === true && result.closed === true) return
           if (result !== null && result !== undefined && result.ok === true) {
             setNotice(result.message ?? null)
             if (typeof source.onChanged === 'function') source.onChanged()

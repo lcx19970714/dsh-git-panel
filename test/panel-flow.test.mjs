@@ -2048,10 +2048,15 @@ test('用例 1K：点开 PR 能看详情并在面板里审查、合并', async (
     eq(merges[0].method, 'squash')
     eq(merges[0].deleteBranch, true)
 
-    // 返回仓库详情
-    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'back'))
+    // 合并后 PR 已关闭：详情应自动关闭，回到仓库详情，并给出提示
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'detail'), null, '合并后应自动离开 PR 详情')
+    const notice = panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'notice')
+    assert(notice !== null, '合并后应有提示')
+    assert(textOf(notice).includes('已合并'), '提示文案：' + textOf(notice))
+    // 提示可以手动关闭
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'notice-dismiss'))
     await panel.flush()
-    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'detail'), null, '应回到仓库详情')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'notice'), null, '提示可关闭')
   })
 })
 

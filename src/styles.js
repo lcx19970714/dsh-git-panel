@@ -1220,6 +1220,18 @@ export const CSS = `
 
 .dgp-remote-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
 
+/* 远端页签顶部的操作提示（例如合并后自动返回） */
+.dgp-remote-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+.dgp-remote-notice > .dgp-oneline { flex: 1 1 auto; min-width: 0; }
 /* 未合并 PR 数量：红点角标 */
 .dgp-remote-prcount {
   flex: none;

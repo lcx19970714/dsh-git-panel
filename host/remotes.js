@@ -36,6 +36,8 @@ const github = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28'
   }),
+  /** GitHub 用请求头鉴权，URL 保持干净。 */
+  authorize: (url) => url,
   userPath: () => '/user',
   reposPath: (page) => '/user/repos?per_page=' + PAGE_SIZE + '&page=' + page
     + '&sort=updated&affiliation=owner,collaborator,organization_member',
@@ -87,9 +89,10 @@ const gitee = {
   tokenUrl: 'https://gitee.com/profile/personal_access_tokens',
   gitUser: null, // 用账号自己的 login
   headers: () => ({ Accept: 'application/json' }),
-  userPath: (token) => '/user?access_token=' + encodeURIComponent(token),
-  reposPath: (page, token) => '/user/repos?access_token=' + encodeURIComponent(token)
-    + '&per_page=' + PAGE_SIZE + '&page=' + page + '&sort=updated',
+  /** Gitee 只认 access_token 查询参数：任何路径都必须带上，否则私有仓库会被当成不存在（404）。 */
+  authorize: (url, token) => url + (url.includes('?') ? '&' : '?') + 'access_token=' + encodeURIComponent(token),
+  userPath: () => '/user',
+  reposPath: (page) => '/user/repos?per_page=' + PAGE_SIZE + '&page=' + page + '&sort=updated',
   repoPath: (fullName) => '/repos/' + fullName,
   // Gitee 的 issues 与 pulls 是两个独立集合
   issuesIncludePulls: false,
@@ -183,9 +186,16 @@ export function lastPageOf(linkHeader) {
 async function readJson(response) {
   const text = await response.text()
   if (!response.ok) {
-    const reason = response.status === 401 || response.status === 403
-      ? '令牌无效或已过期（HTTP ' + response.status + '）'
-      : 'HTTP ' + response.status
+    let reason
+    if (response.status === 401 || response.status === 403) {
+      reason = '令牌无效或已过期（HTTP ' + response.status + '）'
+    } else if (response.status === 404) {
+      // Gitee 对「无权访问的私有仓库」也返回 404（{"message":"Not Found Project"}），
+      // 所以别只说找不到，把常见原因一起给出来。
+      reason = 'HTTP 404：仓库不存在、已改名/删除，或令牌没有访问它的权限（私有仓库需要项目读权限）'
+    } else {
+      reason = 'HTTP ' + response.status
+    }
     throw new GitError('remote-auth-failed', reason + '：' + text.slice(0, 300))
   }
   try {
@@ -280,7 +290,7 @@ export function createRemotes(deps) {
     const token = typeof input.token === 'string' ? input.token.trim() : ''
     if (token === '') throw new GitError('bad-request', '令牌不能为空')
 
-    const response = await request(fetchImpl, provider.apiBase + provider.userPath(token), { headers: provider.headers(token) }, options.signal)
+    const response = await request(fetchImpl, provider.authorize(provider.apiBase + provider.userPath(), token), { headers: provider.headers(token) }, options.signal)
     const data = await readJson(response)
     const login = typeof data.login === 'string' ? data.login : ''
     if (login === '') throw new GitError('remote-api-failed', '接口没有返回登录名，无法确认这个令牌')
@@ -309,7 +319,7 @@ export function createRemotes(deps) {
 
     const nextToken = typeof input.token === 'string' ? input.token.trim() : ''
     if (nextToken !== '') {
-      const response = await request(fetchImpl, provider.apiBase + provider.userPath(nextToken), { headers: provider.headers(nextToken) }, options.signal)
+      const response = await request(fetchImpl, provider.authorize(provider.apiBase + provider.userPath(), nextToken), { headers: provider.headers(nextToken) }, options.signal)
       const data = await readJson(response)
       const login = typeof data.login === 'string' ? data.login : ''
       if (login === '') throw new GitError('remote-api-failed', '接口没有返回登录名，无法确认这个令牌')
@@ -367,7 +377,7 @@ export function createRemotes(deps) {
   async function listRepos(input, options = {}) {
     const { provider, account } = await findAccount(input.accountId)
     const page = Number.isInteger(input.page) && input.page > 0 ? input.page : 1
-    const url = provider.apiBase + provider.reposPath(page, account.token)
+    const url = provider.authorize(provider.apiBase + provider.reposPath(page), account.token)
     const response = await request(fetchImpl, url, { headers: provider.headers(account.token) }, options.signal)
     const data = await readJson(response)
     if (!Array.isArray(data)) throw new GitError('remote-api-failed', '接口返回的仓库列表不是数组')
@@ -391,15 +401,16 @@ export function createRemotes(deps) {
     const pageSize = Number.isInteger(input.pageSize) && input.pageSize > 0 ? Math.min(input.pageSize, 50) : 10
     const headers = provider.headers(account.token)
     const base = provider.apiBase + provider.repoPath(fullName)
+    const send = (url) => request(fetchImpl, provider.authorize(url, account.token), { headers }, options.signal)
 
-    const detail = await readJson(await request(fetchImpl, base, { headers }, options.signal))
+    const detail = await readJson(await send(base))
 
     /** 取一页列表；同时用 per_page=1 的同路径请求读总数。 */
     const section = async (path) => {
-      const listResponse = await request(fetchImpl, base + path + '?state=open&per_page=' + pageSize, { headers }, options.signal)
+      const listResponse = await send(base + path + '?state=open&per_page=' + pageSize)
       const list = await readJson(listResponse)
       if (!Array.isArray(list)) throw new GitError('remote-api-failed', '接口返回的列表不是数组：' + path)
-      const countResponse = await request(fetchImpl, base + path + '?state=open&per_page=1', { headers }, options.signal)
+      const countResponse = await send(base + path + '?state=open&per_page=1')
       await readJson(countResponse)
       return {
         total: lastPageOf(countResponse.headers?.get?.('link')),

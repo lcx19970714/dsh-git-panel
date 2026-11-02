@@ -1055,6 +1055,19 @@ export const CSS = `
 .dgp-detail-meta { flex: none; }
 .dgp-remote-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
 
+/* 未合并 PR 数量：红点角标 */
+.dgp-remote-prcount {
+  flex: none;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+  font-family: var(--ds-font-family-code);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
 /* ── 远端页签：账号 chip、仓库列表、行内克隆表单 ── */
 .dgp-remote { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; gap: 6px; padding: 8px 8px 6px; }
 .dgp-remote-head { display: flex; align-items: center; gap: 6px; min-width: 0; }

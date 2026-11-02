@@ -93,6 +93,48 @@ export function createRepos(deps) {
     }
   }
 
+  /**
+   * 批量取未合并 PR 数量。
+   *
+   * @param {{accountId: string, fullNames: string[]}} input
+   * @returns {Promise<{counts: Record<string, number|null>, failures: {fullName: string, message: string}[]}>}
+   */
+  async function pullCounts(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const names = Array.isArray(input.fullNames) ? input.fullNames : []
+    const limited = names.filter((name) => typeof name === 'string').slice(0, 50)
+    const headers = provider.headers(account.token)
+    const counts = {}
+    const failures = []
+
+    const one = async (fullName) => {
+      if (!/^[\w.-]+\/[\w.-]+$/.test(fullName)) {
+        counts[fullName] = null
+        failures.push({ fullName, message: '仓库名不合法' })
+        return
+      }
+      const url = provider.authorize(
+        provider.apiBase + provider.repoPath(fullName) + provider.pullListPath(1),
+        account.token
+      )
+      try {
+        const response = await request(fetchImpl, url, { headers }, options.signal)
+        const list = await readArray(response, '未合并 PR')
+        const total = lastPageOf(response.headers?.get?.('link'))
+        counts[fullName] = total === null ? list.length : total
+      } catch (error) {
+        counts[fullName] = null
+        failures.push({ fullName, message: error instanceof GitError ? error.message : String(error) })
+      }
+    }
+
+    const CONCURRENCY = 6
+    for (let index = 0; index < limited.length; index += CONCURRENCY) {
+      await Promise.all(limited.slice(index, index + CONCURRENCY).map(one))
+    }
+    return { counts, failures }
+  }
+
   /** 克隆：目标必须在项目根内，且不能已存在（不覆盖、不合并，宁可报错）。 */
   async function cloneRepo(input, options = {}) {
     const { provider, account } = await findAccount(input.accountId)
@@ -136,5 +178,5 @@ export function createRepos(deps) {
     return { path: targetPath, name: targetName, fullName }
   }
 
-  return { findAccount, listRepos, repoDetail, cloneRepo }
+  return { findAccount, listRepos, repoDetail, pullCounts, cloneRepo }
 }

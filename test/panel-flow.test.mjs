@@ -2130,6 +2130,52 @@ test('用例 1M：门禁状态并排显示，一键按钮按平台能力执行',
   })
 })
 
+test('用例 1N：有未合并 PR 的仓库在列表里显示红点数字', async () => {
+  const counts = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [
+          { fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go', updatedAt: '', sizeKb: 1, defaultBranch: 'main', htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git', provider: 'github', accountId: 'github:alice' },
+          { fullName: 'alice/tool', name: 'tool', private: false, description: '', language: 'Go', updatedAt: '', sizeKb: 1, defaultBranch: 'main', htmlUrl: 'https://github.com/alice/tool', cloneUrl: 'https://github.com/alice/tool.git', provider: 'github', accountId: 'github:alice' }
+        ],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/pr-counts': (payload) => {
+        counts.push(payload)
+        return sayOk({ counts: { 'alice/app': 3, 'alice/tool': 0 }, failures: [] })
+      },
+      'remote/detail': () => sayOk({
+        repo: { fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main', sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'x', issuesUrl: 'x', pullsUrl: 'x' },
+        issues: { total: 0, items: [] },
+        pulls: { total: 0, items: [] },
+        failures: []
+      })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+
+    eq(counts.length, 1, '列表加载后应取一次数量')
+    eq(counts[0].accountId, 'github:alice')
+    eq(counts[0].fullNames, ['alice/app', 'alice/tool'], '只问当前列表里的仓库')
+
+    const badge = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr-count') === 'alice/app')
+    assert(badge !== null, '有未合并 PR 的仓库要有红点数字')
+    eq(textOf(badge), '3', '数字就是未合并数量')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr-count') === 'alice/tool'), null,
+      '数量为 0 的仓库不显示红点')
+  })
+})
+
 test('用例 1H：浏览器拦截新窗口时，把令牌页地址原样显示出来', async () => {
   await withPanel({
     routes: {

@@ -36,6 +36,7 @@ export function RemotePane(props) {
   const hasMore = source.hasMore === true
   const filter = typeof source.filter === 'string' ? source.filter : ''
   const selectedFullName = typeof source.selectedFullName === 'string' ? source.selectedFullName : null
+  const prCounts = source.prCounts !== null && typeof source.prCounts === 'object' ? source.prCounts : {}
   const clone = source.clone === null || source.clone === undefined ? null : source.clone
   const now = typeof source.now === 'number' ? source.now : 0
   const [folderFor, setFolderFor] = useState(null)
@@ -221,6 +222,13 @@ export function RemotePane(props) {
         },
           h('div', { className: 'dgp-remote-row' },
             h('span', { className: 'dgp-remote-name dgp-oneline', title: repo.fullName }, repo.name),
+            typeof prCounts[repo.fullName] === 'number' && prCounts[repo.fullName] > 0
+              ? h('span', {
+                className: 'dgp-remote-prcount',
+                'data-dgp-pr-count': repo.fullName,
+                title: translate('remote.openPulls', { count: prCounts[repo.fullName] })
+              }, String(prCounts[repo.fullName]))
+              : null,
             repo.private === true
               ? h('span', { className: 'dgp-remote-badge' }, translate('remote.private'))
               : null,

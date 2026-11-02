@@ -51,7 +51,7 @@ import {
   switchBranch,
   writeTextFile
 } from './host/git.js'
-import { createRemotes } from './host/remotes.js'
+import { createRemotes } from './host/remotes/index.js'
 import {
   listModels,
   parseRef,

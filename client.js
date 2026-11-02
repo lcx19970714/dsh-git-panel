@@ -1308,9 +1308,19 @@ window.__ModuleLoader__.load({
       }
       .dgp-finding-fix { color: var(--dsw-alias-label-primary); }
       .dgp-ai-comment { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+      .dgp-ai-comment-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
       .dgp-ai-textarea {
         width: 100%;
-        resize: vertical;
+        /* 高度由内容决定（组件里按行数算），这里只兜住范围与滚动 */
+        min-height: 138px;
+        max-height: 60vh;
+        overflow-y: auto;
+        resize: none;
         font-family: var(--ds-font-family-code);
         font-size: 12px;
         line-height: 1.6;
@@ -1661,7 +1671,7 @@ window.__ModuleLoader__.load({
         'pull.severity.minor': '次要',
         'pull.severity.nit': '细节',
         'pull.aiCommentLabel': '评论草稿',
-        'pull.aiCommentHint': 'AI 起草的内容，提交前请自己核对：只有点「提交评论」才会发到这个 PR。',
+        'pull.aiCommentPlaceholder': 'AI 起草，可直接编辑；确认无误再点「提交评论」',
         'pull.aiCommentSubmit': '提交评论',
         'pull.aiCommentSubmitting': '正在提交…',
         'pull.aiCommentDone': '评论已提交',
@@ -1977,7 +1987,7 @@ window.__ModuleLoader__.load({
         'pull.severity.minor': 'minor',
         'pull.severity.nit': 'nit',
         'pull.aiCommentLabel': 'Comment draft',
-        'pull.aiCommentHint': 'Drafted by AI — please check it yourself; nothing is posted until you click submit.',
+        'pull.aiCommentPlaceholder': 'Drafted by AI — edit freely; post only when you are happy with it',
         'pull.aiCommentSubmit': 'Post comment',
         'pull.aiCommentSubmitting': 'Posting…',
         'pull.aiCommentDone': 'Comment posted',
@@ -8959,6 +8969,16 @@ window.__ModuleLoader__.load({
         // 平台不一定给增删行/文件数，缺了显示 —— 而不是 0
         const statText = (value) => (pull.statsComplete === true ? String(value) : '—')
 
+        /**
+         * 评论草稿的可见行数：按换行切分，长行按每行约 80 字符折算。
+         * 最少 6 行、最多 30 行 —— 内容多时输入框自己长高，不用手动拉。
+         */
+        const draftLines = draft.split('\n').reduce(
+          (sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)),
+          0
+        )
+        const draftHeight = Math.min(Math.max(draftLines, 6), 30) * 19 + 24 + 'px'
+
         const run = async (kind, action) => {
           setBusy(kind)
           setError(null)
@@ -9163,17 +9183,8 @@ window.__ModuleLoader__.load({
                   h('div', { className: 'dgp-finding-detail' }, finding.detail),
                   h('div', { className: 'dgp-finding-fix' }, t('pull.aiSuggestion'), finding.suggestion)))),
               h('div', { className: 'dgp-ai-comment' },
-                h('label', { className: 'dgp-settings-label' }, t('pull.aiCommentLabel')),
-                h('p', { className: 'dgp-settings-hint' }, t('pull.aiCommentHint')),
-                h('textarea', {
-                  className: 'dgp-input dgp-ai-textarea',
-                  'data-dgp-pull': 'ai-comment',
-                  value: draft,
-                  spellCheck: false,
-                  rows: 10,
-                  onChange: (event) => setDraft(event.target.value)
-                }),
-                h('div', { className: 'dgp-pull-actions' },
+                h('div', { className: 'dgp-ai-comment-head' },
+                  h('span', { className: 'dgp-settings-label' }, t('pull.aiCommentLabel')),
                   h('button', {
                     type: 'button',
                     className: 'dgp-btn',
@@ -9183,6 +9194,15 @@ window.__ModuleLoader__.load({
                     disabled: commentBusy || draft.trim() === '',
                     onClick: submitComment
                   }, t(commentBusy ? 'pull.aiCommentSubmitting' : 'pull.aiCommentSubmit'))),
+                h('textarea', {
+                  className: 'dgp-input dgp-ai-textarea',
+                  'data-dgp-pull': 'ai-comment',
+                  style: { height: draftHeight },
+                  placeholder: t('pull.aiCommentPlaceholder'),
+                  value: draft,
+                  spellCheck: false,
+                  onChange: (event) => setDraft(event.target.value)
+                }),
                 commentNotice === null
                   ? null
                   : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-notice' }, commentNotice)))),

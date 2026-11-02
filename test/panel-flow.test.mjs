@@ -2475,7 +2475,21 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
     const draftBox = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-comment')
     assert(draftBox !== null, '应有评论草稿输入框')
     assert(String(draftBox.props.value).includes('重试没有上限'), '草稿默认带 AI 内容')
-    draftBox.props.onChange({ target: { value: '我自己改过的评论内容' } })
+    assert(typeof draftBox.props.placeholder === 'string' && draftBox.props.placeholder !== '',
+      '说明应收进 placeholder，不再单独占一行')
+
+    // 高度自适应：默认至少 6 行
+    const baseHeight = Number.parseInt(String(draftBox.props.style.height), 10)
+    assert(Number.isFinite(baseHeight) && baseHeight >= 138, '默认高度至少 6 行：' + draftBox.props.style.height)
+
+    // 内容变多：高度跟着长，不需要手动拉
+    draftBox.props.onChange({ target: { value: Array.from({ length: 20 }, (_, i) => '第 ' + (i + 1) + ' 条：这里是一条建议').join('\n') } })
+    await panel.flush()
+    const tallerBox = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-comment')
+    const tallerHeight = Number.parseInt(String(tallerBox.props.style.height), 10)
+    assert(tallerHeight > baseHeight, '内容变多后高度应变高：' + tallerHeight + ' vs ' + baseHeight)
+
+    tallerBox.props.onChange({ target: { value: '我自己改过的评论内容' } })
     await panel.flush()
 
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-submit'))

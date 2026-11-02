@@ -93,6 +93,16 @@ export function PullDetail(props) {
   // 平台不一定给增删行/文件数，缺了显示 —— 而不是 0
   const statText = (value) => (pull.statsComplete === true ? String(value) : '—')
 
+  /**
+   * 评论草稿的可见行数：按换行切分，长行按每行约 80 字符折算。
+   * 最少 6 行、最多 30 行 —— 内容多时输入框自己长高，不用手动拉。
+   */
+  const draftLines = draft.split('\n').reduce(
+    (sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)),
+    0
+  )
+  const draftHeight = Math.min(Math.max(draftLines, 6), 30) * 19 + 24 + 'px'
+
   const run = async (kind, action) => {
     setBusy(kind)
     setError(null)
@@ -297,17 +307,8 @@ export function PullDetail(props) {
             h('div', { className: 'dgp-finding-detail' }, finding.detail),
             h('div', { className: 'dgp-finding-fix' }, t('pull.aiSuggestion'), finding.suggestion)))),
         h('div', { className: 'dgp-ai-comment' },
-          h('label', { className: 'dgp-settings-label' }, t('pull.aiCommentLabel')),
-          h('p', { className: 'dgp-settings-hint' }, t('pull.aiCommentHint')),
-          h('textarea', {
-            className: 'dgp-input dgp-ai-textarea',
-            'data-dgp-pull': 'ai-comment',
-            value: draft,
-            spellCheck: false,
-            rows: 10,
-            onChange: (event) => setDraft(event.target.value)
-          }),
-          h('div', { className: 'dgp-pull-actions' },
+          h('div', { className: 'dgp-ai-comment-head' },
+            h('span', { className: 'dgp-settings-label' }, t('pull.aiCommentLabel')),
             h('button', {
               type: 'button',
               className: 'dgp-btn',
@@ -317,6 +318,15 @@ export function PullDetail(props) {
               disabled: commentBusy || draft.trim() === '',
               onClick: submitComment
             }, t(commentBusy ? 'pull.aiCommentSubmitting' : 'pull.aiCommentSubmit'))),
+          h('textarea', {
+            className: 'dgp-input dgp-ai-textarea',
+            'data-dgp-pull': 'ai-comment',
+            style: { height: draftHeight },
+            placeholder: t('pull.aiCommentPlaceholder'),
+            value: draft,
+            spellCheck: false,
+            onChange: (event) => setDraft(event.target.value)
+          }),
           commentNotice === null
             ? null
             : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-notice' }, commentNotice)))),

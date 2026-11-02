@@ -242,6 +242,23 @@ export const CSS = `
 }
 .dgp-repo-branch:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dgp-repo-branch:focus-visible { outline: none; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+/* 分支条目：本地 / 远程 两个小标签，亮 = 有，暗 = 没有 */
+.dgp-menu-badges { display: inline-flex; gap: 4px; flex: none; }
+.dgp-menu-badge {
+  padding: 0 5px;
+  border-radius: var(--dsw-radius-xs);
+  font-size: 10px;
+  line-height: 15px;
+  color: var(--dsw-alias-label-tertiary);
+  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l1);
+}
+.dgp-menu-badge[data-active="true"] {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-module-platform);
+}
+
 /* 分支菜单底部：输入名字后创建并切过去 */
 .dgp-branch-create {
   display: flex;

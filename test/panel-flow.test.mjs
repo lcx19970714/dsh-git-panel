@@ -1634,8 +1634,8 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
       status: () => sayOk(statusThree()),
       'branches/list': () => sayOk({
         branches: [
-          { name: 'main', kind: 'local', current: true, upstream: 'origin/main', ahead: 1, behind: 0, hasRemote: true, remote: 'origin' },
-          { name: 'feature', kind: 'local', current: false, upstream: null, ahead: 0, behind: 0, hasRemote: false, remote: null }
+          { name: 'main', local: true, current: true, remote: 'origin', upstream: 'origin/main', ahead: 1, behind: 0 },
+          { name: 'feature', local: true, current: false, remote: null, upstream: null, ahead: 0, behind: 0 }
         ]
       }),
       'branch/switch': (payload) => {
@@ -1655,12 +1655,14 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
     await panel.flush()
 
     const branchItems = panel.all((node) => isHost(node) && attr(node, 'data-menu-key') !== undefined
-      && attr(node, 'data-menu-key').startsWith('local:'))
-    eq(branchItems.length, 2, '菜单里应列出两个本地分支')
-    eq(branchItems.map((node) => attr(node, 'data-menu-key')), ['local:main', 'local:feature'], '顺序：当前分支在最前')
+      && attr(node, 'data-menu-key').startsWith('branch:'))
+    eq(branchItems.length, 2, '菜单里应列出两个分支')
+    eq(branchItems.map((node) => attr(node, 'data-menu-key')), ['branch:main', 'branch:feature'], '顺序：当前分支在最前')
     eq(attr(branchItems[0], 'data-checked'), 'true', '当前分支打勾')
-    assert(textOf(branchItems[0]).includes('↑1'), '落后的本地分支要显示 ↑n：' + textOf(branchItems[0]))
-    assert(textOf(branchItems[1]).includes('仅本地'), '远端没有同名分支要标「仅本地」：' + textOf(branchItems[1]))
+    assert(textOf(branchItems[0]).includes('↑1'), '领先要显示 ↑n：' + textOf(branchItems[0]))
+    const badges = (node) => findAll(node, (child) => isHost(child) && hasClass(child, 'dgp-menu-badge'))
+    eq(badges(branchItems[0]).map((node) => attr(node, 'data-active')), ['true', 'true'], 'main 本地与远程都亮')
+    eq(badges(branchItems[1]).map((node) => attr(node, 'data-active')), ['true', 'false'], 'feature 只有本地亮')
     const feature = branchItems[1]
 
     click(feature)
@@ -2239,8 +2241,8 @@ test('用例 1O：分支菜单区分本地与仅远程，可跟踪远程分支�
   let listCalls = 0
   const branchesPayload = {
     branches: [
-      { name: 'main', kind: 'local', current: true, upstream: 'origin/main', ahead: 0, behind: 2, hasRemote: true, remote: 'origin' },
-      { name: 'feat', kind: 'remote', current: false, remote: 'origin', ref: 'origin/feat', hasLocal: false }
+      { name: 'main', local: true, current: true, remote: 'origin', upstream: 'origin/main', ahead: 0, behind: 2 },
+      { name: 'feat', local: false, current: false, remote: 'origin', upstream: null, ahead: 0, behind: 0 }
     ]
   }
   await withPanel({
@@ -2266,12 +2268,13 @@ test('用例 1O：分支菜单区分本地与仅远程，可跟踪远程分支�
     await panel.flush()
 
     // 本地分支：落后 2 → ↓2；远程只有的：单独的远程区
-    const mainItem = panel.one((node) => isHost(node) && attr(node, 'data-menu-key') === 'local:main')
-    assert(mainItem !== null, '应有本地分支 main')
+    const mainItem = panel.one((node) => isHost(node) && attr(node, 'data-menu-key') === 'branch:main')
+    assert(mainItem !== null, '应有分支 main')
     assert(textOf(mainItem).includes('↓2'), '落后要显示 ↓n：' + textOf(mainItem))
-    const remoteItem = panel.one((node) => isHost(node) && attr(node, 'data-menu-key') === 'remote:origin/feat')
-    assert(remoteItem !== null, '应有仅远程的分支 origin/feat')
-    assert(textOf(remoteItem).includes('仅远程'), '要标出仅远程：' + textOf(remoteItem))
+    const remoteItem = panel.one((node) => isHost(node) && attr(node, 'data-menu-key') === 'branch:feat')
+    assert(remoteItem !== null, '应有只有远程的 feat 分支')
+    const featBadges = findAll(remoteItem, (node) => isHost(node) && hasClass(node, 'dgp-menu-badge'))
+    eq(featBadges.map((node) => attr(node, 'data-active')), ['false', 'true'], 'feat 只有远程亮')
 
     // 点仅远程的分支 → 创建本地跟踪分支
     click(remoteItem)
@@ -2303,7 +2306,7 @@ test('用例 1P：粘贴带引号的路径/分支名会自动去掉引号', asyn
         return resolveOk([ROOT], PROJECT)
       },
       'branches/list': () => sayOk({
-        branches: [{ name: 'main', kind: 'local', current: true, hasRemote: false, ahead: 0, behind: 0 }]
+        branches: [{ name: 'main', local: true, current: true, remote: null, ahead: 0, behind: 0 }]
       }),
       'branch/create': (payload) => {
         createdBranches.push(payload)

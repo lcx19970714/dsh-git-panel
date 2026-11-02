@@ -1162,7 +1162,6 @@ export async function listBranches(repoRoot, options = {}) {
       const name = refname.slice('refs/heads/'.length)
       local.push({
         name,
-        kind: 'local',
         current: head === '*',
         upstream: typeof upstream === 'string' && upstream !== '' ? upstream : null,
         ...parseTrack(track)
@@ -1175,47 +1174,42 @@ export async function listBranches(repoRoot, options = {}) {
       if (slash <= 0) continue
       const remote = rest.slice(0, slash)
       const name = rest.slice(slash + 1)
-      const entry = { name, remote }
-      const list = remoteByName.get(name)
-      if (list === undefined) remoteByName.set(name, [entry])
-      else list.push(entry)
+      // 只记录「哪个远程有它」，不重复成两行（同名只留第一个远程）
+      if (!remoteByName.has(name)) remoteByName.set(name, remote)
     }
   }
 
   const localNames = new Set(local.map((branch) => branch.name))
-  const branches = local.map((branch) => {
-    const remotes = remoteByName.get(branch.name) ?? []
-    return {
-      name: branch.name,
-      kind: 'local',
-      current: branch.current,
-      upstream: branch.upstream,
-      ahead: branch.ahead,
-      behind: branch.behind,
-      upstreamGone: branch.upstreamGone,
-      // 远程是否也有同名分支：没有就是「仅本地」
-      hasRemote: remotes.length > 0,
-      remote: remotes.length > 0 ? remotes[0].remote : null
-    }
-  })
+  const branches = local.map((branch) => ({
+    name: branch.name,
+    local: true,
+    current: branch.current,
+    // 远程是否有同名分支：有就带远程名，没有就是 null
+    remote: remoteByName.get(branch.name) ?? null,
+    upstream: branch.upstream,
+    ahead: branch.ahead,
+    behind: branch.behind,
+    upstreamGone: branch.upstreamGone
+  }))
   // 当前分支排最前，其余按 git 的时间序
   branches.sort((left, right) => Number(right.current) - Number(left.current))
 
+  // 只有远程的分支：只补一条记录，标志位 local=false
   const remoteOnly = []
-  for (const [name, remotes] of remoteByName) {
+  for (const [name, remote] of remoteByName) {
     if (localNames.has(name)) continue
-    for (const entry of remotes) {
-      remoteOnly.push({
-        name,
-        kind: 'remote',
-        current: false,
-        remote: entry.remote,
-        ref: entry.remote + '/' + name,
-        hasLocal: false
-      })
-    }
+    remoteOnly.push({
+      name,
+      local: false,
+      current: false,
+      remote,
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      upstreamGone: false
+    })
   }
-  remoteOnly.sort((left, right) => naturalCompare(left.ref, right.ref))
+  remoteOnly.sort((left, right) => naturalCompare(left.name, right.name))
   branches.push(...remoteOnly)
 
   return { branches, current: branches.find((branch) => branch.current)?.name ?? null }

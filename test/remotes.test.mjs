@@ -60,9 +60,11 @@ function fakeFetch(routes) {
     for (const [pattern, handler] of routes) {
       if (pattern.test(url)) {
         const body = typeof handler === 'function' ? handler(url, options) : handler
+        const headers = body.headers ?? {}
         return {
           ok: body.status === undefined || body.status < 400,
           status: body.status ?? 200,
+          headers: { get: (name) => headers[String(name).toLowerCase()] ?? null },
           text: async () => JSON.stringify(body.json ?? {})
         }
       }
@@ -257,6 +259,66 @@ await test('列仓库：两个平台的字段都被归一成同一形状', async
   const gitee = await remotes.listRepos({ accountId: 'gitee:bob' })
   assert.equal(gitee.repos[0].fullName, 'bob/tool')
   assert.equal(gitee.repos[0].language, 'Go')
+})
+
+await test('仓库详情：GitHub 的 issue 数要减掉 PR，总数来自 Link 最后一页', async () => {
+  const credentials = fakeCredentials()
+  const link = (page) => `<https://api.github.com/x?page=${page}>; rel="last"`
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/repos\/alice\/app\/issues\?.*per_page=1$/, { json: [], headers: { link: link(12) } }],
+    [/\/repos\/alice\/app\/pulls\?.*per_page=1$/, { json: [], headers: { link: link(5) } }],
+    [/\/repos\/alice\/app\/issues\?/, {
+      json: [
+        { number: 7, title: 'issue A', html_url: 'https://github.com/alice/app/issues/7', user: { login: 'bob' }, created_at: '2026-01-01T00:00:00Z' },
+        { number: 8, title: 'PR disguised as issue', html_url: 'https://x', pull_request: { url: 'x' }, user: { login: 'bob' } }
+      ]
+    }],
+    [/\/repos\/alice\/app\/pulls\?/, {
+      json: [{ number: 3, title: 'PR three', html_url: 'https://github.com/alice/app/pull/3', user: { login: 'carl' }, comments: 0 }]
+    }],
+    [/\/repos\/alice\/app$/, {
+      json: {
+        full_name: 'alice/app', description: 'demo', language: 'TypeScript', private: false,
+        default_branch: 'main', size: 120, stargazers_count: 9, forks_count: 2,
+        updated_at: '2026-02-02T00:00:00Z', html_url: 'https://github.com/alice/app'
+      }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+
+  const detail = await remotes.repoDetail({ accountId: 'github:alice', fullName: 'alice/app' })
+  assert.equal(detail.repo.language, 'TypeScript')
+  assert.equal(detail.repo.stars, 9)
+  assert.equal(detail.repo.issuesUrl, 'https://github.com/alice/app/issues')
+  assert.equal(detail.pulls.total, 5, 'PR 总数 = Link 最后一页')
+  assert.equal(detail.issues.total, 7, 'issue 数 = 12 - 5')
+  assert.equal(detail.issues.items.length, 1, 'issues 列表里要过滤掉 PR')
+  assert.equal(detail.issues.items[0].title, 'issue A')
+  assert.equal(detail.pulls.items[0].number, 3)
+  assert.deepEqual(detail.failures, [])
+})
+
+await test('仓库详情：某一块失败只标记那一块，其余照常返回', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/repos\/alice\/app\/issues\?.*per_page=1$/, { json: [], headers: { link: '<x?page=4>; rel="last"' } }],
+    [/\/repos\/alice\/app\/pulls\?.*per_page=1$/, { status: 500, json: {} }],
+    [/\/repos\/alice\/app\/issues\?/, { json: [] }],
+    [/\/repos\/alice\/app\/pulls\?/, { status: 500, json: {} }],
+    [/\/repos\/alice\/app$/, { json: { full_name: 'alice/app', language: 'Go', html_url: 'https://github.com/alice/app' } }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+
+  const detail = await remotes.repoDetail({ accountId: 'github:alice', fullName: 'alice/app' })
+  assert.equal(detail.repo.language, 'Go', '仓库详情照常返回')
+  assert.deepEqual(detail.pulls.items, [], 'PR 块为空')
+  assert.equal(detail.pulls.total, null, '拿不到就是 null，不编数字')
+  assert.equal(detail.failures.length, 1, '失败要报出来')
+  assert.equal(detail.failures[0].section, 'pulls')
 })
 
 await test('克隆：把本地裸仓库拉到项目根下的子目录，名字可改', async () => {

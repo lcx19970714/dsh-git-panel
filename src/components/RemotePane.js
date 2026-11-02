@@ -35,6 +35,7 @@ export function RemotePane(props) {
   const error = typeof source.error === 'string' && source.error !== '' ? source.error : null
   const hasMore = source.hasMore === true
   const filter = typeof source.filter === 'string' ? source.filter : ''
+  const selectedFullName = typeof source.selectedFullName === 'string' ? source.selectedFullName : null
   const clone = source.clone === null || source.clone === undefined ? null : source.clone
   const now = typeof source.now === 'number' ? source.now : 0
   const [folderFor, setFolderFor] = useState(null)
@@ -208,7 +209,16 @@ export function RemotePane(props) {
     body = h('div', { className: 'dgp-list', 'data-dgp-remote': 'list', role: 'list' },
       repos.map((repo) => {
         const cloning = clone !== null && clone.fullName === repo.fullName
-        return h('div', { key: repo.fullName, className: 'dgp-remote-item', role: 'listitem' },
+        return h('div', {
+          key: repo.fullName,
+          className: 'dgp-remote-item',
+          role: 'listitem',
+          'data-dgp-remote-item': repo.fullName,
+          'data-active': repo.fullName === selectedFullName ? 'true' : undefined,
+          onClick: () => {
+            if (typeof source.onSelectRepo === 'function') source.onSelectRepo(repo)
+          }
+        },
           h('div', { className: 'dgp-remote-row' },
             h('span', { className: 'dgp-remote-name dgp-oneline', title: repo.fullName }, repo.name),
             repo.private === true
@@ -221,14 +231,20 @@ export function RemotePane(props) {
               'data-dgp-remote-clone': repo.fullName,
               disabled: cloning || folderFor !== null,
               title: translate('remote.cloneTitle'),
-              onClick: () => beginClone(repo)
+              onClick: (event) => {
+                event.stopPropagation()
+                beginClone(repo)
+              }
             }, translate('remote.clone'))),
           h('div', { className: 'dgp-remote-meta dgp-oneline' },
             repo.description !== '' ? repo.description + ' · ' : '',
             repo.language !== '' ? repo.language + ' · ' : '',
             repo.updatedAt !== '' ? translate('remote.updatedAt', { time: formatClock(Date.parse(repo.updatedAt)) }) : ''),
           folderFor === repo.fullName
-            ? h('div', { className: 'dgp-remote-cloneform' },
+            ? h('div', {
+              className: 'dgp-remote-cloneform',
+              onClick: (event) => event.stopPropagation()
+            },
               h('label', { className: 'dgp-remote-cloneform-label' }, translate('remote.cloneFolder')),
               h('input', {
                 className: 'dgp-input dgp-remote-cloneform-input',

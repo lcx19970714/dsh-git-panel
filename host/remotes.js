@@ -39,6 +39,31 @@ const github = {
   userPath: () => '/user',
   reposPath: (page) => '/user/repos?per_page=' + PAGE_SIZE + '&page=' + page
     + '&sort=updated&affiliation=owner,collaborator,organization_member',
+  repoPath: (fullName) => '/repos/' + fullName,
+  // /issues 会把 PR 也算进去，所以 issue 总数要减去 PR 总数
+  issuesIncludePulls: true,
+  normalizeDetail: (item, fullName) => ({
+    fullName,
+    description: typeof item.description === 'string' ? item.description : '',
+    language: typeof item.language === 'string' ? item.language : '',
+    private: item.private === true,
+    defaultBranch: typeof item.default_branch === 'string' ? item.default_branch : '',
+    sizeKb: Number.isFinite(item.size) ? item.size : 0,
+    stars: Number.isFinite(item.stargazers_count) ? item.stargazers_count : 0,
+    forks: Number.isFinite(item.forks_count) ? item.forks_count : 0,
+    updatedAt: typeof item.updated_at === 'string' ? item.updated_at : '',
+    htmlUrl: typeof item.html_url === 'string' ? item.html_url : 'https://github.com/' + fullName,
+    issuesUrl: (typeof item.html_url === 'string' ? item.html_url : 'https://github.com/' + fullName) + '/issues',
+    pullsUrl: (typeof item.html_url === 'string' ? item.html_url : 'https://github.com/' + fullName) + '/pulls'
+  }),
+  normalizeIssue: (item) => ({
+    number: Number.isFinite(item.number) ? item.number : null,
+    title: typeof item.title === 'string' ? item.title : '',
+    url: typeof item.html_url === 'string' ? item.html_url : '',
+    author: typeof item.user?.login === 'string' ? item.user.login : '',
+    comments: Number.isFinite(item.comments) ? item.comments : 0,
+    createdAt: typeof item.created_at === 'string' ? item.created_at : ''
+  }),
   normalizeRepo: (item) => ({
     fullName: String(item.full_name),
     name: String(item.name),
@@ -65,6 +90,31 @@ const gitee = {
   userPath: (token) => '/user?access_token=' + encodeURIComponent(token),
   reposPath: (page, token) => '/user/repos?access_token=' + encodeURIComponent(token)
     + '&per_page=' + PAGE_SIZE + '&page=' + page + '&sort=updated',
+  repoPath: (fullName) => '/repos/' + fullName,
+  // Gitee 的 issues 与 pulls 是两个独立集合
+  issuesIncludePulls: false,
+  normalizeDetail: (item, fullName) => ({
+    fullName,
+    description: typeof item.description === 'string' ? item.description : '',
+    language: typeof item.language === 'string' ? item.language : '',
+    private: item.private === true,
+    defaultBranch: typeof item.default_branch === 'string' ? item.default_branch : '',
+    sizeKb: Number.isFinite(item.size) ? item.size : 0,
+    stars: Number.isFinite(item.stargazers_count) ? item.stargazers_count : 0,
+    forks: Number.isFinite(item.forks_count) ? item.forks_count : 0,
+    updatedAt: typeof item.updated_at === 'string' ? item.updated_at : '',
+    htmlUrl: typeof item.html_url === 'string' ? item.html_url : 'https://gitee.com/' + fullName,
+    issuesUrl: (typeof item.html_url === 'string' ? item.html_url : 'https://gitee.com/' + fullName) + '/issues',
+    pullsUrl: (typeof item.html_url === 'string' ? item.html_url : 'https://gitee.com/' + fullName) + '/pulls'
+  }),
+  normalizeIssue: (item) => ({
+    number: Number.isFinite(item.number) ? item.number : null,
+    title: typeof item.title === 'string' ? item.title : '',
+    url: typeof item.html_url === 'string' ? item.html_url : '',
+    author: typeof item.user?.login === 'string' ? item.user.login : '',
+    comments: Number.isFinite(item.comments) ? item.comments : 0,
+    createdAt: typeof item.created_at === 'string' ? item.created_at : ''
+  }),
   normalizeRepo: (item) => ({
     fullName: String(item.full_name),
     name: String(item.name ?? item.human_name ?? item.full_name),
@@ -119,6 +169,15 @@ async function request(fetchImpl, url, options, signal) {
     clearTimeout(timer)
     if (signal !== undefined) signal.removeEventListener('abort', onAbort)
   }
+}
+
+/** 从 Link 头里取最后一页的页码；没有 Link 就返回 null（不猜总数）。 */
+export function lastPageOf(linkHeader) {
+  if (typeof linkHeader !== 'string' || linkHeader === '') return null
+  const match = /[?&]page=(\d+)[^>]*>;\s*rel="last"/.exec(linkHeader)
+  if (match === null) return null
+  const page = Number.parseInt(match[1], 10)
+  return Number.isFinite(page) && page > 0 ? page : null
 }
 
 async function readJson(response) {
@@ -316,6 +375,66 @@ export function createRemotes(deps) {
     return { repos, page, hasMore: repos.length >= PAGE_SIZE }
   }
 
+  /**
+   * 仓库详情 + 未关闭 issue/PR 数量 + 最近条目。
+   *
+   * 计数用 `per_page=1` 请求读 Link 的最后一页（就是总数），比按列表长度估靠谱；
+   * 拿不到 Link 时返回 null，界面显示「数量未知」而不是编一个数字。
+   * GitHub 的 /issues 含 PR，因此 issue 数 = issues 总数 - PR 总数。
+   *
+   * issues / PRs 任一块失败只标记该块（failures），仓库详情与另一块照常返回。
+   */
+  async function repoDetail(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = typeof input.fullName === 'string' ? input.fullName : ''
+    if (!/^[\w.-]+\/[\w.-]+$/.test(fullName)) throw new GitError('bad-request', '仓库名不合法：' + fullName)
+    const pageSize = Number.isInteger(input.pageSize) && input.pageSize > 0 ? Math.min(input.pageSize, 50) : 10
+    const headers = provider.headers(account.token)
+    const base = provider.apiBase + provider.repoPath(fullName)
+
+    const detail = await readJson(await request(fetchImpl, base, { headers }, options.signal))
+
+    /** 取一页列表；同时用 per_page=1 的同路径请求读总数。 */
+    const section = async (path) => {
+      const listResponse = await request(fetchImpl, base + path + '?state=open&per_page=' + pageSize, { headers }, options.signal)
+      const list = await readJson(listResponse)
+      if (!Array.isArray(list)) throw new GitError('remote-api-failed', '接口返回的列表不是数组：' + path)
+      const countResponse = await request(fetchImpl, base + path + '?state=open&per_page=1', { headers }, options.signal)
+      await readJson(countResponse)
+      return {
+        total: lastPageOf(countResponse.headers?.get?.('link')),
+        items: list
+          .filter((item) => (typeof provider.issuesIncludePulls === 'boolean' && path === '/issues' && provider.issuesIncludePulls
+            ? item.pull_request === undefined
+            : true))
+          .slice(0, pageSize)
+          .map(provider.normalizeIssue)
+      }
+    }
+
+    const [issuesResult, pullsResult] = await Promise.allSettled([section('/issues'), section('/pulls')])
+    const failures = []
+    const pick = (settled, label) => {
+      if (settled.status === 'fulfilled') return settled.value
+      failures.push({ section: label, message: messageOf(settled.reason) })
+      return { total: null, items: [] }
+    }
+    const issues = pick(issuesResult, 'issues')
+    const pulls = pick(pullsResult, 'pulls')
+
+    // GitHub：issues 接口把 PR 也算进去了，减掉才是真正的 issue 数
+    const issuesTotal = provider.issuesIncludePulls === true
+      ? (issues.total === null || pulls.total === null ? null : Math.max(0, issues.total - pulls.total))
+      : issues.total
+
+    return {
+      repo: provider.normalizeDetail(detail, fullName),
+      issues: { total: issuesTotal, items: issues.items },
+      pulls: { total: pulls.total, items: pulls.items },
+      failures
+    }
+  }
+
   /** 克隆：目标必须在项目根内，且不能已存在（不覆盖、不合并，宁可报错）。 */
   async function cloneRepo(input, options = {}) {
     const { provider, account } = await findAccount(input.accountId)
@@ -363,5 +482,5 @@ export function createRemotes(deps) {
     return { path: targetPath, name: targetName, fullName }
   }
 
-  return { listAccounts, addAccount, updateAccount, readToken, removeAccount, listRepos, cloneRepo }
+  return { listAccounts, addAccount, updateAccount, readToken, removeAccount, listRepos, repoDetail, cloneRepo }
 }

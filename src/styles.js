@@ -987,6 +987,28 @@ export const CSS = `
   font-size: 11px;
 }
 
+/* 远端仓库详情（右侧） */
+.dgp-detail { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 12px 14px; overflow: auto; }
+.dgp-detail-top { display: flex; align-items: flex-start; gap: 10px; }
+.dgp-detail-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; }
+.dgp-detail-name { min-width: 0; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.dgp-detail-actions { display: flex; flex: none; gap: 6px; }
+.dgp-detail-desc { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.6; }
+.dgp-detail-meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.dgp-detail-failure { margin: 0; color: var(--dsw-alias-state-warn-label); font-size: 11px; }
+.dgp-detail-code { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: var(--dsw-radius-xs); background: var(--dsw-alias-bg-module-platform); }
+.dgp-detail-section { display: flex; flex-direction: column; gap: 4px; }
+.dgp-detail-head { display: flex; align-items: center; gap: 8px; }
+.dgp-detail-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.dgp-detail-count { flex: 1 1 auto; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.dgp-detail-empty { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.dgp-detail-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.dgp-detail-item { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dgp-detail-link { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: 0 0; color: var(--dsw-alias-state-business-primary); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.dgp-detail-link:hover { text-decoration: underline; }
+.dgp-detail-meta { flex: none; }
+.dgp-remote-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
+
 /* ── 远端页签：账号 chip、仓库列表、行内克隆表单 ── */
 .dgp-remote { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; gap: 6px; padding: 8px 8px 6px; }
 .dgp-remote-head { display: flex; align-items: center; gap: 6px; min-width: 0; }

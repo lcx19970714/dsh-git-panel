@@ -44,7 +44,8 @@ export function createPulls(deps) {
         verdicts: provider.pull.verdicts,
         reviews: provider.pull.reviewsPath !== null,
         mergeMethods: provider.pull.mergeMethods,
-        deleteBranch: true
+        deleteBranch: true,
+        test: provider.pull.testPath !== null
       }
     }
   }
@@ -84,6 +85,24 @@ export function createPulls(deps) {
     return { verdict, bodyPosted: body !== '' }
   }
 
+  /**
+   * 标记 PR「测试通过」——Gitee 的合并门禁之一。
+   * GitHub 没有对应动作（门禁由 CI 的 required status checks 决定），这里明确报不支持。
+   */
+  async function testPull(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    if (provider.pull.testPath === null) {
+      throw new GitError('bad-request', provider.label + ' 没有「标记测试通过」这个动作（合并门禁由 CI 决定）')
+    }
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    const headers = provider.headers(account.token)
+    const url = provider.apiBase + provider.repoPath(fullName) + provider.pullPath(number) + provider.pull.testPath
+    // 与 /review 同族：这个动作不带请求体
+    await readJson(await request(fetchImpl, provider.authorize(url, account.token), { headers, method: 'POST' }, options.signal))
+    return { tested: true }
+  }
+
   /** 合并 PR；deleteBranch 的行为由平台决定（GitHub 合并后删 ref，Gitee 走合并参数）。 */
   async function mergePull(input, options = {}) {
     const { provider, account } = await findAccount(input.accountId)
@@ -110,7 +129,18 @@ export function createPulls(deps) {
 
     const payload = { merge_method: method }
     if (provider.pull.mergeDeletesBranch === 'flag') payload.prune_source_branch = deleteBranch
-    const result = await readJson(await send(base + '/merge', { method: 'PUT', json: payload }))
+    let result
+    try {
+      result = await readJson(await send(base + '/merge', { method: 'PUT', json: payload }))
+    } catch (error) {
+      // Gitee 的合并门禁：405「此 Pull Request 未通过设置的测试」
+      const text = error instanceof GitError ? error.message : ''
+      if (/未通过设置的测试|not passed the configured test/i.test(text)) {
+        throw new GitError('merge-gate', provider.label + ' 的合并门禁要求先通过测试：' + text
+          + '（先在面板里点「标记测试通过」再合并）')
+      }
+      throw error
+    }
     // 空响应也算成功（平台不返回结果体）；只有明确 merged===false 才是失败
     if (result !== null && typeof result === 'object' && result.merged === false) {
       throw new GitError('merge-failed', typeof result.message === 'string' ? result.message : '平台没有完成合并')
@@ -134,5 +164,5 @@ export function createPulls(deps) {
     }
   }
 
-  return { pullDetail, reviewPull, mergePull }
+  return { pullDetail, reviewPull, testPull, mergePull }
 }

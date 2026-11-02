@@ -164,6 +164,11 @@ export function remotePullReview(payload, options) {
   return call('remote/pull/review', payload, options)
 }
 
+/** 标记 PR 测试通过（Gitee 的合并门禁之一）。 */
+export function remotePullTest(payload, options) {
+  return call('remote/pull/test', payload, options)
+}
+
 /** 合并 PR。 */
 export function remotePullMerge(payload, options) {
   return call('remote/pull/merge', payload, options)

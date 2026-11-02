@@ -569,6 +569,59 @@ await test('需要对象的接口遇到空响应时，给出明确原因', async
   )
 })
 
+await test('Gitee 可以标记测试通过；GitHub 没有这个动作', async () => {
+  const credentials = fakeCredentials()
+  const calls = []
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/pulls\/8\/test\?/, (url, options) => {
+      calls.push({ url, method: options.method, body: options.body })
+      return { status: 204, empty: true }
+    }],
+    [/\/pulls\/8\/reviews$/, { json: [] }],
+    [/\/pulls\/8\?$|\/pulls\/8\?access_token/, {
+      json: { number: 8, title: 'T', state: 'open', merged: false, mergeable: true, base: { ref: 'master' }, head: { ref: 'dev' } }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 'gt' })
+  await remotes.addAccount({ provider: 'github', token: 'gh' })
+
+  const giteeDetail = await remotes.pullDetail({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 8 })
+  assert.equal(giteeDetail.capabilities.test, true, 'Gitee 有「标记测试通过」')
+
+  const result = await remotes.testPull({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 8 })
+  assert.equal(result.tested, true)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].method, 'POST')
+  assert.equal(calls[0].body, undefined, '与 /review 同族，不带请求体')
+
+  await assert.rejects(
+    () => remotes.testPull({ accountId: 'github:alice', fullName: 'alice/app', number: 8 }),
+    (error) => error.code === 'bad-request' && /CI/.test(error.message)
+  )
+})
+
+await test('合并被门禁拦下时，把「未通过测试」翻译成可操作提示', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/pulls\/3\/merge\?/, { status: 405, json: { message: '此 Pull Request 未通过设置的测试' } }],
+    [/\/pulls\/3\?/, {
+      json: { number: 3, title: 'T', state: 'open', merged: false, mergeable: true, base: { ref: 'master' }, head: { ref: 'dev' } }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+
+  await assert.rejects(
+    () => remotes.mergePull({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 3, method: 'merge' }),
+    (error) => error.code === 'merge-gate'
+      && /标记测试通过/.test(error.message)
+  )
+})
+
 await test('mergeable 三态：GitHub 的 null（计算中）不阻止合并，false 才阻止', async () => {
   const credentials = fakeCredentials()
   let mergeable = null

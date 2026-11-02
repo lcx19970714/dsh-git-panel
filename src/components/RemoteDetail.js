@@ -29,7 +29,7 @@ function Section(props) {
         items.map((item, index) => h('li', { key: String(item.number ?? index), className: 'dgp-detail-item' },
           h('button', {
             type: 'button',
-            className: 'dgp-detail-link dgp-oneline',
+            className: 'dgp-detail-link',
             title: item.title,
             'data-dgp-item': kind,
             onClick: () => {
@@ -40,13 +40,13 @@ function Section(props) {
               onOpen(item.url)
             }
           }, (item.number === null ? '' : '#' + item.number + ' ') + item.title),
-          h('span', { className: 'dgp-detail-meta dgp-oneline' },
-            item.author === '' ? '' : item.author + ' · ',
+          h('span', { className: 'dgp-detail-meta' },
+            item.author === '' ? null : h('span', { className: 'dgp-detail-author' }, item.author),
             // 明确区分：创建 = 提交 PR 的时间，更新 = 最后一次有动静
-            item.createdAt === '' ? '' : t('detail.created', { time: formatDateTime(Date.parse(item.createdAt)) }),
+            item.createdAt === '' ? null : h('span', null, t('detail.created', { time: formatDateTime(Date.parse(item.createdAt)) })),
             item.updatedAt === '' || item.updatedAt === item.createdAt
-              ? ''
-              : ' · ' + t('detail.updated', { time: formatDateTime(Date.parse(item.updatedAt)) }))))))
+              ? null
+              : h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(item.updatedAt)) })))))))
 }
 
 export function RemoteDetail(props) {

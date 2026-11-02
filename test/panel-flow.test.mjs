@@ -2355,6 +2355,58 @@ test('用例 1v：多仓库时储存库列表列出全部，点另一个仓库�
   })
 })
 
+test('用例 1v2：可以在储存库里隐藏仓库，再展开「已隐藏」并取消隐藏', async () => {
+  const hiddenCalls = []
+  const unhiddenCalls = []
+  let currentRoots = [ROOT, ROOT_OTHER]
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk(currentRoots, PROJECT),
+      status: () => sayOk(statusThree()),
+      'roots/hide': (payload) => {
+        hiddenCalls.push(payload)
+        currentRoots = [{ ...ROOT }, { ...ROOT_OTHER, hidden: true }]
+        return sayOk({ projectRoot: PROJECT, roots: currentRoots, warnings: [] })
+      },
+      'roots/unhide': (payload) => {
+        unhiddenCalls.push(payload)
+        currentRoots = [{ ...ROOT }, { ...ROOT_OTHER }]
+        return sayOk({ projectRoot: PROJECT, roots: currentRoots, warnings: [] })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-repo-hide') === ROOT.id).length, 0,
+      '项目本身没有隐藏按钮')
+    const hideButton = panel.one((node) => isHost(node) && attr(node, 'data-dgp-repo-hide') === ROOT_OTHER.id)
+    assert(hideButton !== null, '其它仓库行应有隐藏按钮')
+
+    click(hideButton)
+    await panel.flush()
+    eq(hiddenCalls.length, 1, '应调用一次 roots/hide')
+    eq(hiddenCalls[0], { projectRoot: PROJECT, path: ROOT_OTHER.path }, '隐藏载荷')
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-repo') === ROOT_OTHER.id).length, 0,
+      '隐藏后那一行不再显示')
+
+    const toggle = panel.one((node) => isHost(node) && attr(node, 'data-dgp-repolist-hidden') !== undefined)
+    assert(toggle !== null, '有隐藏仓库时应出现「显示已隐藏」开关')
+    click(toggle)
+    await panel.flush()
+
+    const hiddenRow = panel.one((node) => isHost(node) && attr(node, 'data-dgp-repo') === ROOT_OTHER.id)
+    assert(hiddenRow !== null, '展开后能再次看到该行')
+    eq(attr(hiddenRow, 'data-hidden'), 'true', '已隐藏的行带标记')
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-repo-unhide') === ROOT_OTHER.id))
+    await panel.flush()
+    eq(unhiddenCalls.length, 1, '应调用一次 roots/unhide')
+    eq(unhiddenCalls[0], { projectRoot: PROJECT, path: ROOT_OTHER.path }, '取消隐藏载荷')
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-repolist-hidden') !== undefined).length, 0,
+      '没有隐藏仓库后开关消失')
+  })
+})
+
 test('用例 1w：变更列表的列表 / 树形两种显示方式，设置页与 ⋯ 菜单共用同一个偏好', async () => {
   const nested = {
     repoRoot: PROJECT,

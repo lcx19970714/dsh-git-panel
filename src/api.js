@@ -189,6 +189,16 @@ export function cloneRemoteRepo(payload, options) {
   return call('remote/clone', payload, options)
 }
 
+/** 从储存库隐藏一个根（持久化；项目本身不可隐藏）。 */
+export function hideRoot(payload, options) {
+  return call('roots/hide', payload, options)
+}
+
+/** 取消隐藏。 */
+export function unhideRoot(payload, options) {
+  return call('roots/unhide', payload, options)
+}
+
 /** 列出本地分支。 */
 export function listBranches(payload, options) {
   return call('branches/list', payload, options)

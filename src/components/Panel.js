@@ -112,9 +112,13 @@ export function Panel(props) {
   const [rootsError, setRootsError] = useState(null)
 
   const roots = project.roots
+  /** 用户隐藏的根默认不出现，也不参与仓库切换与自动选中；「显示已隐藏」时才由 RepoList 渲染。 */
+  const visibleRoots = useMemo(() => roots.filter((root) => root.hidden !== true), [roots])
   /** 真正的仓库（排除只有文件浏览能力的「浏览根」）。变更模式只看这些。 */
-  const gitRoots = useMemo(() => roots.filter((root) => root.isGit === true), [roots])
-  const activeRoot = roots.find((root) => root.id === activeRootId) ?? roots[0] ?? null
+  const gitRoots = useMemo(() => visibleRoots.filter((root) => root.isGit === true), [visibleRoots])
+  /** 含已隐藏的仓库：储存库列表要能列出它们（带收起按钮），空态判断也用它。 */
+  const allGitRoots = useMemo(() => roots.filter((root) => root.isGit === true), [roots])
+  const activeRoot = visibleRoots.find((root) => root.id === activeRootId) ?? visibleRoots[0] ?? null
   /**
    * 文件模式固定浏览项目根（roots[0]：项目仓库根，或项目根不是仓库时的浏览根）。
    * 仓库切换只发生在变更模式的「储存库」列表里，文件模式不再有根选择器。
@@ -800,6 +804,37 @@ export function Panel(props) {
     }
   }, [])
 
+  /** 隐藏 / 取消隐藏之后，若当前选中的那个根被藏起来了，落到第一个还看得见的根上。 */
+  const applyRootsChange = useCallback((value, hiddenRoot) => {
+    const nextRoots = value.roots
+    setProject({ projectRoot: value.projectRoot, roots: nextRoots, warnings: value.warnings })
+    setActiveRootId((previous) => {
+      if (previous !== hiddenRoot.id) return previous
+      const fallback = nextRoots.find((root) => root.hidden !== true)
+      return fallback === undefined ? null : fallback.id
+    })
+  }, [])
+
+  const hideRoot = useCallback(async (root) => {
+    const projectRoot = projectRef.current.projectRoot
+    if (root === null || typeof projectRoot !== 'string') return
+    try {
+      applyRootsChange(await api.hideRoot({ projectRoot, path: root.path }), root)
+    } catch (error) {
+      setRootsError(api.describeError(error, tRef.current))
+    }
+  }, [applyRootsChange])
+
+  const unhideRoot = useCallback(async (root) => {
+    const projectRoot = projectRef.current.projectRoot
+    if (root === null || typeof projectRoot !== 'string') return
+    try {
+      applyRootsChange(await api.unhideRoot({ projectRoot, path: root.path }), root)
+    } catch (error) {
+      setRootsError(api.describeError(error, tRef.current))
+    }
+  }, [applyRootsChange])
+
   /** 分支菜单：取数由面板做，组件只负责交互。 */
   const loadBranches = useCallback(async (root) => api.listBranches({ rootPath: root.path }), [])
 
@@ -1411,7 +1446,7 @@ function buildUpdateNote(updateState, t) {
       t
     })
   } else if (mode === MODE.changes) {
-    if (gitRoots.length === 0) {
+    if (allGitRoots.length === 0) {
       // 整个项目里没有任何工作树：变更列表无从谈起，但文件浏览照常可用。
       leftPane = h(EmptyState, {
         icon: 'git-branch',
@@ -1430,13 +1465,15 @@ function buildUpdateNote(updateState, t) {
       // VS Code 的排布：上面「储存库」，下面「变更」（提交框 + 分组）。
       leftPane = h('div', { className: 'dgp-changes' },
         h(RepoList, {
-          roots: gitRoots,
+          roots: allGitRoots,
           activeRootId: activeRoot === null ? null : activeRoot.id,
           open: repositoriesOpen === true,
           onToggleOpen: () => setRepositoriesOpen(repositoriesOpen !== true),
           onSelect: selectRoot,
           onAdd: addExternalRoot,
           onRemove: removeExternalRoot,
+          onHide: hideRoot,
+          onUnhide: unhideRoot,
           onLoadBranches: loadBranches,
           onSwitchBranch: switchBranch,
           onCreateBranch: createBranch,

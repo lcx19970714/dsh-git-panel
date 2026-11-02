@@ -82,7 +82,7 @@ export function PopupMenu(props) {
 
 /** 菜单项。 */
 export function MenuItem(props) {
-  const { icon, label, sub, checked, disabled, onClick, danger } = props
+  const { icon, label, sub, checked, disabled, onClick, danger, dataKey } = props
   const left = checked === undefined
     ? (icon === undefined ? null : h(Icon, { name: icon, size: 14 }))
     : h('span', { className: 'dgp-menu-check', style: { width: 14, display: 'flex' } },
@@ -92,6 +92,7 @@ export function MenuItem(props) {
     className: 'dgp-menu-item',
     role: 'menuitem',
     'data-checked': checked === true ? 'true' : undefined,
+    'data-menu-key': dataKey === undefined ? undefined : dataKey,
     'data-danger': danger === true ? 'true' : undefined,
     disabled: disabled === true,
     title: label,

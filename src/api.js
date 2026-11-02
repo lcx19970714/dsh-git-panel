@@ -204,6 +204,11 @@ export function listBranches(payload, options) {
   return call('branches/list', payload, options)
 }
 
+/** 把「仅远程」的分支建成本地跟踪分支并切过去。 */
+export function trackBranch(payload, options) {
+  return call('branch/track', payload, options)
+}
+
 /** 切换分支（工作区怎么处理交给 git）。 */
 export function switchBranch(payload, options) {
   return call('branch/switch', payload, options)

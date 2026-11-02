@@ -47,7 +47,7 @@ export function RepoList(props) {
   const closeBranches = () => setBranchMenu(null)
 
   const loadBranches = (root, rect) => {
-    setBranchMenu({ root, rect, list: [], loading: true, switching: null, creating: false, name: '', error: null })
+    setBranchMenu({ root, rect, list: [], loading: true, switching: null, creating: false, fetching: false, name: '', error: null })
     Promise.resolve(source.onLoadBranches(root))
       .then((value) => {
         setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
@@ -64,6 +64,35 @@ export function RepoList(props) {
   const chooseBranch = (menu, name) => {
     setBranchMenu({ ...menu, switching: name, error: null })
     Promise.resolve(source.onSwitchBranch(menu.root, name))
+      .then(() => setBranchMenu(null))
+      .catch((error) => {
+        setBranchMenu((previous) => (previous === null
+          ? previous
+          : { ...previous, switching: null, error: error && error.message ? error.message : String(error) }))
+      })
+  }
+
+  /** 拉取远程更新（git fetch）后重读分支列表：别人新推的分支这时才会出现。 */
+  const fetchRemote = (menu) => {
+    if (typeof source.onFetchBranches !== 'function') return
+    setBranchMenu({ ...menu, fetching: true, error: null })
+    Promise.resolve(source.onFetchBranches(menu.root))
+      .then((value) => {
+        setBranchMenu((previous) => (previous === null
+          ? previous
+          : { ...previous, fetching: false, list: value.branches, loading: false }))
+      })
+      .catch((error) => {
+        setBranchMenu((previous) => (previous === null
+          ? previous
+          : { ...previous, fetching: false, error: error && error.message ? error.message : String(error) }))
+      })
+  }
+
+  /** 「仅远程」的分支：建本地跟踪分支并切过去。 */
+  const trackBranch = (menu, branch) => {
+    setBranchMenu({ ...menu, switching: branch.ref, error: null })
+    Promise.resolve(source.onTrackBranch(menu.root, branch))
       .then(() => setBranchMenu(null))
       .catch((error) => {
         setBranchMenu((previous) => (previous === null
@@ -89,22 +118,56 @@ export function RepoList(props) {
       })
   }
 
-  const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true)
+  const menuBranches = branchMenu === null ? [] : branchMenu.list
+  const localBranches = menuBranches.filter((branch) => branch.kind === 'local')
+  const remoteOnly = menuBranches.filter((branch) => branch.kind === 'remote')
+  /** 副标题：仅本地 / 有远程 / ↑n ↓m / upstream 已删除 */
+  const branchMeta = (branch) => {
+    const parts = []
+    if (branch.hasRemote !== true) parts.push(translate('branch.onlyLocal'))
+    if (branch.upstreamGone === true) parts.push(translate('branch.upstreamGone'))
+    if (typeof branch.ahead === 'number' && branch.ahead > 0) parts.push('↑' + branch.ahead)
+    if (typeof branch.behind === 'number' && branch.behind > 0) parts.push('↓' + branch.behind)
+    return parts.join(' ')
+  }
+
+  const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true || branchMenu.fetching === true)
   const createName = branchMenu === null ? '' : branchMenu.name.trim()
   const branchMenuNode = branchMenu === null
     ? null
     : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 240 },
       h(MenuLabel, null, translate('branch.title', { name: branchMenu.root.name })),
+      h(MenuItem, {
+        icon: 'sync',
+        label: branchMenu.fetching === true ? translate('branch.fetching') : translate('branch.fetch'),
+        disabled: menuBusy,
+        dataKey: 'fetch-branches',
+        onClick: () => fetchRemote(branchMenu)
+      }),
+      h('div', { className: 'dgp-menu-sep', role: 'separator' }),
       branchMenu.loading ? h(MenuLabel, null, translate('branch.loading')) : null,
-      branchMenu.list.map((branch) => h(MenuItem, {
-        key: branch.name,
+      localBranches.length === 0 ? null : h(MenuLabel, null, translate('branch.localSection')),
+      localBranches.map((branch) => h(MenuItem, {
+        key: 'local:' + branch.name,
         label: branch.name,
+        // 仅本地 / 有远程 / 落后领先 都在副标题里说清楚
+        sub: branchMeta(branch),
         checked: branch.current,
         disabled: menuBusy,
+        dataKey: 'local:' + branch.name,
         onClick: () => {
           if (branch.current) closeBranches()
           else chooseBranch(branchMenu, branch.name)
         }
+      })),
+      remoteOnly.length === 0 ? null : h(MenuLabel, null, translate('branch.remoteSection')),
+      remoteOnly.map((branch) => h(MenuItem, {
+        key: 'remote:' + branch.ref,
+        label: branch.ref,
+        sub: translate('branch.onlyRemote'),
+        disabled: menuBusy,
+        dataKey: 'remote:' + branch.ref,
+        onClick: () => trackBranch(branchMenu, branch)
       })),
       branchMenu.list.length === 0 && branchMenu.loading !== true
         ? h(MenuLabel, null, translate('branch.empty'))

@@ -1161,6 +1161,69 @@ test('外部根：只认这个目录自身 —— 不向上找祖先仓库、不
   await callOk('roots/remove', { projectRoot: FIXTURE, path: repo })
 })
 
+test('branches/list：区分本地 / 仅远程 / 两边都有，并给出 ahead-behind', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-branches-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  const bare = path.join(tempDir('dgp-branches-origin-'), 'origin.git')
+  execFileSync('git', ['init', '--bare', '-q', bare], { stdio: 'pipe' })
+  git('remote', 'add', 'origin', bare)
+  git('push', '-q', '-u', 'origin', 'main')
+
+  // 只在本地存在的分支
+  git('branch', 'local-only')
+  // 只在远程存在的分支：推到 origin 后删掉本地
+  git('branch', 'remote-only')
+  git('push', '-q', 'origin', 'remote-only')
+  git('branch', '-D', 'remote-only')
+  // main 领先 origin/main 1 个提交
+  writeFileSync(path.join(dir, 'ahead.txt'), 'a\n')
+  git('add', '-A')
+  git('commit', '-qm', 'ahead one')
+
+  const listed = await callOk('branches/list', { rootPath: dir })
+  const main = listed.branches.find((branch) => branch.name === 'main')
+  assert.equal(main.kind, 'local')
+  assert.equal(main.current, true, '当前分支')
+  assert.equal(main.hasRemote, true, 'origin 有同名分支')
+  assert.equal(main.upstream, 'origin/main')
+  assert.equal(main.ahead, 1, '领先 1 个提交')
+  assert.equal(main.behind, 0)
+
+  const localOnly = listed.branches.find((branch) => branch.name === 'local-only')
+  assert.equal(localOnly.kind, 'local')
+  assert.equal(localOnly.hasRemote, false, '远端没有同名分支 → 仅本地')
+
+  const remoteOnly = listed.branches.filter((branch) => branch.kind === 'remote')
+  assert.deepEqual(remoteOnly.map((branch) => branch.ref), ['origin/remote-only'], '仅远程的分支')
+  assert.equal(listed.current, 'main')
+})
+
+test('branches/track：把仅远程的分支建成本地跟踪分支；同名已存在则拒绝', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-track-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  const bare = path.join(tempDir('dgp-track-origin-'), 'origin.git')
+  execFileSync('git', ['init', '--bare', '-q', bare], { stdio: 'pipe' })
+  git('remote', 'add', 'origin', bare)
+  git('push', '-q', '-u', 'origin', 'main')
+  git('branch', 'feature/x')
+  git('push', '-q', 'origin', 'feature/x')
+  git('branch', '-D', 'feature/x')
+
+  const tracked = await callOk('branch/track', { rootPath: dir, remote: 'origin', name: 'feature/x' })
+  assert.equal(tracked.branch, 'feature/x', '应切到新建的本地分支')
+  assert.equal(tracked.upstream, 'origin/feature/x', '并建立跟踪关系')
+
+  const listed = await callOk('branches/list', { rootPath: dir })
+  const local = listed.branches.find((branch) => branch.name === 'feature/x' && branch.kind === 'local')
+  assert.ok(local, '本地分支应出现')
+  assert.equal(local.current, true)
+  assert.equal(listed.branches.some((branch) => branch.kind === 'remote'), false, '都建成本地了，仅远程区应清空')
+
+  const again = await callRoute('branch/track', { rootPath: dir, remote: 'origin', name: 'feature/x' })
+  assert.equal(again.ok, false)
+  assert.equal(again.error.code, 'branch-exists')
+})
+
 test('index/stage：未暂存点加号进入已暂存，已暂存点减号回到未暂存', async () => {
   const dir = makeRepo(path.join(tempDir('dgp-stage-'), 'repo'))
   // hello.txt 已在初始提交里：改它的内容才是「未暂存」；fresh.txt 是全新文件，走未跟踪

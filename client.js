@@ -1459,6 +1459,13 @@ window.__ModuleLoader__.load({
         'branch.hint': '当前分支 {branch} · 点击切换或新建',
         'branch.title': '分支 · {name}',
         'branch.loading': '正在读取分支…',
+        'branch.fetch': '获取远程更新',
+        'branch.fetching': '正在获取远程更新…',
+        'branch.localSection': '本地分支',
+        'branch.remoteSection': '仅远程存在',
+        'branch.onlyLocal': '仅本地',
+        'branch.onlyRemote': '仅远程 · 点击创建本地分支',
+        'branch.upstreamGone': '上游已删除',
         'branch.empty': '这个仓库还没有任何分支',
         'branch.switching': '正在切换到 {name}…',
         'branch.creating': '正在创建并切换到 {name}…',
@@ -1742,6 +1749,13 @@ window.__ModuleLoader__.load({
         'branch.hint': 'On {branch} · click to switch or create',
         'branch.title': 'Branches · {name}',
         'branch.loading': 'Loading branches…',
+        'branch.fetch': 'Fetch remote updates',
+        'branch.fetching': 'Fetching…',
+        'branch.localSection': 'Local branches',
+        'branch.remoteSection': 'Remote only',
+        'branch.onlyLocal': 'local only',
+        'branch.onlyRemote': 'remote only · click to create a local branch',
+        'branch.upstreamGone': 'upstream gone',
         'branch.empty': 'This repository has no branches yet',
         'branch.switching': 'Switching to {name}…',
         'branch.creating': 'Creating and switching to {name}…',
@@ -2825,6 +2839,27 @@ window.__ModuleLoader__.load({
         /** 分支菜单：取数由面板做，组件只负责交互。 */
         const loadBranches = useCallback(async (root) => api.listBranches({ rootPath: root.path }), [])
 
+        /** 「仅远程」的分支：建本地跟踪分支并切过去。 */
+        const trackBranchAt = useCallback(async (root, branch) => {
+          try {
+            await api.trackBranch({ rootPath: root.path, remote: branch.remote, name: branch.name })
+          } catch (error) {
+            throw new Error(api.describeError(error, tRef.current))
+          }
+          await resolveProject()
+          await refreshStatus()
+        }, [resolveProject, refreshStatus])
+
+        /** 分支菜单里的「获取远程更新」：git fetch 后重读分支列表。 */
+        const fetchBranches = useCallback(async (root) => {
+          try {
+            await api.fetchRemote({ rootPath: root.path })
+          } catch (error) {
+            throw new Error(api.describeError(error, tRef.current))
+          }
+          return api.listBranches({ rootPath: root.path })
+        }, [])
+
         const switchBranch = useCallback(async (root, name) => {
           try {
             await api.switchBranch({ rootPath: root.path, name })
@@ -3463,6 +3498,8 @@ window.__ModuleLoader__.load({
                 onUnhide: unhideRoot,
                 onLoadBranches: loadBranches,
                 onSwitchBranch: switchBranch,
+                onFetchBranches: fetchBranches,
+                onTrackBranch: trackBranchAt,
                 onCreateBranch: createBranch,
                 t
               }),
@@ -3985,7 +4022,7 @@ window.__ModuleLoader__.load({
 
       /** 菜单项。 */
       function MenuItem(props) {
-        const { icon, label, sub, checked, disabled, onClick, danger } = props
+        const { icon, label, sub, checked, disabled, onClick, danger, dataKey } = props
         const left = checked === undefined
           ? (icon === undefined ? null : h(Icon, { name: icon, size: 14 }))
           : h('span', { className: 'dgp-menu-check', style: { width: 14, display: 'flex' } },
@@ -3995,6 +4032,7 @@ window.__ModuleLoader__.load({
           className: 'dgp-menu-item',
           role: 'menuitem',
           'data-checked': checked === true ? 'true' : undefined,
+          'data-menu-key': dataKey === undefined ? undefined : dataKey,
           'data-danger': danger === true ? 'true' : undefined,
           disabled: disabled === true,
           title: label,
@@ -4072,7 +4110,7 @@ window.__ModuleLoader__.load({
         const closeBranches = () => setBranchMenu(null)
 
         const loadBranches = (root, rect) => {
-          setBranchMenu({ root, rect, list: [], loading: true, switching: null, creating: false, name: '', error: null })
+          setBranchMenu({ root, rect, list: [], loading: true, switching: null, creating: false, fetching: false, name: '', error: null })
           Promise.resolve(source.onLoadBranches(root))
             .then((value) => {
               setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
@@ -4089,6 +4127,35 @@ window.__ModuleLoader__.load({
         const chooseBranch = (menu, name) => {
           setBranchMenu({ ...menu, switching: name, error: null })
           Promise.resolve(source.onSwitchBranch(menu.root, name))
+            .then(() => setBranchMenu(null))
+            .catch((error) => {
+              setBranchMenu((previous) => (previous === null
+                ? previous
+                : { ...previous, switching: null, error: error && error.message ? error.message : String(error) }))
+            })
+        }
+
+        /** 拉取远程更新（git fetch）后重读分支列表：别人新推的分支这时才会出现。 */
+        const fetchRemote = (menu) => {
+          if (typeof source.onFetchBranches !== 'function') return
+          setBranchMenu({ ...menu, fetching: true, error: null })
+          Promise.resolve(source.onFetchBranches(menu.root))
+            .then((value) => {
+              setBranchMenu((previous) => (previous === null
+                ? previous
+                : { ...previous, fetching: false, list: value.branches, loading: false }))
+            })
+            .catch((error) => {
+              setBranchMenu((previous) => (previous === null
+                ? previous
+                : { ...previous, fetching: false, error: error && error.message ? error.message : String(error) }))
+            })
+        }
+
+        /** 「仅远程」的分支：建本地跟踪分支并切过去。 */
+        const trackBranch = (menu, branch) => {
+          setBranchMenu({ ...menu, switching: branch.ref, error: null })
+          Promise.resolve(source.onTrackBranch(menu.root, branch))
             .then(() => setBranchMenu(null))
             .catch((error) => {
               setBranchMenu((previous) => (previous === null
@@ -4114,22 +4181,56 @@ window.__ModuleLoader__.load({
             })
         }
 
-        const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true)
+        const menuBranches = branchMenu === null ? [] : branchMenu.list
+        const localBranches = menuBranches.filter((branch) => branch.kind === 'local')
+        const remoteOnly = menuBranches.filter((branch) => branch.kind === 'remote')
+        /** 副标题：仅本地 / 有远程 / ↑n ↓m / upstream 已删除 */
+        const branchMeta = (branch) => {
+          const parts = []
+          if (branch.hasRemote !== true) parts.push(translate('branch.onlyLocal'))
+          if (branch.upstreamGone === true) parts.push(translate('branch.upstreamGone'))
+          if (typeof branch.ahead === 'number' && branch.ahead > 0) parts.push('↑' + branch.ahead)
+          if (typeof branch.behind === 'number' && branch.behind > 0) parts.push('↓' + branch.behind)
+          return parts.join(' ')
+        }
+
+        const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true || branchMenu.fetching === true)
         const createName = branchMenu === null ? '' : branchMenu.name.trim()
         const branchMenuNode = branchMenu === null
           ? null
           : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 240 },
             h(MenuLabel, null, translate('branch.title', { name: branchMenu.root.name })),
+            h(MenuItem, {
+              icon: 'sync',
+              label: branchMenu.fetching === true ? translate('branch.fetching') : translate('branch.fetch'),
+              disabled: menuBusy,
+              dataKey: 'fetch-branches',
+              onClick: () => fetchRemote(branchMenu)
+            }),
+            h('div', { className: 'dgp-menu-sep', role: 'separator' }),
             branchMenu.loading ? h(MenuLabel, null, translate('branch.loading')) : null,
-            branchMenu.list.map((branch) => h(MenuItem, {
-              key: branch.name,
+            localBranches.length === 0 ? null : h(MenuLabel, null, translate('branch.localSection')),
+            localBranches.map((branch) => h(MenuItem, {
+              key: 'local:' + branch.name,
               label: branch.name,
+              // 仅本地 / 有远程 / 落后领先 都在副标题里说清楚
+              sub: branchMeta(branch),
               checked: branch.current,
               disabled: menuBusy,
+              dataKey: 'local:' + branch.name,
               onClick: () => {
                 if (branch.current) closeBranches()
                 else chooseBranch(branchMenu, branch.name)
               }
+            })),
+            remoteOnly.length === 0 ? null : h(MenuLabel, null, translate('branch.remoteSection')),
+            remoteOnly.map((branch) => h(MenuItem, {
+              key: 'remote:' + branch.ref,
+              label: branch.ref,
+              sub: translate('branch.onlyRemote'),
+              disabled: menuBusy,
+              dataKey: 'remote:' + branch.ref,
+              onClick: () => trackBranch(branchMenu, branch)
             })),
             branchMenu.list.length === 0 && branchMenu.loading !== true
               ? h(MenuLabel, null, translate('branch.empty'))
@@ -6161,6 +6262,11 @@ window.__ModuleLoader__.load({
         return call('branches/list', payload, options)
       }
 
+      /** 把「仅远程」的分支建成本地跟踪分支并切过去。 */
+      function trackBranch(payload, options) {
+        return call('branch/track', payload, options)
+      }
+
       /** 切换分支（工作区怎么处理交给 git）。 */
       function switchBranch(payload, options) {
         return call('branch/switch', payload, options)
@@ -6227,7 +6333,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {

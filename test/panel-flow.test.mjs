@@ -1633,7 +1633,10 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
       },
       status: () => sayOk(statusThree()),
       'branches/list': () => sayOk({
-        branches: [{ name: 'main', current: true }, { name: 'feature', current: false }]
+        branches: [
+          { name: 'main', kind: 'local', current: true, upstream: 'origin/main', ahead: 1, behind: 0, hasRemote: true, remote: 'origin' },
+          { name: 'feature', kind: 'local', current: false, upstream: null, ahead: 0, behind: 0, hasRemote: false, remote: null }
+        ]
       }),
       'branch/switch': (payload) => {
         switches.push(payload)
@@ -1651,11 +1654,14 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
     click(branchButton)
     await panel.flush()
 
-    const items = panel.all((node) => isHost(node) && hasClass(node, 'dgp-menu-item'))
-    eq(items.length, 2, '菜单里应列出两个分支')
-    const feature = items.find((node) => textOf(node).includes('feature'))
-    assert(feature !== undefined, '菜单里应有 feature 分支')
-    eq(attr(items.find((node) => textOf(node).includes('main')), 'data-checked'), 'true', '当前分支打勾')
+    const branchItems = panel.all((node) => isHost(node) && attr(node, 'data-menu-key') !== undefined
+      && attr(node, 'data-menu-key').startsWith('local:'))
+    eq(branchItems.length, 2, '菜单里应列出两个本地分支')
+    eq(branchItems.map((node) => attr(node, 'data-menu-key')), ['local:main', 'local:feature'], '顺序：当前分支在最前')
+    eq(attr(branchItems[0], 'data-checked'), 'true', '当前分支打勾')
+    assert(textOf(branchItems[0]).includes('↑1'), '落后的本地分支要显示 ↑n：' + textOf(branchItems[0]))
+    assert(textOf(branchItems[1]).includes('仅本地'), '远端没有同名分支要标「仅本地」：' + textOf(branchItems[1]))
+    const feature = branchItems[1]
 
     click(feature)
     await panel.flush()
@@ -2224,6 +2230,64 @@ test('用例 1N：有未合并 PR 的仓库在列表里显示红点数字', asyn
     eq(textOf(badge), '3', '数字就是未合并数量')
     eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr-count') === 'alice/tool'), null,
       '数量为 0 的仓库不显示红点')
+  })
+})
+
+test('用例 1O：分支菜单区分本地与仅远程，可跟踪远程分支并获取远程更新', async () => {
+  const fetches = []
+  const tracks = []
+  let listCalls = 0
+  const branchesPayload = {
+    branches: [
+      { name: 'main', kind: 'local', current: true, upstream: 'origin/main', ahead: 0, behind: 2, hasRemote: true, remote: 'origin' },
+      { name: 'feat', kind: 'remote', current: false, remote: 'origin', ref: 'origin/feat', hasLocal: false }
+    ]
+  }
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'branches/list': () => {
+        listCalls += 1
+        return sayOk(branchesPayload)
+      },
+      'remote/fetch': (payload) => {
+        fetches.push(payload)
+        return sayOk({ fetchedAt: 1 })
+      },
+      'branch/track': (payload) => {
+        tracks.push(payload)
+        return sayOk({ branch: payload.name, head: 'aaa1111', upstream: payload.remote + '/' + payload.name })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined))
+    await panel.flush()
+
+    // 本地分支：落后 2 → ↓2；远程只有的：单独的远程区
+    const mainItem = panel.one((node) => isHost(node) && attr(node, 'data-menu-key') === 'local:main')
+    assert(mainItem !== null, '应有本地分支 main')
+    assert(textOf(mainItem).includes('↓2'), '落后要显示 ↓n：' + textOf(mainItem))
+    const remoteItem = panel.one((node) => isHost(node) && attr(node, 'data-menu-key') === 'remote:origin/feat')
+    assert(remoteItem !== null, '应有仅远程的分支 origin/feat')
+    assert(textOf(remoteItem).includes('仅远程'), '要标出仅远程：' + textOf(remoteItem))
+
+    // 点仅远程的分支 → 创建本地跟踪分支
+    click(remoteItem)
+    await panel.flush()
+    eq(tracks.length, 1, '应调用 branch/track')
+    eq(tracks[0], { rootPath: PROJECT, remote: 'origin', name: 'feat' })
+
+    // 重新打开菜单，点「获取远程更新」→ 先 fetch 再重读
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined))
+    await panel.flush()
+    const before = listCalls
+    click(panel.one((node) => isHost(node) && attr(node, 'data-menu-key') === 'fetch-branches'))
+    await panel.flush()
+    eq(fetches.length, 1, '应调用 remote/fetch')
+    eq(fetches[0], { rootPath: PROJECT })
+    assert(listCalls > before, 'fetch 后应重读分支列表')
   })
 })
 

@@ -262,6 +262,39 @@ await test('列仓库：两个平台的字段都被归一成同一形状', async
   assert.equal(gitee.repos[0].language, 'Go')
 })
 
+await test('批量 PR 数量：每个仓库一次轻量请求，单个失败不影响其它', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/repos\/alice\/app\/pulls\?.*per_page=1/, { json: [], headers: { link: '<x?page=3>; rel="last"' } }],
+    [/\/repos\/alice\/tool\/pulls\?.*per_page=1/, { json: [] }],
+    [/\/repos\/alice\/broken\/pulls\?.*per_page=1/, { status: 500, json: {} }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+
+  const result = await remotes.pullCounts({
+    accountId: 'github:alice',
+    fullNames: ['alice/app', 'alice/tool', 'alice/broken']
+  })
+  assert.equal(result.counts['alice/app'], 3, '总数取分页最后一页')
+  assert.equal(result.counts['alice/tool'], 0, '没有 Link 时用返回条数')
+  assert.equal(result.counts['alice/broken'], null, '失败记 null，不冒充 0')
+  assert.equal(result.failures.length, 1)
+  assert.equal(result.failures[0].fullName, 'alice/broken')
+})
+
+await test('批量 PR 数量：非法仓库名直接跳过并报出来', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([[/api\.github\.com\/user$/, { json: { login: 'alice' } }]])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+
+  const result = await remotes.pullCounts({ accountId: 'github:alice', fullNames: ['no-slash'] })
+  assert.equal(result.counts['no-slash'], null)
+  assert.equal(result.failures.length, 1)
+})
+
 await test('仓库详情：GitHub 的 issue 数要减掉 PR，总数来自 Link 最后一页', async () => {
   const credentials = fakeCredentials()
   const link = (page) => `<https://api.github.com/x?page=${page}>; rel="last"`

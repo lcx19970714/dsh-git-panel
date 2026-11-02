@@ -107,6 +107,7 @@ export const ENDPOINTS = Object.freeze([
   'accounts/remove',
   'remote/repos',
   'remote/detail',
+  'remote/pr-counts',
   'remote/pull',
   'remote/pull/review',
   'remote/pull/test',
@@ -484,6 +485,14 @@ function createDispatcher(ctx) {
     }, { signal })
   }
 
+  async function remotePullCounts(request, signal) {
+    const fullNames = Array.isArray(request.fullNames) ? request.fullNames : []
+    return remotesOf().pullCounts({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullNames
+    }, { signal })
+  }
+
   async function remotePull(request, signal) {
     return remotesOf().pullDetail({
       accountId: requireString(request.accountId, 'accountId'),
@@ -693,6 +702,8 @@ function createDispatcher(ctx) {
         return remoteRepos(request, signal)
       case 'remote/detail':
         return remoteDetail(request, signal)
+      case 'remote/pr-counts':
+        return remotePullCounts(request, signal)
       case 'remote/pull':
         return remotePull(request, signal)
       case 'remote/pull/review':

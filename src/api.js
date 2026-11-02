@@ -154,6 +154,11 @@ export function remoteDetail(payload, options) {
   return call('remote/detail', payload, options)
 }
 
+/** 批量取若干仓库的未合并 PR 数量。 */
+export function remotePullCounts(payload, options) {
+  return call('remote/pr-counts', payload, options)
+}
+
 /** 一个 PR 的详情（含平台能力与审查记录）。 */
 export function remotePull(payload, options) {
   return call('remote/pull', payload, options)

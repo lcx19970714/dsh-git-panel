@@ -91,9 +91,13 @@ export function Panel(props) {
   const [cloneState, setCloneState] = useState(null)
   const [cloneNow, setCloneNow] = useState(0)
   const [providers, setProviders] = useState([])
+  // 每个远端仓库未合并 PR 数：{ 'owner/name': n }
+  const [prCounts, setPrCounts] = useState({})
   // 右侧详情：选中的仓库与它的数据
   const [remoteSelection, setRemoteSelection] = useState(null)
   const [remoteDetail, setRemoteDetail] = useState(null)
+  const remoteReposRef = useRef([])
+  remoteReposRef.current = remoteRepos
   // 面板内打开的 PR：{ number } + 它的详情
   const [openPull, setOpenPull] = useState(null)
   const [pullDetail, setPullDetail] = useState(null)
@@ -853,6 +857,24 @@ export function Panel(props) {
     }
   }, [])
 
+  /** 批量取当前列表的未合并 PR 数（宿主限制 50 个/次）。 */
+  const loadPullCounts = useCallback(async (accountId, repos) => {
+    if (typeof accountId !== 'string' || repos.length === 0) {
+      setPrCounts({})
+      return
+    }
+    try {
+      const value = await api.remotePullCounts({
+        accountId,
+        fullNames: repos.map((repo) => repo.fullName)
+      })
+      setPrCounts(value.counts ?? {})
+    } catch {
+      // 计数只是角标：失败就不显示，不打断列表（详情接口会暴露真实错误）
+      setPrCounts({})
+    }
+  }, [])
+
   /** 读选中仓库的详情（代码 / issues / PR）。 */
   const loadRemoteDetail = useCallback(async (selection) => {
     if (selection === null) {
@@ -942,6 +964,8 @@ export function Panel(props) {
       const result = await api.remotePullMerge(input)
       await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
       await loadRemoteDetail({ accountId: input.accountId, fullName: input.fullName })
+      // 合并后未合并数量会变，角标要跟着刷新
+      await loadPullCounts(input.accountId, remoteReposRef.current)
       return { ok: true, message: tRef.current('pull.mergedDone', { branch: result.headBranch }) }
     } catch (error) {
       return { ok: false, error: api.describeError(error, tRef.current) }
@@ -965,6 +989,12 @@ export function Panel(props) {
     if (mode !== MODE.remote || accountsLoaded) return
     loadAccounts()
   }, [mode, accountsLoaded, loadAccounts])
+
+  /** 仓库列表加载完成后批量取 PR 数量。 */
+  useEffect(() => {
+    if (mode !== MODE.remote) return
+    loadPullCounts(remoteAccountId, remoteRepos)
+  }, [mode, remoteAccountId, remoteRepos, loadPullCounts])
 
   /** 仓库列表刷新后：当前选中不在列表里就选第一个，右侧不留空。 */
   useEffect(() => {
@@ -1362,6 +1392,7 @@ function buildUpdateNote(updateState, t) {
         loadAccounts()
       },
       onClone: cloneRepo,
+      prCounts,
       selectedFullName: remoteSelection === null ? null : remoteSelection.fullName,
       onSelectRepo: selectRemoteRepo,
       providers,

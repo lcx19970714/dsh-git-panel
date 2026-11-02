@@ -148,6 +148,7 @@ export function createRemotes(deps) {
     removeAccount,
     listRepos: repos.listRepos,
     repoDetail: repos.repoDetail,
+    pullCounts: repos.pullCounts,
     cloneRepo: repos.cloneRepo,
     pullDetail: pulls.pullDetail,
     reviewPull: pulls.reviewPull,

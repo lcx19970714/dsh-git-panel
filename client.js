@@ -1237,6 +1237,19 @@ window.__ModuleLoader__.load({
       .dgp-detail-meta { flex: none; }
       .dgp-remote-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
 
+      /* 未合并 PR 数量：红点角标 */
+      .dgp-remote-prcount {
+        flex: none;
+        min-width: 16px;
+        padding: 0 4px;
+        border-radius: 999px;
+        background: var(--dsw-alias-state-error-primary);
+        color: var(--dsw-alias-label-primary-inverted);
+        font-family: var(--ds-font-family-code);
+        font-size: 10px;
+        line-height: 15px;
+        text-align: center;
+      }
       /* ── 远端页签：账号 chip、仓库列表、行内克隆表单 ── */
       .dgp-remote { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; gap: 6px; padding: 8px 8px 6px; }
       .dgp-remote-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -1482,6 +1495,7 @@ window.__ModuleLoader__.load({
         'detail.stars': '★ {count}',
         'detail.forks': '⑂ {count}',
         'detail.sectionFailed': '{section} 读取失败：{message}',
+        'remote.openPulls': '{count} 个未合并的 PR',
         'remote.title': '账号与仓库',
         'remote.addAccount': '添加账号',
         'remote.addAccountOn': '添加 {provider} 账号',
@@ -1756,6 +1770,7 @@ window.__ModuleLoader__.load({
         'detail.stars': '★ {count}',
         'detail.forks': '⑂ {count}',
         'detail.sectionFailed': 'Could not load {section}: {message}',
+        'remote.openPulls': '{count} open pull requests',
         'remote.title': 'Accounts & repositories',
         'remote.addAccount': 'Add account',
         'remote.addAccountOn': 'Add a {provider} account',
@@ -2022,9 +2037,13 @@ window.__ModuleLoader__.load({
         const [cloneState, setCloneState] = useState(null)
         const [cloneNow, setCloneNow] = useState(0)
         const [providers, setProviders] = useState([])
+        // 每个远端仓库未合并 PR 数：{ 'owner/name': n }
+        const [prCounts, setPrCounts] = useState({})
         // 右侧详情：选中的仓库与它的数据
         const [remoteSelection, setRemoteSelection] = useState(null)
         const [remoteDetail, setRemoteDetail] = useState(null)
+        const remoteReposRef = useRef([])
+        remoteReposRef.current = remoteRepos
         // 面板内打开的 PR：{ number } + 它的详情
         const [openPull, setOpenPull] = useState(null)
         const [pullDetail, setPullDetail] = useState(null)
@@ -2784,6 +2803,24 @@ window.__ModuleLoader__.load({
           }
         }, [])
 
+        /** 批量取当前列表的未合并 PR 数（宿主限制 50 个/次）。 */
+        const loadPullCounts = useCallback(async (accountId, repos) => {
+          if (typeof accountId !== 'string' || repos.length === 0) {
+            setPrCounts({})
+            return
+          }
+          try {
+            const value = await api.remotePullCounts({
+              accountId,
+              fullNames: repos.map((repo) => repo.fullName)
+            })
+            setPrCounts(value.counts ?? {})
+          } catch {
+            // 计数只是角标：失败就不显示，不打断列表（详情接口会暴露真实错误）
+            setPrCounts({})
+          }
+        }, [])
+
         /** 读选中仓库的详情（代码 / issues / PR）。 */
         const loadRemoteDetail = useCallback(async (selection) => {
           if (selection === null) {
@@ -2873,6 +2910,8 @@ window.__ModuleLoader__.load({
             const result = await api.remotePullMerge(input)
             await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
             await loadRemoteDetail({ accountId: input.accountId, fullName: input.fullName })
+            // 合并后未合并数量会变，角标要跟着刷新
+            await loadPullCounts(input.accountId, remoteReposRef.current)
             return { ok: true, message: tRef.current('pull.mergedDone', { branch: result.headBranch }) }
           } catch (error) {
             return { ok: false, error: api.describeError(error, tRef.current) }
@@ -2896,6 +2935,12 @@ window.__ModuleLoader__.load({
           if (mode !== MODE.remote || accountsLoaded) return
           loadAccounts()
         }, [mode, accountsLoaded, loadAccounts])
+
+        /** 仓库列表加载完成后批量取 PR 数量。 */
+        useEffect(() => {
+          if (mode !== MODE.remote) return
+          loadPullCounts(remoteAccountId, remoteRepos)
+        }, [mode, remoteAccountId, remoteRepos, loadPullCounts])
 
         /** 仓库列表刷新后：当前选中不在列表里就选第一个，右侧不留空。 */
         useEffect(() => {
@@ -3293,6 +3338,7 @@ window.__ModuleLoader__.load({
               loadAccounts()
             },
             onClone: cloneRepo,
+            prCounts,
             selectedFullName: remoteSelection === null ? null : remoteSelection.fullName,
             onSelectRepo: selectRemoteRepo,
             providers,
@@ -5862,6 +5908,11 @@ window.__ModuleLoader__.load({
         return call('remote/detail', payload, options)
       }
 
+      /** 批量取若干仓库的未合并 PR 数量。 */
+      function remotePullCounts(payload, options) {
+        return call('remote/pr-counts', payload, options)
+      }
+
       /** 一个 PR 的详情（含平台能力与审查记录）。 */
       function remotePull(payload, options) {
         return call('remote/pull', payload, options)
@@ -5958,7 +6009,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePull, remotePullReview, remotePullTest, remotePullPass, remotePullMerge, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullPass, remotePullMerge, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -7665,6 +7716,7 @@ window.__ModuleLoader__.load({
         const hasMore = source.hasMore === true
         const filter = typeof source.filter === 'string' ? source.filter : ''
         const selectedFullName = typeof source.selectedFullName === 'string' ? source.selectedFullName : null
+        const prCounts = source.prCounts !== null && typeof source.prCounts === 'object' ? source.prCounts : {}
         const clone = source.clone === null || source.clone === undefined ? null : source.clone
         const now = typeof source.now === 'number' ? source.now : 0
         const [folderFor, setFolderFor] = useState(null)
@@ -7850,6 +7902,13 @@ window.__ModuleLoader__.load({
               },
                 h('div', { className: 'dgp-remote-row' },
                   h('span', { className: 'dgp-remote-name dgp-oneline', title: repo.fullName }, repo.name),
+                  typeof prCounts[repo.fullName] === 'number' && prCounts[repo.fullName] > 0
+                    ? h('span', {
+                      className: 'dgp-remote-prcount',
+                      'data-dgp-pr-count': repo.fullName,
+                      title: translate('remote.openPulls', { count: prCounts[repo.fullName] })
+                    }, String(prCounts[repo.fullName]))
+                    : null,
                   repo.private === true
                     ? h('span', { className: 'dgp-remote-badge' }, translate('remote.private'))
                     : null,

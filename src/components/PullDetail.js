@@ -238,6 +238,21 @@ export function PullDetail(props) {
         ai.result.truncated === true
           ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))
           : null,
+        Array.isArray(ai.result.skippedFiles) && ai.result.skippedFiles.length > 0
+          ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-skipped' },
+            h('p', { className: 'dgp-detail-notice' },
+              t('pull.aiSkippedTitle', { count: ai.result.skippedFiles.length })),
+            h('ul', { className: 'dgp-skipped-list' },
+              ai.result.skippedFiles.map((file) => h('li', {
+                key: file.filename,
+                className: 'dgp-skipped-item',
+                'data-dgp-skipped': file.filename
+              },
+              h('span', { className: 'dgp-skipped-name dgp-oneline', title: file.filename }, file.filename),
+              h('span', { className: 'dgp-skipped-size' },
+                '+' + file.additions + ' / −' + file.deletions + (Number.isFinite(file.changes) ? '（' + file.changes + ' 行）' : ''))))),
+            h('p', { className: 'dgp-settings-hint' }, t('pull.aiSkippedHint')))
+          : null,
         h('p', { className: 'dgp-ai-summary', 'data-dgp-pull': 'ai-summary' }, ai.result.summary),
         ai.result.findings.length === 0
           ? h('p', { className: 'dgp-detail-meta' }, t('pull.aiNoFindings'))

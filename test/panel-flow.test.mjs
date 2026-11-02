@@ -2403,6 +2403,10 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
           { severity: 'blocker', file: 'src/retry.js', line: 12, title: '重试没有上限', detail: '可能无限重试', suggestion: '加最大次数' },
           { severity: 'nit', file: 'src/retry.js', line: null, title: '命名不一致', detail: '两个变量风格不同', suggestion: '统一命名' }
         ],
+        skippedFiles: [
+          { filename: 'assets/logo.png', additions: 0, deletions: 0, changes: 0 },
+          { filename: 'src/big.js', additions: 900, deletions: 400, changes: 1300 }
+        ],
         comment: '1. src/retry.js:12 重试没有上限，建议加最大次数。\n2. 命名建议统一。',
         model: 'p1/m1',
         truncated: false,
@@ -2437,6 +2441,13 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
     eq(attr(findings[0], 'data-severity'), 'blocker', '严重度要带上')
     assert(textOf(findings[0]).includes('src/retry.js:12'), '要显示文件与行号：' + textOf(findings[0]))
     assert(textOf(findings[0]).includes('加最大次数'), '要给出调整建议：' + textOf(findings[0]))
+
+    // 平台没给内容的文件要列出来，并显示它有多大
+    const skipped = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-skipped')
+    assert(skipped !== null, '应列出未审阅的文件')
+    assert(textOf(skipped).includes('assets/logo.png'), '要有文件名：' + textOf(skipped))
+    assert(textOf(skipped).includes('src/big.js'), '第二个文件也要列出')
+    assert(textOf(skipped).includes('1300 行'), '要显示改动行数：' + textOf(skipped))
 
     // 评论草稿：默认是 AI 写的，用户可以改
     const draftBox = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-comment')

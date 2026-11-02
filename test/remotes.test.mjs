@@ -616,15 +616,16 @@ await test('PR 文件 diff：按页取满、带 patch；Gitee 与 GitHub 都走 
   const fetchImpl = fakeFetch([
     [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
     [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
-    [/\/pulls\/7\/files\?per_page=100&page=1$/, (url) => {
+    // 每页必须是 50：GitHub 在 per_page>70 时会让第 70 个之后的文件丢 patch
+    [/\/pulls\/7\/files\?per_page=50&page=1$/, (url) => {
       seen.push(url)
       return { json: files(100) }
     }],
-    [/\/pulls\/7\/files\?per_page=100&page=2$/, (url) => {
+    [/\/pulls\/7\/files\?per_page=50&page=2$/, (url) => {
       seen.push(url)
       return { json: files(2) }
     }],
-    [/\/pulls\/7\/files\?per_page=100&page=3$/, (url) => {
+    [/\/pulls\/7\/files\?per_page=50&page=3$/, (url) => {
       seen.push(url)
       return { json: files(0) }
     }]
@@ -636,8 +637,30 @@ await test('PR 文件 diff：按页取满、带 patch；Gitee 与 GitHub 都走 
   assert.equal(diff.files.length, 102, '两页合计 102 个文件')
   assert.equal(diff.truncated, false)
   assert.equal(diff.files[0].patch, '@@ -1 +1 @@\n-a\n+b')
+  assert.equal(diff.files[0].patchAvailable, true)
   assert.equal(diff.files[0].status, 'modified')
-  assert.equal(seen.length, 2, '第二页不满 100 就停止，不再请求第三页')
+  assert.equal(seen.length, 2, '第二页不满 50 就停止，不再请求第三页')
+})
+
+await test('PR 文件 diff：平台没给 patch 的文件标 patchAvailable=false 并带上改动量', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/pulls\/8\/files\?per_page=50&page=1$/, {
+      json: [
+        { filename: 'assets/logo.png', status: 'added', additions: 0, deletions: 0, changes: 0 },
+        { filename: 'src/big.js', status: 'modified', additions: 900, deletions: 400, changes: 1300 }
+      ]
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+
+  const diff = await remotes.pullDiff({ accountId: 'github:alice', fullName: 'alice/app', number: 8 })
+  assert.equal(diff.files.length, 2)
+  assert.equal(diff.files[0].patchAvailable, false, '二进制文件没有 patch')
+  assert.equal(diff.files[1].patchAvailable, false, '过大的改动也没有 patch')
+  assert.equal(diff.files[1].changes, 1300, '改动行数要保留，界面要显示它有多大')
 })
 
 await test('PR 评论：GitHub 走 issues 评论接口、Gitee 走 pulls，且都是 JSON 请求体', async () => {

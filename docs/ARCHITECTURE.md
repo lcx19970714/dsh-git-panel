@@ -212,6 +212,11 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 JSON（summary / verdict / findings[] / comment）。
 
 - 输入上限 `REVIEW_DIFF_LIMIT = 200_000` 字符；超限时提示词里写明「只看到前 N 个字符」，并把 `truncated` 一路带回界面；
+- 文件列表每页 **50** 条：GitHub 在 `per_page > 70` 时会让第 70 个之后的文件不返回 patch（openjdk SKARA-1406），
+  这是平台缺陷，必须绕开；
+- 平台对**二进制文件**与**单个 diff 过大**的文件不返回 patch。`pullDiff` 给每个文件标 `patchAvailable`，
+  `buildReviewInput` 在这种情况下写明「本文件 +N/−M，内容未被审阅」，并把它们放进 `skippedFiles`；
+  界面列出这些文件与改动行数，用户据此把文件拆小、把生成物移出版本库或拆 PR。
 - 输出上限 8192 token、超时 180s，与提交说明生成同一套 prepareCall / stream / abort 机制；
 - 模型输出必须严格合法（坏 JSON、缺字段、非法 severity/verdict 一律 `bad-model-output`），不做修补；
 - 评论只生成草稿：`remote/pull/comment` 只有在用户点「提交评论」时才调用，内容以界面里的文本为准；

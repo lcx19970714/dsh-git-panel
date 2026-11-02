@@ -1227,6 +1227,21 @@ window.__ModuleLoader__.load({
       .dgp-gate-chip[data-gate="test"][data-state="passed"] { color: var(--dsw-alias-state-success-primary); }
       .dgp-gate-chip[data-gate="review"][data-state="changes-requested"] { color: var(--dsw-alias-state-error-primary); }
       .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
+      /* AI 审阅：平台没返回内容的文件 */
+      .dgp-ai-skipped { display: flex; flex-direction: column; gap: 2px; }
+      .dgp-skipped-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+      .dgp-skipped-item {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        font-size: 11px;
+      }
+      .dgp-skipped-name {
+        font-family: var(--ds-font-family-code);
+        color: var(--dsw-alias-label-secondary);
+        min-width: 0;
+      }
+      .dgp-skipped-size { flex: none; color: var(--dsw-alias-label-tertiary); }
       /* AI 审阅：总评 + 编号问题清单 + 评论草稿 */
       .dgp-ai-summary {
         margin: 0;
@@ -1584,6 +1599,8 @@ window.__ModuleLoader__.load({
         'pull.aiRun': 'AI 审阅',
         'pull.aiRerun': '重新审阅',
         'pull.aiRunning': '正在读取 diff 并审阅，可能需要十几秒…',
+        'pull.aiSkippedTitle': '有 {count} 个文件平台没有返回内容（二进制或改动过大），这些没有被审阅：',
+        'pull.aiSkippedHint': '想让它也被审到，可以把这个文件拆小、把生成物/二进制移出版本库，或分成多个 PR。',
         'pull.aiTruncated': '改动太大，只把前一部分发给了模型：结论可能不完整。',
         'pull.aiNoFindings': '没有发现需要调整的问题。',
         'pull.aiSuggestion': '建议：',
@@ -1894,6 +1911,8 @@ window.__ModuleLoader__.load({
         'pull.aiRun': 'Review with AI',
         'pull.aiRerun': 'Review again',
         'pull.aiRunning': 'Reading the diff and reviewing — this can take a while…',
+        'pull.aiSkippedTitle': '{count} file(s) had no content from the platform (binary or too large) and were not reviewed:',
+        'pull.aiSkippedHint': 'To include them: split the file, keep generated/binary files out of the repo, or open smaller PRs.',
         'pull.aiTruncated': 'The change is too large: only the first part was sent to the model, so the review may be incomplete.',
         'pull.aiNoFindings': 'No issues worth changing were found.',
         'pull.aiSuggestion': 'Suggestion: ',
@@ -8964,6 +8983,21 @@ window.__ModuleLoader__.load({
             ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
               ai.result.truncated === true
                 ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))
+                : null,
+              Array.isArray(ai.result.skippedFiles) && ai.result.skippedFiles.length > 0
+                ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-skipped' },
+                  h('p', { className: 'dgp-detail-notice' },
+                    t('pull.aiSkippedTitle', { count: ai.result.skippedFiles.length })),
+                  h('ul', { className: 'dgp-skipped-list' },
+                    ai.result.skippedFiles.map((file) => h('li', {
+                      key: file.filename,
+                      className: 'dgp-skipped-item',
+                      'data-dgp-skipped': file.filename
+                    },
+                    h('span', { className: 'dgp-skipped-name dgp-oneline', title: file.filename }, file.filename),
+                    h('span', { className: 'dgp-skipped-size' },
+                      '+' + file.additions + ' / −' + file.deletions + (Number.isFinite(file.changes) ? '（' + file.changes + ' 行）' : ''))))),
+                  h('p', { className: 'dgp-settings-hint' }, t('pull.aiSkippedHint')))
                 : null,
               h('p', { className: 'dgp-ai-summary', 'data-dgp-pull': 'ai-summary' }, ai.result.summary),
               ai.result.findings.length === 0

@@ -56,7 +56,9 @@ function issueMeta(item) {
     url: typeof item.html_url === 'string' ? item.html_url : '',
     author: typeof item.user?.login === 'string' ? item.user.login : '',
     comments: Number.isFinite(item.comments) ? item.comments : 0,
-    createdAt: typeof item.created_at === 'string' ? item.created_at : ''
+    // created_at = 提交 PR 的时间；updated_at = 最后一次有动静（提交/评论/审查）
+    createdAt: typeof item.created_at === 'string' ? item.created_at : '',
+    updatedAt: typeof item.updated_at === 'string' ? item.updated_at : ''
   }
 }
 

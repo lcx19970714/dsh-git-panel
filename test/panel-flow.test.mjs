@@ -2153,7 +2153,13 @@ test('用例 1M：门禁状态并排显示，一键按钮按平台能力执行',
           issuesUrl: 'https://github.com/alice/app/issues', pullsUrl: 'https://github.com/alice/app/pulls'
         },
         issues: { total: 0, items: [] },
-        pulls: { total: 1, items: [{ number: 5, title: 'PR five', url: 'https://github.com/alice/app/pull/5', author: 'alice', comments: 0, createdAt: '' }] },
+        pulls: {
+          total: 1,
+          items: [{
+            number: 5, title: 'PR five', url: 'https://github.com/alice/app/pull/5', author: 'alice', comments: 0,
+            createdAt: '2026-10-01T08:00:00Z', updatedAt: '2026-11-02T12:00:00Z'
+          }]
+        },
         failures: []
       }),
       'remote/pull': () => sayOk({
@@ -2175,6 +2181,13 @@ test('用例 1M：门禁状态并排显示，一键按钮按平台能力执行',
     await panel.flush()
     click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
     await panel.flush()
+    // 先断言列表里的时间（打开详情后列表就不在了）
+    const listRow = panel.one((node) => isHost(node) && hasClass(node, 'dgp-detail-item') && textOf(node).includes('PR five'))
+    assert(listRow !== null, '应找到 PR 行')
+    const listMeta = textOf(listRow)
+    assert(listMeta.includes('创建'), 'PR 列表要标出创建时间：' + listMeta)
+    assert(listMeta.includes('更新'), 'PR 列表要标出更新时间：' + listMeta)
+
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
     await panel.flush()
 
@@ -2186,6 +2199,8 @@ test('用例 1M：门禁状态并排显示，一键按钮按平台能力执行',
     assert(textOf(gate).includes('已通过'), '审查已通过：' + textOf(gate))
     assert(textOf(gate).includes('平台未提供'), '测试状态如实显示未提供：' + textOf(gate))
     assert(textOf(gate).includes('blocked'), '透出合并状态')
+
+    // PR 列表要能看出「创建」与「更新」分别是哪个时间
 
     // GitHub 没有测试动作 → 一键按钮是「通过审查」
     const pass = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'pass-all')

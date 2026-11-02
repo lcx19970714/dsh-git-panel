@@ -89,6 +89,20 @@ await test('buildReviewInput：超过上限时截断并标 truncated，且不超
 
 /* ---------------- 严格校验 ---------------- */
 
+await test('buildReviewInput：没有 patch 的文件要写明原因，并记入 skippedFiles', async () => {
+  const built = buildReviewInput({
+    pull: { title: 'T' },
+    files: [
+      { filename: 'assets/logo.png', status: 'added', additions: 0, deletions: 0, changes: 0, patch: '', patchAvailable: false },
+      { filename: 'src/a.js', status: 'modified', additions: 2, deletions: 1, changes: 3, patch: '+x', patchAvailable: true }
+    ]
+  })
+  assert.equal(built.skippedFiles.length, 1)
+  assert.equal(built.skippedFiles[0].filename, 'assets/logo.png')
+  assert.equal(built.skippedFiles[0].changes, 0)
+  assert.ok(built.text.includes('未被审阅'), '提示词里要说明这个文件没被读到')
+})
+
 await test('parseReviewOutput：合法结构原样通过', async () => {
   const { parseReviewOutput } = await import('../host/review.js')
   const parsed = parseReviewOutput(JSON.stringify(validReview))

@@ -151,9 +151,13 @@ export function createPulls(deps) {
   /**
    * PR 的文件列表 + 每个文件的 patch（AI 审阅的输入）。
    *
-   * 两家都是 `pulls/{n}/files`，一次 100 条，最多 3 页（300 个文件）。
+   * 两家都是 `pulls/{n}/files`，每页 50 条（**必须 ≤70**：GitHub 在 per_page>70 时
+   * 会让第 70 个之后的文件不再返回 patch，见 openjdk SKARA-1406），最多 6 页（300 个文件）。
    * 达到上限时 truncated=true —— 调用方必须把这个事实带进提示词与界面，
    * 不能假装「这就是全部改动」。
+   *
+   * 单个文件可能没有 patch（二进制文件，或该文件 diff 过大）；这里用 patchAvailable
+   * 明确标出，界面与提示词都要据此说明「这个文件没被读到」，而不是当成空改动。
    */
   async function pullDiff(input, options = {}) {
     const { provider, account } = await findAccount(input.accountId)
@@ -161,8 +165,8 @@ export function createPulls(deps) {
     const number = requirePullNumber(input.number)
     const headers = provider.headers(account.token)
     const base = provider.apiBase + provider.repoPath(fullName) + provider.pullPath(number)
-    const PAGE_SIZE = 100
-    const MAX_PAGES = 3
+    const PAGE_SIZE = 50
+    const MAX_PAGES = 6
 
     const files = []
     let truncated = false
@@ -177,13 +181,15 @@ export function createPulls(deps) {
           additions: Number.isFinite(item.additions) ? item.additions : 0,
           deletions: Number.isFinite(item.deletions) ? item.deletions : 0,
           changes: Number.isFinite(item.changes) ? item.changes : 0,
-          patch: typeof item.patch === 'string' ? item.patch : ''
+          patch: typeof item.patch === 'string' ? item.patch : '',
+          // 平台没给 patch：二进制文件，或该文件 diff 过大
+          patchAvailable: typeof item.patch === 'string' && item.patch !== ''
         })
       }
       if (listed.length < PAGE_SIZE) break
       if (page === MAX_PAGES) truncated = true
     }
-    return { files, truncated, pagesRead: Math.min(MAX_PAGES, Math.ceil(files.length / 100) || 1) }
+    return { files, truncated, pagesRead: Math.min(MAX_PAGES, Math.ceil(files.length / 50) || 1) }
   }
 
   /** 发一条 PR 评论（内容由用户在界面上确认/编辑后提交）。 */

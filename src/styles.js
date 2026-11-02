@@ -1045,6 +1045,21 @@ export const CSS = `
 .dgp-gate-chip[data-gate="test"][data-state="passed"] { color: var(--dsw-alias-state-success-primary); }
 .dgp-gate-chip[data-gate="review"][data-state="changes-requested"] { color: var(--dsw-alias-state-error-primary); }
 .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
+/* AI 审阅：平台没返回内容的文件 */
+.dgp-ai-skipped { display: flex; flex-direction: column; gap: 2px; }
+.dgp-skipped-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.dgp-skipped-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 11px;
+}
+.dgp-skipped-name {
+  font-family: var(--ds-font-family-code);
+  color: var(--dsw-alias-label-secondary);
+  min-width: 0;
+}
+.dgp-skipped-size { flex: none; color: var(--dsw-alias-label-tertiary); }
 /* AI 审阅：总评 + 编号问题清单 + 评论草稿 */
 .dgp-ai-summary {
   margin: 0;

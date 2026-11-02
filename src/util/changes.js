@@ -109,19 +109,14 @@ export function normalizeRelPath(value) {
 /**
  * 算出子项相对浏览根的路径。
  *
- * 宿主 `tree/list` 返回的 `path` 是「相对被列举目录」的名字（见 host/git.js listDirectory），
- * 但也允许调用方提前拼好根相对路径；两种都兼容。
+ * 宿主 `tree/list` 只返回条目名（相对被列举目录），这里拼上父路径就是根相对路径。
  *
  * @param {string} parentRel 父目录的相对路径（'' = 根）
- * @param {{name?: string, path?: string}} entry
+ * @param {{name?: string}} entry
  */
 export function childPath(parentRel, entry) {
   const parent = normalizeRelPath(parentRel)
-  let raw = ''
-  if (entry !== null && entry !== undefined && typeof entry === 'object') {
-    if (typeof entry.path === 'string' && entry.path !== '') raw = entry.path
-    else if (typeof entry.name === 'string') raw = entry.name
-  }
+  const raw = entry !== null && entry !== undefined && typeof entry.name === 'string' ? entry.name : ''
   const rel = normalizeRelPath(raw)
   if (rel === '') return parent
   if (parent === '') return rel

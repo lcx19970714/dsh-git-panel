@@ -27,7 +27,7 @@ import { AddRootForm } from './AddRootForm.js'
 import { stripWrappingQuotes } from '../util/paths.js'
 
 export function RepoList(props) {
-  const source = props === null || props === undefined ? {} : props
+  const source = props
   const translate = source.t
   const roots = Array.isArray(source.roots) ? source.roots : []
   const activeRootId = typeof source.activeRootId === 'string' ? source.activeRootId : null

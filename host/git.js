@@ -879,7 +879,7 @@ export async function listDirectory(absPath, options = {}) {
     if (!showHidden && dirent.name.startsWith('.')) continue
     if (entries.length >= limit) { truncated = true; break }
     const type = dirent.isDirectory() ? 'dir' : dirent.isFile() ? 'file' : 'other'
-    entries.push({ name: dirent.name, path: dirent.name, type })
+    entries.push({ name: dirent.name, type })
   }
   entries.sort((a, b) => {
     if (a.type !== b.type) return a.type === 'dir' ? -1 : 1

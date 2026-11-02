@@ -23,8 +23,6 @@ import { basename, dirname, formatCount } from '../util/paths.js'
 import { ancestorsFor, buildGroupRows, buildListRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } from '../util/changes.js'
 import { EmptyState, InlineNote, SkeletonRows } from './States.js'
 
-/** props.t 缺失时的兜底（本地字典，永不返回 undefined）。 */
-
 /** 把 props 里可能出现的各种 error 形状收敛成一个字符串或 null。 */
 function toErrorText(error) {
   if (error === null || error === undefined || error === '') return null
@@ -34,7 +32,7 @@ function toErrorText(error) {
 }
 
 export function ChangesList(props) {
-  const source = props === null || props === undefined ? {} : props
+  const source = props
   const status = source.status === undefined ? null : source.status
   const loading = source.loading === true
   const selectedPath = typeof source.selectedPath === 'string' && source.selectedPath !== ''

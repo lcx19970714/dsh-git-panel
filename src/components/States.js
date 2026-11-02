@@ -2,7 +2,7 @@
  * src/components/States.js —— 空 / 加载 / 错误 / 骨架 / 行内提示
  *
  * 结构一律按 CONTRACT.md §5 的 class 词汇表输出，样式全部由 src/styles.js 提供。
- * 文案全部走 `t('key')`；`t` 缺失时退化成「回显 key」，保证组件永不崩。
+ * 文案全部走 `t('key')`；`t` 由宿主传入，缺了就是调用方的 bug（直接抛错，不静默降级）。
  *
  * props 契约（CONTRACT.md §3）：
  *   EmptyState({ icon, title, description, actions, t })
@@ -16,10 +16,10 @@ import { Icon } from '../ui/Icon.js'
 
 const TONES = ['info', 'warn', 'error']
 
-/** t 兜底：宿主没给 / 不是函数时回显 key。 */
-function safeT(t) {
-  if (typeof t === 'function') return t
-  return function fallbackT(key) { return String(key) }
+/** 组件都要求宿主传入翻译函数：缺了就是调用方的 bug，直接报出来。 */
+function requireTranslate(t, name) {
+  if (typeof t !== 'function') throw new Error(name + ' 缺少 t（翻译函数）')
+  return t
 }
 
 /** actions 允许单 node 或 node 数组；null / false 直接丢掉，逐个包 keyed Fragment。 */
@@ -44,7 +44,7 @@ function isBlank(value) {
  * `icon` 既可以传图标名（字符串，内部渲染 `Icon`），也可以传现成的 React node。
  */
 export function EmptyState(props) {
-  const { icon, title, description, actions } = props ?? {}
+  const { icon, title, description, actions } = props
   const iconNode = isBlank(icon)
     ? null
     : h('div', { className: 'dgp-state-icon' },
@@ -60,8 +60,8 @@ export function EmptyState(props) {
 
 /** 加载态：小转圈 + 文案（居中同上）。 */
 export function LoadingState(props) {
-  const { label, t } = props ?? {}
-  const T = safeT(t)
+  const { label, t } = props
+  const T = requireTranslate(t, 'LoadingState')
   const text = isBlank(label) ? T('status.loading') : label
   return h('div', { className: 'dgp-state', role: 'status', 'aria-live': 'polite' },
     h('span', { className: 'dgp-spinner', 'aria-hidden': 'true' }),
@@ -70,8 +70,8 @@ export function LoadingState(props) {
 
 /** 错误态：警告图标 + 原因 + 重试按钮。 */
 export function ErrorState(props) {
-  const { message, onRetry, t } = props ?? {}
-  const T = safeT(t)
+  const { message, onRetry, t } = props
+  const T = requireTranslate(t, 'ErrorState')
   const text = isBlank(message) ? '' : String(message)
   const descNode = text === '' ? null : h('div', { className: 'dgp-state-desc' }, text)
   const retry = h('button', {
@@ -93,7 +93,7 @@ const SKELETON_WIDTHS = [92, 74, 86, 62, 88, 70, 95, 58, 80, 66]
 
 /** 骨架屏：`rows` 行，宽度按固定节奏变化（内联 width，样式在 styles.js）。 */
 export function SkeletonRows(props) {
-  const { rows } = props ?? {}
+  const { rows } = props
   const count = (typeof rows === 'number' && Number.isFinite(rows))
     ? Math.max(0, Math.min(40, Math.floor(rows)))
     : 6
@@ -109,7 +109,7 @@ export function SkeletonRows(props) {
 
 /** 行内提示条（不占满面板；放进内容流里用）。 */
 export function InlineNote(props) {
-  const { tone, children } = props ?? {}
+  const { tone, children } = props
   const safeTone = TONES.indexOf(tone) === -1 ? 'info' : tone
   return h('div', { className: 'dgp-inline-note', 'data-tone': safeTone }, children)
 }

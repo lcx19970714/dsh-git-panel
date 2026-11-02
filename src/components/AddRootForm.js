@@ -8,7 +8,7 @@ import { h, useCallback, useState } from '../platform.js'
 import { stripWrappingQuotes } from '../util/paths.js'
 
 export function AddRootForm(props) {
-  const source = props === null || props === undefined ? {} : props
+  const source = props
   const translate = source.t
   const onAdd = typeof source.onAdd === 'function' ? source.onAdd : null
   const onCancel = typeof source.onCancel === 'function' ? source.onCancel : null

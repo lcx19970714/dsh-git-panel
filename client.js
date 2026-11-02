@@ -4113,7 +4113,7 @@ window.__ModuleLoader__.load({
       const { stripWrappingQuotes } = __m("./util/paths.js");
 
       function RepoList(props) {
-        const source = props === null || props === undefined ? {} : props
+        const source = props
         const translate = source.t
         const roots = Array.isArray(source.roots) ? source.roots : []
         const activeRootId = typeof source.activeRootId === 'string' ? source.activeRootId : null
@@ -4448,7 +4448,7 @@ window.__ModuleLoader__.load({
       const { stripWrappingQuotes } = __m("./util/paths.js");
 
       function AddRootForm(props) {
-        const source = props === null || props === undefined ? {} : props
+        const source = props
         const translate = source.t
         const onAdd = typeof source.onAdd === 'function' ? source.onAdd : null
         const onCancel = typeof source.onCancel === 'function' ? source.onCancel : null
@@ -4725,8 +4725,6 @@ window.__ModuleLoader__.load({
       const { ancestorsFor, buildGroupRows, buildListRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } = __m("./util/changes.js");
       const { EmptyState, InlineNote, SkeletonRows } = __m("./components/States.js");
 
-      /** props.t 缺失时的兜底（本地字典，永不返回 undefined）。 */
-
       /** 把 props 里可能出现的各种 error 形状收敛成一个字符串或 null。 */
       function toErrorText(error) {
         if (error === null || error === undefined || error === '') return null
@@ -4736,7 +4734,7 @@ window.__ModuleLoader__.load({
       }
 
       function ChangesList(props) {
-        const source = props === null || props === undefined ? {} : props
+        const source = props
         const status = source.status === undefined ? null : source.status
         const loading = source.loading === true
         const selectedPath = typeof source.selectedPath === 'string' && source.selectedPath !== ''
@@ -5280,19 +5278,14 @@ window.__ModuleLoader__.load({
       /**
        * 算出子项相对浏览根的路径。
        *
-       * 宿主 `tree/list` 返回的 `path` 是「相对被列举目录」的名字（见 host/git.js listDirectory），
-       * 但也允许调用方提前拼好根相对路径；两种都兼容。
+       * 宿主 `tree/list` 只返回条目名（相对被列举目录），这里拼上父路径就是根相对路径。
        *
        * @param {string} parentRel 父目录的相对路径（'' = 根）
-       * @param {{name?: string, path?: string}} entry
+       * @param {{name?: string}} entry
        */
       function childPath(parentRel, entry) {
         const parent = normalizeRelPath(parentRel)
-        let raw = ''
-        if (entry !== null && entry !== undefined && typeof entry === 'object') {
-          if (typeof entry.path === 'string' && entry.path !== '') raw = entry.path
-          else if (typeof entry.name === 'string') raw = entry.name
-        }
+        const raw = entry !== null && entry !== undefined && typeof entry.name === 'string' ? entry.name : ''
         const rel = normalizeRelPath(raw)
         if (rel === '') return parent
         if (parent === '') return rel
@@ -5450,7 +5443,7 @@ window.__ModuleLoader__.load({
        * src/components/States.js —— 空 / 加载 / 错误 / 骨架 / 行内提示
        *
        * 结构一律按 CONTRACT.md §5 的 class 词汇表输出，样式全部由 src/styles.js 提供。
-       * 文案全部走 `t('key')`；`t` 缺失时退化成「回显 key」，保证组件永不崩。
+       * 文案全部走 `t('key')`；`t` 由宿主传入，缺了就是调用方的 bug（直接抛错，不静默降级）。
        *
        * props 契约（CONTRACT.md §3）：
        *   EmptyState({ icon, title, description, actions, t })
@@ -5464,10 +5457,10 @@ window.__ModuleLoader__.load({
 
       const TONES = ['info', 'warn', 'error']
 
-      /** t 兜底：宿主没给 / 不是函数时回显 key。 */
-      function safeT(t) {
-        if (typeof t === 'function') return t
-        return function fallbackT(key) { return String(key) }
+      /** 组件都要求宿主传入翻译函数：缺了就是调用方的 bug，直接报出来。 */
+      function requireTranslate(t, name) {
+        if (typeof t !== 'function') throw new Error(name + ' 缺少 t（翻译函数）')
+        return t
       }
 
       /** actions 允许单 node 或 node 数组；null / false 直接丢掉，逐个包 keyed Fragment。 */
@@ -5492,7 +5485,7 @@ window.__ModuleLoader__.load({
        * `icon` 既可以传图标名（字符串，内部渲染 `Icon`），也可以传现成的 React node。
        */
       function EmptyState(props) {
-        const { icon, title, description, actions } = props ?? {}
+        const { icon, title, description, actions } = props
         const iconNode = isBlank(icon)
           ? null
           : h('div', { className: 'dgp-state-icon' },
@@ -5508,8 +5501,8 @@ window.__ModuleLoader__.load({
 
       /** 加载态：小转圈 + 文案（居中同上）。 */
       function LoadingState(props) {
-        const { label, t } = props ?? {}
-        const T = safeT(t)
+        const { label, t } = props
+        const T = requireTranslate(t, 'LoadingState')
         const text = isBlank(label) ? T('status.loading') : label
         return h('div', { className: 'dgp-state', role: 'status', 'aria-live': 'polite' },
           h('span', { className: 'dgp-spinner', 'aria-hidden': 'true' }),
@@ -5518,8 +5511,8 @@ window.__ModuleLoader__.load({
 
       /** 错误态：警告图标 + 原因 + 重试按钮。 */
       function ErrorState(props) {
-        const { message, onRetry, t } = props ?? {}
-        const T = safeT(t)
+        const { message, onRetry, t } = props
+        const T = requireTranslate(t, 'ErrorState')
         const text = isBlank(message) ? '' : String(message)
         const descNode = text === '' ? null : h('div', { className: 'dgp-state-desc' }, text)
         const retry = h('button', {
@@ -5541,7 +5534,7 @@ window.__ModuleLoader__.load({
 
       /** 骨架屏：`rows` 行，宽度按固定节奏变化（内联 width，样式在 styles.js）。 */
       function SkeletonRows(props) {
-        const { rows } = props ?? {}
+        const { rows } = props
         const count = (typeof rows === 'number' && Number.isFinite(rows))
           ? Math.max(0, Math.min(40, Math.floor(rows)))
           : 6
@@ -5557,7 +5550,7 @@ window.__ModuleLoader__.load({
 
       /** 行内提示条（不占满面板；放进内容流里用）。 */
       function InlineNote(props) {
-        const { tone, children } = props ?? {}
+        const { tone, children } = props
         const safeTone = TONES.indexOf(tone) === -1 ? 'info' : tone
         return h('div', { className: 'dgp-inline-note', 'data-tone': safeTone }, children)
       }
@@ -5588,25 +5581,13 @@ window.__ModuleLoader__.load({
       const { describeError } = __m("./api.js");
       const { EmptyState, InlineNote } = __m("./components/States.js");
 
-      /** props.t 缺失时的兜底（本地字典，永不返回 undefined）。 */
-
-      /** 某个 key 是否真的在字典里（宿主/本地字典都没有时会回显 key 本身）。 */
-      function hasKey(translate, key) {
-        return translate(key) !== key
-      }
-
       function messageOf(error, translate) {
-        try {
-          const text = describeError(error, translate)
-          if (typeof text === 'string' && text !== '') return text
-        } catch {
-          /* describeError 不该抛，兜底继续 */
-        }
-        return translate('error.generic', { message: '' })
+        const text = describeError(error, translate)
+        return typeof text === 'string' && text !== '' ? text : translate('error.generic', { message: '' })
       }
 
       function FileTree(props) {
-        const source = props === null || props === undefined ? {} : props
+        const source = props
         const rootPath = typeof source.rootPath === 'string' && source.rootPath !== '' ? source.rootPath : null
         const selectedPath = typeof source.selectedPath === 'string' && source.selectedPath !== ''
           ? source.selectedPath
@@ -5805,7 +5786,7 @@ window.__ModuleLoader__.load({
           if (ordered.length === 0) {
             let text = null
             if (filter !== '') text = translate('status.emptyFilter', { filter })
-            else if (hasKey(translate, 'status.emptyDir')) text = translate('status.emptyDir')
+            else text = translate('status.emptyDir')
             if (text !== null) out.push({ kind: 'note', key: baseKey + ':empty', tone: 'info', text, depth })
           }
 
@@ -5842,9 +5823,7 @@ window.__ModuleLoader__.load({
         const rootFailed = rootLevel !== undefined && rootLevel !== null && rootLevel.status === 'failed'
         const rootReady = rootLevel !== undefined && rootLevel !== null && rootLevel.status === 'ok'
         const hasVisibleRows = rows.some((row) => row.kind === 'dir' || row.kind === 'file')
-        const filterNote = filter !== '' && hasKey(translate, 'filter.loadedOnly')
-          ? translate('filter.loadedOnly')
-          : null
+        const filterNote = filter !== '' ? translate('filter.loadedOnly') : null
         const filterEmpty = filter !== '' && rootReady && !hasVisibleRows
 
         /* ------------------------------ 副作用（光标） ------------------------------ */
@@ -7559,7 +7538,7 @@ window.__ModuleLoader__.load({
       }
 
       function CommitBox(props) {
-        const source = props === null || props === undefined ? {} : props
+        const source = props
         const translate = source.t
         const message = typeof source.message === 'string' ? source.message : ''
         const stagedCount = typeof source.stagedCount === 'number' ? source.stagedCount : 0
@@ -7685,7 +7664,7 @@ window.__ModuleLoader__.load({
       const { InlineNote } = __m("./components/States.js");
 
       function SettingsView(props) {
-        const source = props === null || props === undefined ? {} : props
+        const source = props
         const translate = source.t
         const models = Array.isArray(source.models) ? source.models : []
         const accounts = Array.isArray(source.accounts) ? source.accounts : []
@@ -8075,7 +8054,7 @@ window.__ModuleLoader__.load({
       }
 
       function RemotePane(props) {
-        const source = props === null || props === undefined ? {} : props
+        const source = props
         const translate = source.t
         const accounts = Array.isArray(source.accounts) ? source.accounts : []
         const accountId = typeof source.accountId === 'string' ? source.accountId : null
@@ -8447,7 +8426,7 @@ window.__ModuleLoader__.load({
       }
 
       function RemoteDetail(props) {
-        const source = props === null || props === undefined ? {} : props
+        const source = props
         const t = source.t
         const selection = source.selection === null || source.selection === undefined ? null : source.selection
         const detail = source.detail === null || source.detail === undefined ? null : source.detail
@@ -8580,7 +8559,7 @@ window.__ModuleLoader__.load({
       }
 
       function PullDetail(props) {
-        const source = props === null || props === undefined ? {} : props
+        const source = props
         const t = source.t
         const selection = source.selection === null || source.selection === undefined ? null : source.selection
         const detail = source.detail === null || source.detail === undefined ? null : source.detail

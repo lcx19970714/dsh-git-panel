@@ -12,7 +12,7 @@ import { Icon } from '../ui/Icon.js'
 import { InlineNote } from './States.js'
 
 export function SettingsView(props) {
-  const source = props === null || props === undefined ? {} : props
+  const source = props
   const translate = source.t
   const models = Array.isArray(source.models) ? source.models : []
   const accounts = Array.isArray(source.accounts) ? source.accounts : []

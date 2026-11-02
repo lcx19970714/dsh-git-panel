@@ -199,6 +199,10 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 | `accounts/token` | `{id}` | `{id, token}`；只在用户点「显示令牌」时调用，列表接口不含令牌 |
 | `accounts/remove` | `{id}` | `{accounts}` |
 | `remote/repos` | `{accountId, page?}` | `{repos[], page, hasMore}`；GitHub/Gitee 字段归一成同一形状 |
+**空响应约定**：`readJson()` 对 `204` / 空体返回 `null`（成功但没有响应体）——Gitee 的审查通过接口就是这样。
+需要对象/数组的调用方用 `readObject()` / `readArray()`（空体直接报「平台没有返回 X」），
+纯写接口直接忽略返回值。任何写操作都不要假设「成功必有 JSON 回包」。
+
 **远端平台鉴权约定**：token 只在 `provider.authorize(url, token)` 一处落地 —— GitHub 放请求头
 （`Authorization: Bearer`，URL 保持干净），Gitee 放 `access_token` 查询参数。**新增任何 API 路径都必须经过
 `authorize()`**：Gitee 对「无权访问的私有仓库」返回 404 `{"message":"Not Found Project"}`，

@@ -43,6 +43,11 @@ export async function request(fetchImpl, url, options, signal) {
 /**
  * 读 JSON，并把「失败」说清楚。
  *
+ * **空响应是合法的成功**：`204 No Content` / 长度为 0 的 200 在 REST 里表示
+ * 「做完了，没什么可回」。Gitee 的审查通过接口（POST /pulls/{n}/review）就是这样，
+ * 之前把它当成「不是 JSON」直接报错，导致审查明明成功却提示失败。
+ * 因此这里返回 null 表示「成功但没有响应体」，调用方按需处理。
+ *
  * 404 单独成句：Gitee 对「无权访问的私有仓库」返回 404 而不是 401，
  * 只说「找不到」会让人往错的方向查。
  */
@@ -59,9 +64,32 @@ export async function readJson(response) {
     }
     throw new GitError('remote-auth-failed', reason + '：' + text.slice(0, 300))
   }
+  const trimmed = text.trim()
+  if (trimmed === '') return null
   try {
-    return JSON.parse(text)
+    return JSON.parse(trimmed)
   } catch {
-    throw new GitError('remote-api-failed', '接口返回的不是 JSON：' + text.slice(0, 200))
+    throw new GitError('remote-api-failed', '接口返回的不是 JSON：' + trimmed.slice(0, 200))
   }
+}
+
+/**
+ * 需要对象的响应：空体/非对象视为平台没按约定返回，直接报错。
+ * 列表与「只要成功就好」的写接口不走这里。
+ */
+export async function readObject(response, what) {
+  const value = await readJson(response)
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new GitError('remote-api-failed', '平台没有返回' + what)
+  }
+  return value
+}
+
+/** 需要数组的响应。 */
+export async function readArray(response, what) {
+  const value = await readJson(response)
+  if (!Array.isArray(value)) {
+    throw new GitError('remote-api-failed', '平台没有返回' + what + '列表')
+  }
+  return value
 }

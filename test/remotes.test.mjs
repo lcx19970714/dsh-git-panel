@@ -65,7 +65,8 @@ function fakeFetch(routes) {
           ok: body.status === undefined || body.status < 400,
           status: body.status ?? 200,
           headers: { get: (name) => headers[String(name).toLowerCase()] ?? null },
-          text: async () => JSON.stringify(body.json ?? {})
+          // empty: true 模拟 204 / 空响应体（Gitee 的审查接口就是这样）
+          text: async () => (body.empty === true ? '' : JSON.stringify(body.json ?? {}))
         }
       }
     }
@@ -480,6 +481,46 @@ await test('合并：已合并/非打开/不可合并都拒绝；成功时带方
   await assert.rejects(
     () => remotes.mergePull({ ...base, method: 'fast-forward' }),
     (error) => error.code === 'bad-request'
+  )
+})
+
+await test('Gitee 审查通过返回空响应时，不能再报「不是 JSON」', async () => {
+  const credentials = fakeCredentials()
+  const calls = []
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    // 真实接口成功时就是空体（204），旧实现会在这里抛「接口返回的不是 JSON」
+    [/\/pulls\/5\/review\?/, (url, options) => {
+      calls.push({ url, method: options.method })
+      return { status: 204, empty: true }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+
+  const result = await remotes.reviewPull({
+    accountId: 'gitee:bob',
+    fullName: 'bob/tool',
+    number: 5,
+    verdict: 'approve'
+  })
+  assert.equal(result.verdict, 'approve')
+  assert.equal(result.bodyPosted, false)
+  assert.equal(calls.length, 1, '只发了 /review 一次请求')
+})
+
+await test('需要对象的接口遇到空响应时，给出明确原因', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/repos\/alice\/app$/, { status: 200, empty: true }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+
+  await assert.rejects(
+    () => remotes.repoDetail({ accountId: 'github:alice', fullName: 'alice/app' }),
+    (error) => error.code === 'remote-api-failed' && /平台没有返回仓库详情/.test(error.message)
   )
 })
 

@@ -17,6 +17,7 @@
 import { h, useState } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
 import { formatClock } from '../util/time.js'
+import { openExternalUrl } from '../util/openUrl.js'
 
 /** 秒数保留一位小数，避免每次 tick 都跳一大截。 */
 function secondsOf(startedAt, now) {
@@ -40,6 +41,8 @@ export function RemotePane(props) {
   const [folderName, setFolderName] = useState('')
   // 添加账号的行内表单：{ provider, label, token, busy, error }
   const [form, setForm] = useState(null)
+  // 点过「获取令牌」后的提示：'opened' 或拦截时的地址
+  const [tokenHint, setTokenHint] = useState(null)
 
   const providers = Array.isArray(source.providers) ? source.providers : []
   const providerOf = (id) => providers.find((item) => item.id === id) ?? { id, label: id }
@@ -48,6 +51,7 @@ export function RemotePane(props) {
     const id = typeof providerId === 'string' && providerId !== ''
       ? providerId
       : (providers.length > 0 ? providers[0].id : 'github')
+    setTokenHint(null)
     setForm({ provider: id, label: '', token: '', busy: false, error: null })
   }
 
@@ -98,8 +102,11 @@ export function RemotePane(props) {
             className: 'dgp-btn',
             'data-size': 'sm',
             'data-dgp-remote': 'open-token-page',
-            onClick: () => window.open(providerOf(form.provider).tokenUrl, '_blank', 'noopener,noreferrer')
-          }, translate('accounts.openTokenPage'), h(Icon, { name: 'external', size: 12 }))),
+            onClick: () => {
+              const result = openExternalUrl(providerOf(form.provider).tokenUrl)
+              setTokenHint(result.opened ? 'opened' : providerOf(form.provider).tokenUrl)
+            }
+          }, translate('accounts.getToken'), h(Icon, { name: 'external', size: 12 }))),
       h('div', { className: 'dgp-account-form' },
         h('select', {
           className: 'dgp-select dgp-account-provider',
@@ -142,6 +149,12 @@ export function RemotePane(props) {
           'data-dgp-remote': 'account-cancel',
           onClick: closeForm
         }, translate('remote.cloneCancel'))),
+      tokenHint === null
+        ? null
+        : h('div', { className: 'dgp-remote-status', 'data-dgp-remote': 'token-hint' },
+          h('span', null, tokenHint === 'opened'
+            ? translate('accounts.openedPage')
+            : translate('accounts.blockedPage') + ' ' + tokenHint)),
       form.error === null
         ? null
         : h('div', { className: 'dgp-remote-status', 'data-tone': 'error' },

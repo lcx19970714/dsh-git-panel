@@ -300,6 +300,65 @@ await test('仓库详情：GitHub 的 issue 数要减掉 PR，总数来自 Link 
   assert.deepEqual(detail.failures, [])
 })
 
+await test('Gitee：详情/列表/取用户都带 access_token，GitHub 的 URL 里不带 token', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/gitee\.com\/api\/v5\/user\/repos/, { json: [] }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/issues\?.*per_page=1/, { json: [], headers: { link: '<x?page=2>; rel="last"' } }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/pulls\?.*per_page=1/, { json: [], headers: { link: '<x?page=1>; rel="last"' } }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/issues\?/, { json: [] }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/pulls\?/, { json: [] }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\?/, { json: { full_name: 'bob/tool', language: 'Go', html_url: 'https://gitee.com/bob/tool' } }],
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/api\.github\.com\/repos\/alice\/app\/issues\?.*per_page=1/, { json: [], headers: { link: '<x?page=1>; rel="last"' } }],
+    [/api\.github\.com\/repos\/alice\/app\/pulls\?.*per_page=1/, { json: [], headers: { link: '<x?page=1>; rel="last"' } }],
+    [/api\.github\.com\/repos\/alice\/app\/issues\?/, { json: [] }],
+    [/api\.github\.com\/repos\/alice\/app\/pulls\?/, { json: [] }],
+    [/api\.github\.com\/repos\/alice\/app$/, { json: { full_name: 'alice/app', html_url: 'https://github.com/alice/app' } }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 'gitee_tok' })
+  await remotes.addAccount({ provider: 'github', token: 'gh_tok' })
+
+  const giteeDetail = await remotes.repoDetail({ accountId: 'gitee:bob', fullName: 'bob/tool' })
+  assert.equal(giteeDetail.repo.language, 'Go')
+
+  // 私有仓库在 Gitee 上无权访问会返回 404，所以每个请求都必须带 token
+  const giteeCalls = fetchImpl.calls.filter((call) => call.url.includes('gitee.com'))
+  assert.ok(giteeCalls.length >= 5, '应至少有取用户/列仓库/详情/issue/PR 五次请求：' + giteeCalls.length)
+  for (const call of giteeCalls) {
+    assert.match(call.url, /access_token=gitee_tok/, 'Gitee 请求必须带 access_token：' + call.url)
+  }
+
+  const githubDetail = await remotes.repoDetail({ accountId: 'github:alice', fullName: 'alice/app' })
+  assert.equal(githubDetail.repo.fullName, 'alice/app')
+
+  const githubCalls = fetchImpl.calls.filter((call) => call.url.includes('api.github.com'))
+  assert.ok(githubCalls.length >= 5, 'GitHub 也应有取用户/详情/issue/PR 等请求：' + githubCalls.length)
+  for (const call of githubCalls) {
+    assert.doesNotMatch(call.url, /access_token|gh_tok/, 'GitHub 的 token 不能出现在 URL 里：' + call.url)
+    assert.equal(call.options.headers.Authorization, 'Bearer gh_tok', 'GitHub 走请求头')
+  }
+})
+
+await test('私有仓库 404 时，错误里要说明可能是权限问题', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/private\?/, { status: 404, json: { message: 'Not Found Project' } }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+
+  await assert.rejects(
+    () => remotes.repoDetail({ accountId: 'gitee:bob', fullName: 'bob/private' }),
+    (error) => error.code === 'remote-auth-failed'
+      && /404/.test(error.message)
+      && /权限/.test(error.message)
+  )
+})
+
 await test('仓库详情：某一块失败只标记那一块，其余照常返回', async () => {
   const credentials = fakeCredentials()
   const fetchImpl = fakeFetch([

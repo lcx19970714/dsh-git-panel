@@ -193,6 +193,11 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 | `accounts/token` | `{id}` | `{id, token}`；只在用户点「显示令牌」时调用，列表接口不含令牌 |
 | `accounts/remove` | `{id}` | `{accounts}` |
 | `remote/repos` | `{accountId, page?}` | `{repos[], page, hasMore}`；GitHub/Gitee 字段归一成同一形状 |
+**远端平台鉴权约定**：token 只在 `provider.authorize(url, token)` 一处落地 —— GitHub 放请求头
+（`Authorization: Bearer`，URL 保持干净），Gitee 放 `access_token` 查询参数。**新增任何 API 路径都必须经过
+`authorize()`**：Gitee 对「无权访问的私有仓库」返回 404 `{"message":"Not Found Project"}`，
+漏掉 token 会表现为「仓库不存在」，而不是 401。
+
 | `remote/detail` | `{accountId, fullName, pageSize?}` | `{repo, issues:{total,items}, pulls:{total,items}, failures}`；总数取分页 Link 最后一页，GitHub 的 issue 数会减掉 PR |
 | `remote/clone` | `{accountId, fullName, cloneUrl, projectRoot, targetName?}` | `{path, name, fullName}`；鉴权只走 `-c http.extraHeader`，不写进 `.git/config` |
 | `commit` | `{rootPath, message}` | `{head, subject, includedUnstaged}`；有暂存只提交暂存，没有则先 `git add -A` 再提交 |

@@ -25,6 +25,7 @@ import { FileEditor } from './FileEditor.js'
 import { EmptyState, LoadingState, InlineNote } from './States.js'
 import { CommitBox } from './CommitBox.js'
 import { SettingsView } from './SettingsView.js'
+import { RemotePane } from './RemotePane.js'
 import { MODE, usePref, useLatestGuard } from '../store.js'
 import * as api from '../api.js'
 import { reconcileSelection } from '../util/changes.js'
@@ -72,6 +73,21 @@ export function Panel(props) {
   const [repositoriesOpen, setRepositoriesOpen] = usePref('repositoriesOpen')
   const [changesView, setChangesView] = usePref('changesView')
   const [untrackedMode, setUntrackedMode] = usePref('untrackedMode')
+
+  /* ------------------------------ 远端账号 ------------------------------ */
+  const [accounts, setAccounts] = useState([])
+  const [accountsLoaded, setAccountsLoaded] = useState(false)
+  const [remoteAccountId, setRemoteAccountId] = useState(null)
+  const [remoteRepos, setRemoteRepos] = useState([])
+  const [remoteHasMore, setRemoteHasMore] = useState(false)
+  const [remoteLoading, setRemoteLoading] = useState(false)
+  const [remoteError, setRemoteError] = useState(null)
+  const [remoteFilter, setRemoteFilter] = useState('')
+  const [cloneState, setCloneState] = useState(null)
+  const [cloneNow, setCloneNow] = useState(0)
+  const [providers, setProviders] = useState([])
+  const [accountsBusy, setAccountsBusy] = useState(false)
+  const [accountsError, setAccountsError] = useState(null)
 
   /* ------------------------------- 根 ------------------------------- */
   const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -786,6 +802,122 @@ export function Panel(props) {
     return api.listDirectory({ rootPath: root.path, path: relPath ?? '' }, { signal })
   }, [])
 
+  /* ------------------------------ 远端账号 ------------------------------ */
+
+  /** 读账号列表（token 不会下发到客户端，只有 id/login/label）。 */
+  const loadAccounts = useCallback(async () => {
+    try {
+      const value = await api.listAccounts({})
+      setAccounts(value.accounts)
+      setProviders(value.providers)
+      setAccountsLoaded(true)
+      setRemoteAccountId((previous) => {
+        if (previous !== null && value.accounts.some((account) => account.id === previous)) return previous
+        return value.accounts.length > 0 ? value.accounts[0].id : null
+      })
+    } catch (error) {
+      setAccountsLoaded(true)
+      setRemoteError(api.describeError(error, tRef.current))
+    }
+  }, [])
+
+  /** 读某个账号的仓库；append 用于「加载更多」。 */
+  const loadRepos = useCallback(async (accountId, page, append) => {
+    if (typeof accountId !== 'string') return
+    setRemoteLoading(true)
+    if (append !== true) setRemoteError(null)
+    try {
+      const value = await api.listRemoteRepos({ accountId, page })
+      setRemoteRepos((previous) => (append === true ? [...previous, ...value.repos] : value.repos))
+      setRemoteHasMore(value.hasMore === true)
+    } catch (error) {
+      setRemoteError(api.describeError(error, tRef.current))
+      if (append !== true) setRemoteRepos([])
+    } finally {
+      setRemoteLoading(false)
+    }
+  }, [])
+
+  /** 进「远端」页签且还没读过账号时读一次。 */
+  useEffect(() => {
+    if (mode !== MODE.remote || accountsLoaded) return
+    loadAccounts()
+  }, [mode, accountsLoaded, loadAccounts])
+
+  /** 切账号或首次进入时读第一页。 */
+  useEffect(() => {
+    if (mode !== MODE.remote || remoteAccountId === null) return
+    loadRepos(remoteAccountId, 1, false)
+  }, [mode, remoteAccountId, loadRepos])
+
+  /** 克隆期间每 200ms 刷新已等待秒数。 */
+  useEffect(() => {
+    if (cloneState === null || cloneState.error !== null) {
+      setCloneNow(0)
+      return undefined
+    }
+    const timer = setInterval(() => setCloneNow(Date.now()), 200)
+    return () => clearInterval(timer)
+  }, [cloneState])
+
+  /** 把远端仓库克隆到项目根下，成功后重新解析根并切到变更页。 */
+  const cloneRepo = useCallback(async (repo, targetName) => {
+    const projectRoot = projectRef.current.projectRoot
+    if (typeof projectRoot !== 'string' || projectRoot === '') {
+      setCloneState({ fullName: repo.fullName, startedAt: 0, error: tRef.current('status.noCwd') })
+      return
+    }
+    setCloneState({ fullName: repo.fullName, startedAt: Date.now(), error: null })
+    setCloneNow(Date.now())
+    try {
+      await api.cloneRemoteRepo({
+        accountId: repo.accountId,
+        fullName: repo.fullName,
+        cloneUrl: repo.cloneUrl,
+        projectRoot,
+        targetName: targetName ?? ''
+      })
+      setCloneState(null)
+      await resolveProject()
+      await refreshStatus()
+      setMode(MODE.changes)
+    } catch (error) {
+      setCloneState({ fullName: repo.fullName, startedAt: 0, error: api.describeError(error, tRef.current) })
+    }
+  }, [resolveProject, refreshStatus, setMode])
+
+  /** 设置页里新增/移除账号后刷新列表。 */
+  const reloadAccounts = useCallback(async () => {
+    setRemoteRepos([])
+    await loadAccounts()
+  }, [loadAccounts])
+
+  const addAccount = useCallback(async (input) => {
+    setAccountsBusy(true)
+    setAccountsError(null)
+    try {
+      await api.addAccount(input)
+      await reloadAccounts()
+    } catch (error) {
+      setAccountsError(api.describeError(error, tRef.current))
+    } finally {
+      setAccountsBusy(false)
+    }
+  }, [reloadAccounts])
+
+  const removeAccount = useCallback(async (id) => {
+    setAccountsBusy(true)
+    setAccountsError(null)
+    try {
+      await api.removeAccount({ id })
+      await reloadAccounts()
+    } catch (error) {
+      setAccountsError(api.describeError(error, tRef.current))
+    } finally {
+      setAccountsBusy(false)
+    }
+  }, [reloadAccounts])
+
   /* ------------------------------ 分栏拖拽 ------------------------------ */
   const beginDrag = useCallback((event) => {
     if (event.button !== undefined && event.button !== 0) return
@@ -924,7 +1056,17 @@ function buildUpdateNote(updateState, t) {
           'aria-selected': mode === MODE.files ? 'true' : 'false',
           title: t('mode.filesHint'),
           onClick: () => setMode(MODE.files)
-        }, t('mode.files'))),
+        }, t('mode.files')),
+        h('button', {
+          type: 'button',
+          className: 'dgp-seg-btn',
+          role: 'tab',
+          'data-active': mode === MODE.remote ? 'true' : undefined,
+          'aria-selected': mode === MODE.remote ? 'true' : 'false',
+          'data-dgp-tab': 'remote',
+          title: t('mode.remoteHint'),
+          onClick: () => setMode(MODE.remote)
+        }, t('mode.remote'))),
       h('div', { className: 'dgp-spacer' }),
       // 检测更新的结果贴在版本号左边，不单独占一行（宽度不够时自己截断，全文在 title 里）
       updateNote === null
@@ -1028,8 +1170,40 @@ function buildUpdateNote(updateState, t) {
     ? status.counts.total
     : 0
 
+  /** 远端页签的仓库列表：本地筛选只作用在已拉取的那几页上。 */
+  const visibleRemoteRepos = remoteFilter.trim() === ''
+    ? remoteRepos
+    : remoteRepos.filter((repo) => {
+      const needle = remoteFilter.trim().toLowerCase()
+      return repo.fullName.toLowerCase().includes(needle)
+        || repo.description.toLowerCase().includes(needle)
+        || repo.language.toLowerCase().includes(needle)
+    })
+
   let leftPane
-  if (mode === MODE.changes) {
+  if (mode === MODE.remote) {
+    leftPane = h(RemotePane, {
+      accounts,
+      accountId: remoteAccountId,
+      repos: visibleRemoteRepos,
+      loading: remoteLoading,
+      error: remoteError,
+      hasMore: remoteHasMore,
+      filter: remoteFilter,
+      clone: cloneState,
+      now: cloneNow,
+      onSelectAccount: (account) => setRemoteAccountId(account.id),
+      onRefresh: () => loadRepos(remoteAccountId, 1, false),
+      onLoadMore: () => loadRepos(remoteAccountId, Math.floor(remoteRepos.length / 100) + 1, true),
+      onFilterChange: setRemoteFilter,
+      onOpenSettings: () => {
+        setShowSettings(true)
+        loadAccounts()
+      },
+      onClone: cloneRepo,
+      t
+    })
+  } else if (mode === MODE.changes) {
     if (gitRoots.length === 0) {
       // 整个项目里没有任何工作树：变更列表无从谈起，但文件浏览照常可用。
       leftPane = h(EmptyState, {
@@ -1106,7 +1280,18 @@ function buildUpdateNote(updateState, t) {
   }
 
   let rightPane
-  if (mode === MODE.changes) {
+  if (mode === MODE.remote) {
+    // 远端页签只需要说明「拉下来的东西会落在哪」，选中仓库时右侧不承载 diff
+    rightPane = h('div', { className: 'dgp-viewer' },
+      h(EmptyState, {
+        icon: 'folder-open',
+        title: t('remote.cloneTargetTitle'),
+        description: project.projectRoot === null
+          ? t('status.noCwd')
+          : t('remote.cloneTargetDesc', { path: project.projectRoot }),
+        t
+      }))
+  } else if (mode === MODE.changes) {
     if (selection === null) {
       // 和 DiffView 用同一个容器壳，空态与有内容时的几何完全一致（居中，不贴左上角）
       rightPane = h('div', { className: 'dgp-viewer' },
@@ -1324,6 +1509,12 @@ function buildUpdateNote(updateState, t) {
       onChangeChangesView: setChangesView,
       untrackedMode,
       onChangeUntrackedMode: setUntrackedMode,
+      accounts,
+      providers,
+      accountsBusy,
+      accountsError,
+      onAddAccount: addAccount,
+      onRemoveAccount: removeAccount,
       onBack: () => setShowSettings(false),
       t
     })

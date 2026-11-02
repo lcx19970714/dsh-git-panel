@@ -986,9 +986,65 @@ export const CSS = `
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.9));
   font-size: 11px;
 }
+
+/* ── 远端页签：账号 chip、仓库列表、行内克隆表单 ── */
+.dgp-remote { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; gap: 6px; padding: 8px 8px 6px; }
+.dgp-remote-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dgp-remote-head-label { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.dgp-remote-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 140px;
+  padding: 1px 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  line-height: 20px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dgp-remote-chip:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dgp-remote-chip[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dgp-remote-refresh { flex: none; margin-left: auto; }
+.dgp-remote-filter { flex: none; }
+.dgp-remote-item { display: flex; flex-direction: column; gap: 2px; padding: 5px 6px; border-radius: var(--dsw-radius-xs); }
+.dgp-remote-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dgp-remote-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dgp-remote-name { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--dsw-alias-label-primary); }
+.dgp-remote-badge {
+  flex: none;
+  padding: 0 4px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 14px;
+}
+.dgp-remote-action { flex: none; }
+.dgp-remote-meta { color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.dgp-remote-cloneform { display: flex; align-items: center; gap: 6px; padding: 4px 0 2px; }
+.dgp-remote-cloneform-label { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.dgp-remote-cloneform-input { flex: 1 1 auto; min-width: 0; height: 24px; }
+.dgp-remote-status { display: flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+.dgp-remote-status[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
+.dgp-remote-more { align-self: center; margin: 6px 0; }
+
+/* ── 设置页：账号列表与添加表单 ── */
+.dgp-account-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.dgp-account-item { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: var(--dsw-radius-xs); }
+.dgp-account-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dgp-account-name { flex: 0 1 auto; min-width: 0; font-size: 12px; }
+.dgp-account-meta { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.dgp-account-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.dgp-account-provider { flex: none; width: 110px; }
+.dgp-account-form .dgp-input { flex: 1 1 140px; min-width: 0; height: 28px; }
 `
 
-/** 幂等注入样式表（必须在 factory 执行期间同步调用）。 */
 export function ensureStyles() {
   if (document.getElementById(STYLE_ID) !== null) return
   const style = document.createElement('style')

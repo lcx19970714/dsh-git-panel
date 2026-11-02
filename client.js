@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 25 个 */
+/* 模块: 26 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -1168,9 +1168,65 @@ window.__ModuleLoader__.load({
         color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.9));
         font-size: 11px;
       }
+
+      /* ── 远端页签：账号 chip、仓库列表、行内克隆表单 ── */
+      .dgp-remote { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; gap: 6px; padding: 8px 8px 6px; }
+      .dgp-remote-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+      .dgp-remote-head-label { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+      .dgp-remote-chip {
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 140px;
+        padding: 1px 8px;
+        border: 0;
+        border-radius: var(--dsw-radius-xs);
+        background: transparent;
+        color: var(--dsw-alias-label-secondary);
+        font: inherit;
+        font-size: 11px;
+        line-height: 20px;
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .dgp-remote-chip:hover { background: var(--dsw-alias-interactive-bg-hover); }
+      .dgp-remote-chip[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+      .dgp-remote-refresh { flex: none; margin-left: auto; }
+      .dgp-remote-filter { flex: none; }
+      .dgp-remote-item { display: flex; flex-direction: column; gap: 2px; padding: 5px 6px; border-radius: var(--dsw-radius-xs); }
+      .dgp-remote-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
+      .dgp-remote-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+      .dgp-remote-name { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--dsw-alias-label-primary); }
+      .dgp-remote-badge {
+        flex: none;
+        padding: 0 4px;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+        color: var(--dsw-alias-label-tertiary);
+        font-size: 10px;
+        line-height: 14px;
+      }
+      .dgp-remote-action { flex: none; }
+      .dgp-remote-meta { color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+      .dgp-remote-cloneform { display: flex; align-items: center; gap: 6px; padding: 4px 0 2px; }
+      .dgp-remote-cloneform-label { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+      .dgp-remote-cloneform-input { flex: 1 1 auto; min-width: 0; height: 24px; }
+      .dgp-remote-status { display: flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+      .dgp-remote-status[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
+      .dgp-remote-more { align-self: center; margin: 6px 0; }
+
+      /* ── 设置页：账号列表与添加表单 ── */
+      .dgp-account-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+      .dgp-account-item { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: var(--dsw-radius-xs); }
+      .dgp-account-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
+      .dgp-account-name { flex: 0 1 auto; min-width: 0; font-size: 12px; }
+      .dgp-account-meta { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+      .dgp-account-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+      .dgp-account-provider { flex: none; width: 110px; }
+      .dgp-account-form .dgp-input { flex: 1 1 140px; min-width: 0; height: 28px; }
       `
 
-      /** 幂等注入样式表（必须在 factory 执行期间同步调用）。 */
       function ensureStyles() {
         if (document.getElementById(STYLE_ID) !== null) return
         const style = document.createElement('style')
@@ -1211,8 +1267,10 @@ window.__ModuleLoader__.load({
 
         'mode.changes': '变更',
         'mode.files': '文件',
+        'mode.remote': '远端',
         'mode.changesHint': '查看工作区改动',
         'mode.filesHint': '浏览项目文件',
+        'mode.remoteHint': '浏览账号里的仓库并拉取到项目',
 
         'editor.save': '保存',
         'editor.saved': '已保存 {time}',
@@ -1251,6 +1309,29 @@ window.__ModuleLoader__.load({
         'branch.empty': '这个仓库还没有任何分支',
         'branch.switching': '正在切换到 {name}…',
         'branch.failed': '切换失败：{message}',
+        'remote.title': '账号与仓库',
+        'remote.noAccounts': '还没有添加代码托管账号',
+        'remote.noAccountsHint': '到设置里添加 GitHub / Gitee 账号（只需要一个只读 token）',
+        'remote.openSettings': '去设置',
+        'remote.loading': '正在读取仓库…',
+        'remote.failed': '读取失败：{message}',
+        'remote.empty': '这个账号下没有仓库',
+        'remote.loadMore': '加载更多',
+        'remote.private': '私有',
+        'remote.clone': '拉取',
+        'remote.cloneTitle': '把这个仓库拉到项目里',
+        'remote.cloneFolder': '目标文件夹名',
+        'remote.cloneConfirm': '拉取到项目',
+        'remote.cloneCancel': '取消',
+        'remote.cloning': '正在拉取… {seconds}s',
+        'remote.cloned': '已拉取到 {path}',
+        'remote.filter': '筛选仓库…',
+        'remote.refresh': '重新读取',
+        'remote.account': '账号',
+        'remote.updatedAt': '更新于 {time}',
+        'remote.openWeb': '在浏览器打开',
+        'remote.cloneTargetTitle': '拉取到项目目录',
+        'remote.cloneTargetDesc': '仓库会被克隆到 {path} 下的子文件夹',
         'roots.title': '储存库',
 
         'group.conflicted': '冲突',
@@ -1279,6 +1360,17 @@ window.__ModuleLoader__.load({
         'commit.unmerged': '有未解决的冲突，先把冲突解决掉再提交',
         'commit.generateFailed': '生成提交说明失败：{message}',
 
+        'accounts.title': '代码托管账号',
+        'accounts.hint': 'token 存在 DSH 凭据服务里，本插件不保存明文；只需要只读权限即可列出仓库',
+        'accounts.provider': '平台',
+        'accounts.label': '备注名（可选）',
+        'accounts.token': '访问令牌',
+        'accounts.add': '添加账号',
+        'accounts.adding': '正在验证令牌…',
+        'accounts.remove': '移除账号 {name}',
+        'accounts.empty': '还没有账号',
+        'accounts.failed': '添加失败：{message}',
+        'accounts.noCredentials': '当前 DSH 组合没有凭据服务，无法保存账号令牌',
         'settings.title': '设置',
         'settings.back': '返回',
         'settings.open': '设置',
@@ -1357,8 +1449,10 @@ window.__ModuleLoader__.load({
 
         'mode.changes': 'Changes',
         'mode.files': 'Files',
+        'mode.remote': 'Remote',
         'mode.changesHint': 'Review working tree changes',
         'mode.filesHint': 'Browse project files',
+        'mode.remoteHint': 'Browse repositories on your accounts and clone one',
 
         'editor.save': 'Save',
         'editor.saved': 'Saved {time}',
@@ -1397,6 +1491,29 @@ window.__ModuleLoader__.load({
         'branch.empty': 'This repository has no branches yet',
         'branch.switching': 'Switching to {name}…',
         'branch.failed': 'Could not switch: {message}',
+        'remote.title': 'Accounts & repositories',
+        'remote.noAccounts': 'No code hosting account yet',
+        'remote.noAccountsHint': 'Add a GitHub / Gitee account in Settings (a read-only token is enough)',
+        'remote.openSettings': 'Open settings',
+        'remote.loading': 'Loading repositories…',
+        'remote.failed': 'Could not load: {message}',
+        'remote.empty': 'No repositories on this account',
+        'remote.loadMore': 'Load more',
+        'remote.private': 'Private',
+        'remote.clone': 'Clone',
+        'remote.cloneTitle': 'Clone this repository into the project',
+        'remote.cloneFolder': 'Target folder name',
+        'remote.cloneConfirm': 'Clone into project',
+        'remote.cloneCancel': 'Cancel',
+        'remote.cloning': 'Cloning… {seconds}s',
+        'remote.cloned': 'Cloned to {path}',
+        'remote.filter': 'Filter repositories…',
+        'remote.refresh': 'Reload',
+        'remote.account': 'Account',
+        'remote.updatedAt': 'Updated {time}',
+        'remote.openWeb': 'Open in browser',
+        'remote.cloneTargetTitle': 'Clone into the project',
+        'remote.cloneTargetDesc': 'Repositories are cloned into a subfolder of {path}',
         'roots.title': 'Repositories',
 
         'group.conflicted': 'Conflicts',
@@ -1425,6 +1542,17 @@ window.__ModuleLoader__.load({
         'commit.unmerged': 'Resolve the conflicts before committing',
         'commit.generateFailed': 'Could not generate a commit message: {message}',
 
+        'accounts.title': 'Code hosting accounts',
+        'accounts.hint': 'Tokens live in the DSH credential store; this plugin never persists them. Read-only scope is enough to list repositories.',
+        'accounts.provider': 'Provider',
+        'accounts.label': 'Label (optional)',
+        'accounts.token': 'Access token',
+        'accounts.add': 'Add account',
+        'accounts.adding': 'Validating token…',
+        'accounts.remove': 'Remove account {name}',
+        'accounts.empty': 'No accounts yet',
+        'accounts.failed': 'Could not add: {message}',
+        'accounts.noCredentials': 'This DSH composition has no credential service, so account tokens cannot be stored',
         'settings.title': 'Settings',
         'settings.back': 'Back',
         'settings.open': 'Settings',
@@ -1534,6 +1662,7 @@ window.__ModuleLoader__.load({
       const { EmptyState, LoadingState, InlineNote } = __m("./components/States.js");
       const { CommitBox } = __m("./components/CommitBox.js");
       const { SettingsView } = __m("./components/SettingsView.js");
+      const { RemotePane } = __m("./components/RemotePane.js");
       const { MODE, usePref, useLatestGuard } = __m("./store.js");
       const api = __m("./api.js");
       const { reconcileSelection } = __m("./util/changes.js");
@@ -1581,6 +1710,21 @@ window.__ModuleLoader__.load({
         const [repositoriesOpen, setRepositoriesOpen] = usePref('repositoriesOpen')
         const [changesView, setChangesView] = usePref('changesView')
         const [untrackedMode, setUntrackedMode] = usePref('untrackedMode')
+
+        /* ------------------------------ 远端账号 ------------------------------ */
+        const [accounts, setAccounts] = useState([])
+        const [accountsLoaded, setAccountsLoaded] = useState(false)
+        const [remoteAccountId, setRemoteAccountId] = useState(null)
+        const [remoteRepos, setRemoteRepos] = useState([])
+        const [remoteHasMore, setRemoteHasMore] = useState(false)
+        const [remoteLoading, setRemoteLoading] = useState(false)
+        const [remoteError, setRemoteError] = useState(null)
+        const [remoteFilter, setRemoteFilter] = useState('')
+        const [cloneState, setCloneState] = useState(null)
+        const [cloneNow, setCloneNow] = useState(0)
+        const [providers, setProviders] = useState([])
+        const [accountsBusy, setAccountsBusy] = useState(false)
+        const [accountsError, setAccountsError] = useState(null)
 
         /* ------------------------------- 根 ------------------------------- */
         const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
@@ -2295,6 +2439,122 @@ window.__ModuleLoader__.load({
           return api.listDirectory({ rootPath: root.path, path: relPath ?? '' }, { signal })
         }, [])
 
+        /* ------------------------------ 远端账号 ------------------------------ */
+
+        /** 读账号列表（token 不会下发到客户端，只有 id/login/label）。 */
+        const loadAccounts = useCallback(async () => {
+          try {
+            const value = await api.listAccounts({})
+            setAccounts(value.accounts)
+            setProviders(value.providers)
+            setAccountsLoaded(true)
+            setRemoteAccountId((previous) => {
+              if (previous !== null && value.accounts.some((account) => account.id === previous)) return previous
+              return value.accounts.length > 0 ? value.accounts[0].id : null
+            })
+          } catch (error) {
+            setAccountsLoaded(true)
+            setRemoteError(api.describeError(error, tRef.current))
+          }
+        }, [])
+
+        /** 读某个账号的仓库；append 用于「加载更多」。 */
+        const loadRepos = useCallback(async (accountId, page, append) => {
+          if (typeof accountId !== 'string') return
+          setRemoteLoading(true)
+          if (append !== true) setRemoteError(null)
+          try {
+            const value = await api.listRemoteRepos({ accountId, page })
+            setRemoteRepos((previous) => (append === true ? [...previous, ...value.repos] : value.repos))
+            setRemoteHasMore(value.hasMore === true)
+          } catch (error) {
+            setRemoteError(api.describeError(error, tRef.current))
+            if (append !== true) setRemoteRepos([])
+          } finally {
+            setRemoteLoading(false)
+          }
+        }, [])
+
+        /** 进「远端」页签且还没读过账号时读一次。 */
+        useEffect(() => {
+          if (mode !== MODE.remote || accountsLoaded) return
+          loadAccounts()
+        }, [mode, accountsLoaded, loadAccounts])
+
+        /** 切账号或首次进入时读第一页。 */
+        useEffect(() => {
+          if (mode !== MODE.remote || remoteAccountId === null) return
+          loadRepos(remoteAccountId, 1, false)
+        }, [mode, remoteAccountId, loadRepos])
+
+        /** 克隆期间每 200ms 刷新已等待秒数。 */
+        useEffect(() => {
+          if (cloneState === null || cloneState.error !== null) {
+            setCloneNow(0)
+            return undefined
+          }
+          const timer = setInterval(() => setCloneNow(Date.now()), 200)
+          return () => clearInterval(timer)
+        }, [cloneState])
+
+        /** 把远端仓库克隆到项目根下，成功后重新解析根并切到变更页。 */
+        const cloneRepo = useCallback(async (repo, targetName) => {
+          const projectRoot = projectRef.current.projectRoot
+          if (typeof projectRoot !== 'string' || projectRoot === '') {
+            setCloneState({ fullName: repo.fullName, startedAt: 0, error: tRef.current('status.noCwd') })
+            return
+          }
+          setCloneState({ fullName: repo.fullName, startedAt: Date.now(), error: null })
+          setCloneNow(Date.now())
+          try {
+            await api.cloneRemoteRepo({
+              accountId: repo.accountId,
+              fullName: repo.fullName,
+              cloneUrl: repo.cloneUrl,
+              projectRoot,
+              targetName: targetName ?? ''
+            })
+            setCloneState(null)
+            await resolveProject()
+            await refreshStatus()
+            setMode(MODE.changes)
+          } catch (error) {
+            setCloneState({ fullName: repo.fullName, startedAt: 0, error: api.describeError(error, tRef.current) })
+          }
+        }, [resolveProject, refreshStatus, setMode])
+
+        /** 设置页里新增/移除账号后刷新列表。 */
+        const reloadAccounts = useCallback(async () => {
+          setRemoteRepos([])
+          await loadAccounts()
+        }, [loadAccounts])
+
+        const addAccount = useCallback(async (input) => {
+          setAccountsBusy(true)
+          setAccountsError(null)
+          try {
+            await api.addAccount(input)
+            await reloadAccounts()
+          } catch (error) {
+            setAccountsError(api.describeError(error, tRef.current))
+          } finally {
+            setAccountsBusy(false)
+          }
+        }, [reloadAccounts])
+
+        const removeAccount = useCallback(async (id) => {
+          setAccountsBusy(true)
+          setAccountsError(null)
+          try {
+            await api.removeAccount({ id })
+            await reloadAccounts()
+          } catch (error) {
+            setAccountsError(api.describeError(error, tRef.current))
+          } finally {
+            setAccountsBusy(false)
+          }
+        }, [reloadAccounts])
+
         /* ------------------------------ 分栏拖拽 ------------------------------ */
         const beginDrag = useCallback((event) => {
           if (event.button !== undefined && event.button !== 0) return
@@ -2433,7 +2693,17 @@ window.__ModuleLoader__.load({
                 'aria-selected': mode === MODE.files ? 'true' : 'false',
                 title: t('mode.filesHint'),
                 onClick: () => setMode(MODE.files)
-              }, t('mode.files'))),
+              }, t('mode.files')),
+              h('button', {
+                type: 'button',
+                className: 'dgp-seg-btn',
+                role: 'tab',
+                'data-active': mode === MODE.remote ? 'true' : undefined,
+                'aria-selected': mode === MODE.remote ? 'true' : 'false',
+                'data-dgp-tab': 'remote',
+                title: t('mode.remoteHint'),
+                onClick: () => setMode(MODE.remote)
+              }, t('mode.remote'))),
             h('div', { className: 'dgp-spacer' }),
             // 检测更新的结果贴在版本号左边，不单独占一行（宽度不够时自己截断，全文在 title 里）
             updateNote === null
@@ -2537,8 +2807,40 @@ window.__ModuleLoader__.load({
           ? status.counts.total
           : 0
 
+        /** 远端页签的仓库列表：本地筛选只作用在已拉取的那几页上。 */
+        const visibleRemoteRepos = remoteFilter.trim() === ''
+          ? remoteRepos
+          : remoteRepos.filter((repo) => {
+            const needle = remoteFilter.trim().toLowerCase()
+            return repo.fullName.toLowerCase().includes(needle)
+              || repo.description.toLowerCase().includes(needle)
+              || repo.language.toLowerCase().includes(needle)
+          })
+
         let leftPane
-        if (mode === MODE.changes) {
+        if (mode === MODE.remote) {
+          leftPane = h(RemotePane, {
+            accounts,
+            accountId: remoteAccountId,
+            repos: visibleRemoteRepos,
+            loading: remoteLoading,
+            error: remoteError,
+            hasMore: remoteHasMore,
+            filter: remoteFilter,
+            clone: cloneState,
+            now: cloneNow,
+            onSelectAccount: (account) => setRemoteAccountId(account.id),
+            onRefresh: () => loadRepos(remoteAccountId, 1, false),
+            onLoadMore: () => loadRepos(remoteAccountId, Math.floor(remoteRepos.length / 100) + 1, true),
+            onFilterChange: setRemoteFilter,
+            onOpenSettings: () => {
+              setShowSettings(true)
+              loadAccounts()
+            },
+            onClone: cloneRepo,
+            t
+          })
+        } else if (mode === MODE.changes) {
           if (gitRoots.length === 0) {
             // 整个项目里没有任何工作树：变更列表无从谈起，但文件浏览照常可用。
             leftPane = h(EmptyState, {
@@ -2615,7 +2917,18 @@ window.__ModuleLoader__.load({
         }
 
         let rightPane
-        if (mode === MODE.changes) {
+        if (mode === MODE.remote) {
+          // 远端页签只需要说明「拉下来的东西会落在哪」，选中仓库时右侧不承载 diff
+          rightPane = h('div', { className: 'dgp-viewer' },
+            h(EmptyState, {
+              icon: 'folder-open',
+              title: t('remote.cloneTargetTitle'),
+              description: project.projectRoot === null
+                ? t('status.noCwd')
+                : t('remote.cloneTargetDesc', { path: project.projectRoot }),
+              t
+            }))
+        } else if (mode === MODE.changes) {
           if (selection === null) {
             // 和 DiffView 用同一个容器壳，空态与有内容时的几何完全一致（居中，不贴左上角）
             rightPane = h('div', { className: 'dgp-viewer' },
@@ -2833,6 +3146,12 @@ window.__ModuleLoader__.load({
             onChangeChangesView: setChangesView,
             untrackedMode,
             onChangeUntrackedMode: setUntrackedMode,
+            accounts,
+            providers,
+            accountsBusy,
+            accountsError,
+            onAddAccount: addAccount,
+            onRemoveAccount: removeAccount,
             onBack: () => setShowSettings(false),
             t
           })
@@ -5031,6 +5350,29 @@ window.__ModuleLoader__.load({
         return call('index/stage-group', payload, options)
       }
 
+      /** 代码托管账号（token 只在宿主侧，客户端永远拿不到）。 */
+      function listAccounts(payload, options) {
+        return call('accounts/list', payload, options)
+      }
+
+      function addAccount(payload, options) {
+        return call('accounts/add', payload, options)
+      }
+
+      function removeAccount(payload, options) {
+        return call('accounts/remove', payload, options)
+      }
+
+      /** 列某个账号下的仓库（一页 100 条）。 */
+      function listRemoteRepos(payload, options) {
+        return call('remote/repos', payload, options)
+      }
+
+      /** 把远端仓库克隆到项目根下的子目录。 */
+      function cloneRemoteRepo(payload, options) {
+        return call('remote/clone', payload, options)
+      }
+
       /** 列出本地分支。 */
       function listBranches(payload, options) {
         return call('branches/list', payload, options)
@@ -5097,7 +5439,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, removeAccount, listRemoteRepos, cloneRemoteRepo, listBranches, switchBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -6393,10 +6735,11 @@ window.__ModuleLoader__.load({
       /**
        * src/components/SettingsView.js —— 插件设置页
        *
-       * 目前只有一项：生成提交说明用的模型。选项来自宿主读到的模型目录，
-       * 选中即保存；目录为空或读取失败时只展示错误，不给一个假的默认项。
+       * 三段：生成提交说明的模型、变更区显示偏好、代码托管账号。
+       * 选项一律来自宿主读到的事实（模型目录、已保存账号），读不到就只展示错误，
+       * 不给一个假的默认项。
        */
-      const { h } = __m("./platform.js");
+      const { h, useState } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
       const { InlineNote } = __m("./components/States.js");
 
@@ -6404,9 +6747,26 @@ window.__ModuleLoader__.load({
         const source = props === null || props === undefined ? {} : props
         const translate = source.t
         const models = Array.isArray(source.models) ? source.models : []
+        const accounts = Array.isArray(source.accounts) ? source.accounts : []
         const loading = source.loading === true
         const error = typeof source.error === 'string' && source.error !== '' ? source.error : null
         const saved = source.saved === true
+        const accountsBusy = source.accountsBusy === true
+        const accountsError = typeof source.accountsError === 'string' && source.accountsError !== ''
+          ? source.accountsError
+          : null
+        const providers = Array.isArray(source.providers) ? source.providers : []
+
+        const [provider, setProvider] = useState(providers.length > 0 ? providers[0].id : 'github')
+        const [label, setLabel] = useState('')
+        const [token, setToken] = useState('')
+
+        const submitAccount = () => {
+          if (typeof source.onAddAccount !== 'function' || token.trim() === '') return
+          source.onAddAccount({ provider, label: label.trim(), token: token.trim() })
+          setToken('')
+          setLabel('')
+        }
 
         return h('div', { className: 'dgp-settings', 'data-dgp-view': 'settings' },
           h('div', { className: 'dgp-settings-head' },
@@ -6466,10 +6826,269 @@ window.__ModuleLoader__.load({
               }
             },
             h('option', { value: 'merge' }, translate('settings.untrackedMerge')),
-            h('option', { value: 'separate' }, translate('settings.untrackedSeparate')))))
+            h('option', { value: 'separate' }, translate('settings.untrackedSeparate')))),
+
+          /* ------------------------------ 代码托管账号 ------------------------------ */
+          h('div', { className: 'dgp-settings-field' },
+            h('label', { className: 'dgp-settings-label' }, translate('accounts.title')),
+            h('p', { className: 'dgp-settings-hint' }, translate('accounts.hint')),
+            accounts.length === 0
+              ? h('p', { className: 'dgp-settings-hint', 'data-dgp-accounts': 'empty' }, translate('accounts.empty'))
+              : h('ul', { className: 'dgp-account-list', 'data-dgp-accounts': 'list' },
+                accounts.map((account) => h('li', { key: account.id, className: 'dgp-account-item' },
+                  h('span', { className: 'dgp-account-name dgp-oneline' }, account.label),
+                  h('span', { className: 'dgp-account-meta' }, account.providerLabel + ' · ' + account.login),
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-row-action',
+                    'data-dgp-account-remove': account.id,
+                    title: translate('accounts.remove', { name: account.label }),
+                    'aria-label': translate('accounts.remove', { name: account.label }),
+                    onClick: () => {
+                      if (typeof source.onRemoveAccount === 'function') source.onRemoveAccount(account.id)
+                    }
+                  }, h(Icon, { name: 'trash', size: 13 }))))),
+            accountsError !== null
+              ? h(InlineNote, { tone: 'error' }, accountsError)
+              : null,
+            h('div', { className: 'dgp-account-form' },
+              h('select', {
+                className: 'dgp-select dgp-account-provider',
+                'data-dgp-accounts': 'provider',
+                value: provider,
+                onChange: (event) => setProvider(event.target.value)
+              },
+              providers.map((item) => h('option', { key: item.id, value: item.id }, item.label))),
+              h('input', {
+                className: 'dgp-input',
+                'data-dgp-accounts': 'label',
+                placeholder: translate('accounts.label'),
+                value: label,
+                onChange: (event) => setLabel(event.target.value)
+              }),
+              h('input', {
+                className: 'dgp-input',
+                'data-dgp-accounts': 'token',
+                type: 'password',
+                placeholder: translate('accounts.token'),
+                value: token,
+                onChange: (event) => setToken(event.target.value)
+              }),
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'primary',
+                'data-dgp-accounts': 'add',
+                disabled: accountsBusy || token.trim() === '',
+                onClick: submitAccount
+              }, translate(accountsBusy ? 'accounts.adding' : 'accounts.add')))))
       }
 
       Object.assign(exports, { SettingsView });
+
+    });
+    __define("./components/RemotePane.js", (exports, module) => {
+      /**
+       * src/components/RemotePane.js —— 「远端」页签：账号里的仓库，一键拉到项目里
+       *
+       * 结构：
+       *   div.dgp-remote
+       *   ├─ div.dgp-remote-head        账号行（每个账号一个 chip）+ 重新读取
+       *   ├─ input.dgp-remote-filter     本地筛选
+       *   ├─ div.dgp-remote-list         仓库行（名称 / 私有标记 / 描述 / 语言 / 更新时间 / 拉取按钮）
+       *   └─ 空态 / 加载 / 错误（同一处，避免三套布局）
+       *
+       * 拉取走行内表单：点「拉取」展开目标文件夹名（默认仓库名），确认后交给 Panel 执行；
+       * 克隆期间这一行显示已等待秒数，失败原因直接显示在该行下方。
+       */
+      const { h, useState } = __m("./platform.js");
+      const { Icon } = __m("./ui/Icon.js");
+      const { formatClock } = __m("./util/time.js");
+
+      /** 秒数保留一位小数，避免每次 tick 都跳一大截。 */
+      function secondsOf(startedAt, now) {
+        if (startedAt === 0) return '0.0'
+        return ((now - startedAt) / 1000).toFixed(1)
+      }
+
+      function RemotePane(props) {
+        const source = props === null || props === undefined ? {} : props
+        const translate = source.t
+        const accounts = Array.isArray(source.accounts) ? source.accounts : []
+        const accountId = typeof source.accountId === 'string' ? source.accountId : null
+        const repos = Array.isArray(source.repos) ? source.repos : []
+        const loading = source.loading === true
+        const error = typeof source.error === 'string' && source.error !== '' ? source.error : null
+        const hasMore = source.hasMore === true
+        const filter = typeof source.filter === 'string' ? source.filter : ''
+        const clone = source.clone === null || source.clone === undefined ? null : source.clone
+        const now = typeof source.now === 'number' ? source.now : 0
+        const [folderFor, setFolderFor] = useState(null)
+        const [folderName, setFolderName] = useState('')
+
+        const beginClone = (repo) => {
+          setFolderFor(repo.fullName)
+          setFolderName(repo.name)
+        }
+
+        const cancelClone = () => {
+          setFolderFor(null)
+          setFolderName('')
+        }
+
+        const confirmClone = (repo) => {
+          if (typeof source.onClone !== 'function') return
+          setFolderFor(null)
+          source.onClone(repo, folderName.trim())
+        }
+
+        let body = null
+        if (accounts.length === 0) {
+          body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'no-accounts' },
+            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'external', size: 22 })),
+            h('div', { className: 'dgp-state-title' }, translate('remote.noAccounts')),
+            h('div', { className: 'dgp-state-desc' }, translate('remote.noAccountsHint')),
+            typeof source.onOpenSettings === 'function'
+              ? h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-dgp-remote': 'open-settings',
+                onClick: () => source.onOpenSettings()
+              }, translate('remote.openSettings'))
+              : null)
+        } else if (error !== null) {
+          body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'error' },
+            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+            h('div', { className: 'dgp-state-title' }, translate('remote.failed', { message: '' })),
+            h('div', { className: 'dgp-state-desc' }, error),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              onClick: () => {
+                if (typeof source.onRefresh === 'function') source.onRefresh()
+              }
+            }, translate('remote.refresh')))
+        } else if (loading && repos.length === 0) {
+          body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'loading' },
+            h('div', { className: 'dgp-state-icon' }, h('span', { className: 'dgp-spinner' })),
+            h('div', { className: 'dgp-state-title' }, translate('remote.loading')))
+        } else if (repos.length === 0) {
+          body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'empty' },
+            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'folder-open', size: 20 })),
+            h('div', { className: 'dgp-state-title' }, translate('remote.empty')))
+        } else {
+          body = h('div', { className: 'dgp-list', 'data-dgp-remote': 'list', role: 'list' },
+            repos.map((repo) => {
+              const cloning = clone !== null && clone.fullName === repo.fullName
+              return h('div', { key: repo.fullName, className: 'dgp-remote-item', role: 'listitem' },
+                h('div', { className: 'dgp-remote-row' },
+                  h('span', { className: 'dgp-remote-name dgp-oneline', title: repo.fullName }, repo.name),
+                  repo.private === true
+                    ? h('span', { className: 'dgp-remote-badge' }, translate('remote.private'))
+                    : null,
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn dgp-remote-action',
+                    'data-size': 'sm',
+                    'data-dgp-remote-clone': repo.fullName,
+                    disabled: cloning || folderFor !== null,
+                    title: translate('remote.cloneTitle'),
+                    onClick: () => beginClone(repo)
+                  }, translate('remote.clone'))),
+                h('div', { className: 'dgp-remote-meta dgp-oneline' },
+                  repo.description !== '' ? repo.description + ' · ' : '',
+                  repo.language !== '' ? repo.language + ' · ' : '',
+                  repo.updatedAt !== '' ? translate('remote.updatedAt', { time: formatClock(Date.parse(repo.updatedAt)) }) : ''),
+                folderFor === repo.fullName
+                  ? h('div', { className: 'dgp-remote-cloneform' },
+                    h('label', { className: 'dgp-remote-cloneform-label' }, translate('remote.cloneFolder')),
+                    h('input', {
+                      className: 'dgp-input dgp-remote-cloneform-input',
+                      'data-dgp-remote-folder': repo.fullName,
+                      value: folderName,
+                      onChange: (event) => setFolderName(event.target.value)
+                    }),
+                    h('button', {
+                      type: 'button',
+                      className: 'dgp-btn',
+                      'data-size': 'sm',
+                      'data-variant': 'primary',
+                      'data-dgp-remote-confirm': repo.fullName,
+                      onClick: () => confirmClone(repo)
+                    }, translate('remote.cloneConfirm')),
+                    h('button', {
+                      type: 'button',
+                      className: 'dgp-btn',
+                      'data-size': 'sm',
+                      onClick: cancelClone
+                    }, translate('remote.cloneCancel')))
+                  : null,
+                cloning
+                  ? h('div', { className: 'dgp-remote-status', 'data-dgp-remote-cloning': repo.fullName },
+                    h('span', { className: 'dgp-spinner' }),
+                    h('span', null, translate('remote.cloning', { seconds: secondsOf(clone.startedAt, now) })))
+                  : null,
+                clone !== null && clone.error !== null && clone.fullName === repo.fullName
+                  ? h('div', { className: 'dgp-remote-status', 'data-tone': 'error' },
+                    h('span', null, clone.error))
+                  : null)
+            }),
+            hasMore
+              ? h('button', {
+                type: 'button',
+                className: 'dgp-btn dgp-remote-more',
+                'data-size': 'sm',
+                disabled: loading,
+                onClick: () => {
+                  if (typeof source.onLoadMore === 'function') source.onLoadMore()
+                }
+              }, translate('remote.loadMore'))
+              : null)
+        }
+
+        return h('div', { className: 'dgp-remote', 'data-dgp-view': 'remote' },
+          accounts.length === 0
+            ? null
+            : h('div', { className: 'dgp-remote-head' },
+              h('span', { className: 'dgp-remote-head-label' }, translate('remote.account')),
+              accounts.map((account) => h('button', {
+                key: account.id,
+                type: 'button',
+                className: 'dgp-remote-chip',
+                'data-dgp-account': account.id,
+                'data-active': account.id === accountId ? 'true' : undefined,
+                title: account.providerLabel + ' · ' + account.login,
+                onClick: () => {
+                  if (typeof source.onSelectAccount === 'function') source.onSelectAccount(account)
+                }
+              }, account.label)),
+              h('button', {
+                type: 'button',
+                className: 'dgp-iconbtn dgp-remote-refresh',
+                title: translate('remote.refresh'),
+                'aria-label': translate('remote.refresh'),
+                onClick: () => {
+                  if (typeof source.onRefresh === 'function') source.onRefresh()
+                }
+              }, h(Icon, { name: 'refresh', size: 13 }))),
+          accounts.length === 0
+            ? null
+            : h('input', {
+              className: 'dgp-input dgp-remote-filter',
+              'data-dgp-remote-filter': 'true',
+              placeholder: translate('remote.filter'),
+              value: filter,
+              onChange: (event) => {
+                if (typeof source.onFilterChange === 'function') source.onFilterChange(event.target.value)
+              }
+            }),
+          body)
+      }
+
+      Object.assign(exports, { RemotePane });
 
     });
     __define("./store.js", (exports, module) => {
@@ -6484,7 +7103,10 @@ window.__ModuleLoader__.load({
        */
       const { useCallback, useEffect, useMemo, useRef, useState } = __m("./platform.js");
 
-      const MODE = { changes: 'changes', files: 'files' }
+      const MODE = { changes: 'changes', files: 'files', remote: 'remote' }
+
+      /** 三个页签的顺序（工具条与偏好校验共用）。 */
+      const MODES = [MODE.changes, MODE.files, MODE.remote]
 
       const STORAGE_KEY = 'dsh-git-panel:prefs:v1'
 
@@ -6516,7 +7138,7 @@ window.__ModuleLoader__.load({
       /** 把任意输入收敛成合法的偏好对象。 */
       function sanitize(input) {
         const out = { ...DEFAULTS }
-        if (input.mode === MODE.changes || input.mode === MODE.files) out.mode = input.mode
+        if (MODES.includes(input.mode)) out.mode = input.mode
         if (input.diffView === 'unified' || input.diffView === 'split') out.diffView = input.diffView
         if (typeof input.wrap === 'boolean') out.wrap = input.wrap
         if (typeof input.ignoreWhitespace === 'boolean') out.ignoreWhitespace = input.ignoreWhitespace
@@ -6595,7 +7217,7 @@ window.__ModuleLoader__.load({
         return useMemo(() => ({ begin, isLatest }), [begin, isLatest])
       }
 
-      Object.assign(exports, { MODE, UNTRACKED_MODES, usePref, useLatestGuard });
+      Object.assign(exports, { MODE, MODES, UNTRACKED_MODES, usePref, useLatestGuard });
 
     });
     __define("./util/remote.js", (exports, module) => {

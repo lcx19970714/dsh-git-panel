@@ -9,7 +9,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from './platform.js'
 
-export const MODE = { changes: 'changes', files: 'files' }
+export const MODE = { changes: 'changes', files: 'files', remote: 'remote' }
+
+/** 三个页签的顺序（工具条与偏好校验共用）。 */
+export const MODES = [MODE.changes, MODE.files, MODE.remote]
 
 const STORAGE_KEY = 'dsh-git-panel:prefs:v1'
 
@@ -41,7 +44,7 @@ const GROUPS = ['conflicted', 'staged', 'unstaged', 'untracked']
 /** 把任意输入收敛成合法的偏好对象。 */
 function sanitize(input) {
   const out = { ...DEFAULTS }
-  if (input.mode === MODE.changes || input.mode === MODE.files) out.mode = input.mode
+  if (MODES.includes(input.mode)) out.mode = input.mode
   if (input.diffView === 'unified' || input.diffView === 'split') out.diffView = input.diffView
   if (typeof input.wrap === 'boolean') out.wrap = input.wrap
   if (typeof input.ignoreWhitespace === 'boolean') out.ignoreWhitespace = input.ignoreWhitespace

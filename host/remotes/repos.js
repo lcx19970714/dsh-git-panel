@@ -5,7 +5,7 @@ import path from 'node:path'
 import { existsSync, readdirSync } from 'node:fs'
 
 import { GitError, runGit } from '../git.js'
-import { lastPageOf, readJson, request } from './http.js'
+import { lastPageOf, readArray, readJson as readJsonSafe, readObject, request } from './http.js'
 import { requireFullName, requireProvider } from './providers.js'
 
 export function createRepos(deps) {
@@ -25,8 +25,10 @@ export function createRepos(deps) {
     const { provider, account } = await findAccount(input.accountId)
     const page = Number.isInteger(input.page) && input.page > 0 ? input.page : 1
     const url = provider.authorize(provider.apiBase + provider.reposPath(page), account.token)
-    const data = await readJson(await request(fetchImpl, url, { headers: provider.headers(account.token) }, options.signal))
-    if (!Array.isArray(data)) throw new GitError('remote-api-failed', '接口返回的仓库列表不是数组')
+    const data = await readArray(
+      await request(fetchImpl, url, { headers: provider.headers(account.token) }, options.signal),
+      '仓库'
+    )
     const repos = data.map((item) => ({ ...provider.normalizeRepo(item), provider: provider.id, accountId: account.id }))
     return { repos, page, hasMore: repos.length >= 100 }
   }
@@ -49,14 +51,14 @@ export function createRepos(deps) {
     const send = (url) => request(fetchImpl, provider.authorize(url, account.token), { headers }, options.signal)
     const activeProvider = provider
 
-    const detail = await readJson(await send(base))
+    const detail = await readObject(await send(base), '仓库详情')
 
     const section = async (listPath, isIssues) => {
       const listResponse = await send(base + listPath(pageSize))
-      const list = await readJson(listResponse)
-      if (!Array.isArray(list)) throw new GitError('remote-api-failed', '接口返回的列表不是数组：' + listPath(pageSize))
+      const list = await readArray(listResponse, '条目')
       const countResponse = await send(base + listPath(1))
-      await readJson(countResponse)
+      // 计数请求只要读到分页头，响应体本身是什么都无所谓
+      await readJsonSafe(countResponse)
       const items = list.filter((item) => (
         isIssues && activeProvider.issuesIncludePulls ? item.pull_request === undefined : true
       ))

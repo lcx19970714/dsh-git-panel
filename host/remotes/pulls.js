@@ -6,7 +6,7 @@
  *  - Gitee：审查只有「通过」（说明文字走评论接口）；合并方法两种；删分支走 prune_source_branch
  */
 import { GitError } from '../git.js'
-import { readJson, request } from './http.js'
+import { readArray, readJson, readObject, request } from './http.js'
 import { requireFullName, requirePullNumber } from './providers.js'
 
 export function createPulls(deps) {
@@ -29,14 +29,11 @@ export function createPulls(deps) {
     const base = provider.apiBase + provider.repoPath(fullName) + provider.pullPath(number)
     const send = (url, init = {}) => request(fetchImpl, provider.authorize(url, account.token), { headers, ...init }, options.signal)
 
-    const detail = await readJson(await send(base))
+    const detail = await readObject(await send(base), 'PR 详情')
 
     let reviews = []
     if (provider.pull.reviewsPath !== null) {
-      const listed = await readJson(await send(base + '/reviews'))
-      if (!Array.isArray(listed)) {
-        throw new GitError('remote-api-failed', provider.label + ' 的审查记录不是数组')
-      }
+      const listed = await readArray(await send(base + '/reviews'), provider.label + ' 审查记录')
       reviews = listed.map(provider.pull.normalizeReview)
     }
 
@@ -72,6 +69,7 @@ export function createPulls(deps) {
     if (provider.pull.reviewEvents === null) {
       // Gitee：说明文字走 PR 评论接口，再调 /review 表示通过（该接口不带 body）
       if (body !== '') await readJson(await send('/comments', { method: 'POST', body: JSON.stringify({ body }) }))
+      // Gitee 的审查接口成功时返回空响应，不需要读 JSON
       await readJson(await send('/review', { method: 'POST' }))
       return { verdict, bodyPosted: body !== '' }
     }
@@ -99,7 +97,7 @@ export function createPulls(deps) {
     const deleteBranch = input.deleteBranch === true
 
     // 先读一次详情：已合并 / 非打开 / 明确不可合并都直接拒绝，不让平台甩一句难懂的话
-    const detail = await readJson(await send(base))
+    const detail = await readObject(await send(base), 'PR 详情')
     const pull = provider.pull.normalizePull(detail)
     if (pull.merged === true) throw new GitError('already-merged', '这个 PR 已经合并过了')
     if (pull.state !== 'open') throw new GitError('not-open', '只有打开状态的 PR 才能合并（当前 ' + pull.state + '）')
@@ -109,7 +107,8 @@ export function createPulls(deps) {
     const payload = { merge_method: method }
     if (provider.pull.mergeDeletesBranch === 'flag') payload.prune_source_branch = deleteBranch
     const result = await readJson(await send(base + '/merge', { method: 'PUT', body: JSON.stringify(payload) }))
-    if (result.merged === false) {
+    // 空响应也算成功（平台不返回结果体）；只有明确 merged===false 才是失败
+    if (result !== null && typeof result === 'object' && result.merged === false) {
       throw new GitError('merge-failed', typeof result.message === 'string' ? result.message : '平台没有完成合并')
     }
 
@@ -127,7 +126,7 @@ export function createPulls(deps) {
       method,
       branchDeleted,
       headBranch: pull.headBranch,
-      message: typeof result.message === 'string' ? result.message : ''
+      message: result !== null && typeof result === 'object' && typeof result.message === 'string' ? result.message : ''
     }
   }
 

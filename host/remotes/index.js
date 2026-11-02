@@ -13,7 +13,7 @@
  */
 import { GitError } from '../git.js'
 import { createAccountStore, accountIdOf } from './accounts.js'
-import { readJson, request } from './http.js'
+import { readObject, request } from './http.js'
 import { PROVIDERS, PROVIDER_IDS, requireProvider } from './providers.js'
 import { createRepos } from './repos.js'
 import { createPulls } from './pulls.js'
@@ -62,7 +62,10 @@ export function createRemotes(deps) {
   /** 用令牌调一次 /user：既验证它有效，也拿到登录名。 */
   async function whoami(provider, token, signal) {
     const url = provider.authorize(provider.apiBase + provider.userPath(), token)
-    const data = await readJson(await request(fetchImpl, url, { headers: provider.headers(token) }, signal))
+    const data = await readObject(
+      await request(fetchImpl, url, { headers: provider.headers(token) }, signal),
+      '账号信息'
+    )
     const login = typeof data.login === 'string' ? data.login : ''
     if (login === '') throw new GitError('remote-api-failed', '接口没有返回登录名，无法确认这个令牌')
     return login

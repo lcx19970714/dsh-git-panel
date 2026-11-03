@@ -1047,6 +1047,18 @@ export const CSS = `
 .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
 .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dgp-ai-error > .dgp-detail-failure { margin: 0; }
+/* 深度审阅前的「拉到哪里」确认框 */
+.dgp-ai-clone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dgp-ai-clone-custom { display: flex; gap: 6px; align-items: center; }
+.dgp-ai-clone-custom > .dgp-input { flex: 1 1 auto; min-width: 0; }
 /* AI 审阅：平台没返回内容的文件 */
 .dgp-ai-skipped { display: flex; flex-direction: column; gap: 2px; }
 .dgp-skipped-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }

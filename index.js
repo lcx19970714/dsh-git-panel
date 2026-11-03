@@ -51,7 +51,10 @@ import {
   switchBranch,
   trackRemoteBranch,
   createBranch,
-  writeTextFile
+  writeTextFile,
+  prepareReviewBranch,
+  cloneForReview,
+  findLocalRepoFor
 } from './host/git.js'
 import { createRemotes } from './host/remotes/index.js'
 import {
@@ -121,6 +124,7 @@ export const ENDPOINTS = Object.freeze([
   'remote/pull/review',
   'remote/pull/ai-review',
   'remote/pull/deep-review',
+  'remote/pull/clone-for-review',
   'remote/pull/comment',
   'remote/pull/test',
   'remote/pull/pass',
@@ -563,6 +567,34 @@ function createDispatcher(ctx) {
    * 深度审阅：把 PR 的 head 拉到临时裸仓库/worktree，读完整文件后再交给模型。
    * 全程不碰用户工作区；临时目录在 finally 里删除。
    */
+  /** 准备一个能审阅的真实目录：本地已有就切分支，没有就告诉界面需要克隆。 */
+  async function prepareReviewDir(input, signal) {
+    const { accountId, fullName, number, rootPaths, rootPath, branch } = input
+    const source = await remotesOf().reviewSource({ accountId, fullName, number }, { signal })
+
+    // 1) 界面已经指定了目录（刚克隆完或复用上次的目录）
+    if (typeof rootPath === 'string' && rootPath !== '') {
+      const repo = await resolveRepo(requireAbsolute(rootPath, 'rootPath'))
+      if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+      return { source, localRoot: normalizeSlashes(repo.repoRoot), branch: typeof branch === 'string' ? branch : null }
+    }
+
+    // 2) 变更里已有的仓库：按 origin 找，找到就切到 PR 分支
+    const local = await findLocalRepoFor(
+      Array.isArray(rootPaths) ? rootPaths.map((item) => String(item)) : [],
+      source.repoUsed ?? fullName
+    )
+    if (local === null) return { source, localRoot: null, branch: null }
+    const prepared = await prepareReviewBranch(local.rootPath, {
+      url: source.url,
+      remoteRef: source.remoteRef,
+      number,
+      user: source.user,
+      token: source.token
+    }, { signal })
+    return { source, localRoot: local.rootPath, branch: prepared.branch }
+  }
+
   async function remotePullDeepReview(request, signal) {
     const settings = await readSettings()
     if (settings.reviewModel === null) {
@@ -571,25 +603,50 @@ function createDispatcher(ctx) {
     const accountId = requireString(request.accountId, 'accountId')
     const fullName = requireString(request.fullName, 'fullName')
     const number = request.number
-    const source = await remotesOf().reviewSource({ accountId, fullName, number }, { signal })
-    const diff = await remotesOf().pullDiff({ accountId, fullName, number }, { signal })
-    // 本地有对应仓库时复用它：把项目里的所有仓库根都交给 deepReview 逐个匹配 origin
-    const localRoots = []
-    for (const candidate of Array.isArray(request.rootPaths) ? request.rootPaths : []) {
-      if (typeof candidate !== 'string' || candidate === '') continue
-      const repo = await resolveRepo(requireAbsolute(candidate, 'rootPaths[]'))
-      if (repo?.repoRoot) localRoots.push(normalizeSlashes(repo.repoRoot))
+    const prepared = await prepareReviewDir({ accountId, fullName, number, rootPaths: request.rootPaths, rootPath: request.rootPath, branch: request.branch }, signal)
+
+    // 3) 本地没有：让界面弹框确认拉到哪里
+    if (prepared.localRoot === null) {
+      const repoUsed = prepared.source.repoUsed ?? fullName
+      return {
+        needsClone: true,
+        repoUsed,
+        headBranch: prepared.source.pull.headBranch,
+        suggestedName: String(repoUsed).split('/').pop(),
+        url: prepared.source.url
+      }
     }
+
+    const diff = await remotesOf().pullDiff({ accountId, fullName, number }, { signal })
     return deepReview({
       llm: llmService,
       pair: settings.reviewModel,
-      source,
-      pull: source.pull,
+      source: prepared.source,
+      pull: prepared.source.pull,
       files: diff.files,
       filesTruncated: diff.truncated,
-      localRoots,
+      localRoot: prepared.localRoot,
+      branch: prepared.branch,
       signal
     })
+  }
+
+  /** 克隆到用户确认的目录，并切到 PR 分支。 */
+  async function remotePullCloneForReview(request, signal) {
+    const accountId = requireString(request.accountId, 'accountId')
+    const fullName = requireString(request.fullName, 'fullName')
+    const number = request.number
+    const targetDir = requireAbsolute(request.targetDir, 'targetDir')
+    const source = await remotesOf().reviewSource({ accountId, fullName, number }, { signal })
+    const cloned = await cloneForReview(targetDir, {
+      url: source.url,
+      remoteRef: source.remoteRef,
+      number,
+      branch: source.pull.headBranch,
+      user: source.user,
+      token: source.token
+    }, { signal })
+    return { rootPath: normalizeSlashes(cloned.path), branch: cloned.branch, head: cloned.head }
   }
 
   /** 提交评论：内容由用户在面板里确认/编辑，这里只负责发出去。 */
@@ -830,6 +887,7 @@ function createDispatcher(ctx) {
     'remote/pull/diff': (request, signal) => remotePullDiff(request, signal),
     'remote/pull/ai-review': (request, signal) => remotePullAiReview(request, signal),
     'remote/pull/deep-review': (request, signal) => remotePullDeepReview(request, signal),
+    'remote/pull/clone-for-review': (request, signal) => remotePullCloneForReview(request, signal),
     'remote/pull/comment': (request, signal) => remotePullComment(request, signal),
     'remote/pull/review': (request, signal) => remotePullReview(request, signal),
     'remote/pull/pass': (request, signal) => remotePullPass(request, signal),

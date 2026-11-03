@@ -11,7 +11,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
-import { readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 export const DEFAULT_TIMEOUT_MS = 15_000
@@ -1251,6 +1251,84 @@ export async function trackRemoteBranch(repoRoot, remote, name, options = {}) {
   await runGit(repoRoot, ['switch', '-c', name, '--track', remote + '/' + name], { signal })
   const head = await readHead(repoRoot)
   return { branch: head.branch, head: head.head, upstream: head.upstream ?? null }
+}
+
+/* --------------------------------------------------- 为审阅准备本地目录 */
+
+function reviewAuthArgs(user, token) {
+  if (typeof token !== 'string' || token === '') return []
+  const basic = Buffer.from(String(user) + ':' + token, 'utf8').toString('base64')
+  return ['-c', 'http.extraHeader=AUTHORIZATION: basic ' + basic]
+}
+
+/** 审阅用的分支名：每次都是独立的，不覆盖用户已有分支。 */
+export function reviewBranchName(number) {
+  return 'dsh-review/pr-' + String(number)
+}
+
+/**
+ * 把某个本地仓库切到 PR 对应的分支。
+ *
+ * 不覆盖同名分支、不动未提交改动：工作区脏时 git 自己拒绝，错误原样上抛。
+ */
+export async function prepareReviewBranch(repoRoot, input, options = {}) {
+  const { signal } = options
+  const number = input.number
+  if (!Number.isInteger(number) || number <= 0) throw new GitError('bad-request', 'PR 编号不合法')
+  const branch = reviewBranchName(number)
+  await runGit(repoRoot, [
+    ...reviewAuthArgs(input.user, input.token),
+    'fetch', '--no-tags', input.url, '+' + input.remoteRef + ':refs/heads/' + branch
+  ], { signal, timeoutMs: 5 * 60 * 1000 })
+  await runGit(repoRoot, ['switch', branch], { signal })
+  const head = await readHead(repoRoot)
+  return { branch: head.branch, head: head.head }
+}
+
+/**
+ * 把 PR 的代码克隆到一个指定目录，并切到 PR 的分支。
+ *
+ * targetDir 必须是绝对路径且不存在（或为空目录）：不覆盖已有目录里的任何东西。
+ */
+export async function cloneForReview(targetDir, input, options = {}) {
+  const { signal } = options
+  const target = path.resolve(targetDir)
+  if (!path.isAbsolute(targetDir)) throw new GitError('bad-request', '目标目录必须是绝对路径')
+  if (existsSync(target)) {
+    const entries = await readdir(target)
+    if (entries.length > 0) throw new GitError('target-exists', '目标目录已存在且不为空：' + target)
+  } else {
+    await mkdir(target, { recursive: true })
+  }
+  const branch = typeof input.branch === 'string' && input.branch !== ''
+    ? input.branch
+    : reviewBranchName(input.number)
+  await runGit(target, [
+    ...reviewAuthArgs(input.user, input.token),
+    'clone', '--progress', input.url, '.'
+  ], { signal, timeoutMs: 15 * 60 * 1000 })
+  await runGit(target, [
+    ...reviewAuthArgs(input.user, input.token),
+    'fetch', 'origin', '+' + input.remoteRef + ':refs/heads/' + branch
+  ], { signal, timeoutMs: 5 * 60 * 1000 })
+  await runGit(target, ['switch', branch], { signal })
+  const head = await readHead(target)
+  return { path: target, branch: head.branch, head: head.head }
+}
+
+/** 项目里找与某个远端仓库对应的本地仓库根（按 origin URL 匹配）。 */
+export async function findLocalRepoFor(rootPaths, repoFullName) {
+  const wanted = String(repoFullName).toLowerCase()
+  for (const candidate of Array.isArray(rootPaths) ? rootPaths : []) {
+    if (typeof candidate !== 'string' || candidate === '') continue
+    const repo = await resolveRepo(candidate)
+    if (!repo?.repoRoot) continue
+    const remote = await runGit(repo.repoRoot, ['config', '--get', 'remote.origin.url'], { allowFailure: true })
+    if (remote.code !== 0) continue
+    const url = remote.stdout.toString('utf8').trim().toLowerCase().replace(/\\/g, '/').replace(/\.git$/, '')
+    if (url.includes('/' + wanted)) return { rootPath: normalizeSlashes(repo.repoRoot) }
+  }
+  return null
 }
 
 /**

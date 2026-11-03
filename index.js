@@ -64,7 +64,8 @@ import {
   listRemoteBranches,
   pushedState,
   branchCommits,
-  branchDiffText
+  branchDiffText,
+  pullBranch
 } from './host/git.js'
 import { generatePullText } from './host/pr-text.js'
 import { checkPluginUpdate, pluginInfo } from './host/plugin-meta.js'
@@ -124,6 +125,7 @@ export const ENDPOINTS = Object.freeze([
   'branches/list',
   'branch/switch',
   'branch/track',
+  'branch/pull',
   'branch/create',
   'accounts/list',
   'accounts/add',
@@ -1001,6 +1003,14 @@ function createDispatcher(ctx) {
     return { ...generated, source: diff.source }
   }
 
+  /** 拉取当前分支的最新代码（fetch + 只允许快进）。 */
+  async function branchPull(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    return pullBranch(normalizeSlashes(repo.repoRoot), { signal })
+  }
+
   /* 创建 PR ---------------------------------------------------------- */
 
   /** 目标分支排序：dev / main / master 优先，其余按自然序。 */
@@ -1299,6 +1309,7 @@ function createDispatcher(ctx) {
     'branches/list': (request, signal) => branchesList(request, signal),
     'branch/switch': (request, signal) => branchSwitch(request, signal),
     'branch/track': (request, signal) => branchTrack(request, signal),
+    'branch/pull': (request, signal) => branchPull(request, signal),
     'branch/create': (request, signal) => branchCreate(request, signal),
     'commit': (request, signal) => commit(request, signal),
     'commit/message': (request, signal) => commitMessage(request, signal),

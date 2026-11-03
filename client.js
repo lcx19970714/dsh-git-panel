@@ -1660,9 +1660,6 @@ window.__ModuleLoader__.load({
         'update.pluginUpToDate': '插件已是最新（v{version}）',
         'update.pluginNewer': '有新版本 v{version}（当前 v{current}）',
         'update.openRelease': '打开 Release 页面',
-        'update.fetching': '正在拉取远端…',
-        'update.upstreamChecked': '上游 {upstream}（{time}）',
-        'toolbar.fetchUpstream': '检查上游更新（git fetch）',
         'update.checking': '正在检测更新…',
         'update.upToDate': '已是最新（{upstream}）',
         'update.behind': '落后 {count} 个提交（{upstream}）',
@@ -1725,6 +1722,9 @@ window.__ModuleLoader__.load({
         'branch.localTag': '本地',
         'branch.remoteTag': '远程',
         'branch.trackHint': '本地还没有这个分支，点一下会创建 {ref} 的本地跟踪分支并切换',
+        'branch.pull': '拉取当前分支最新代码',
+        'branch.pulling': '正在拉取…',
+        'branch.pulled': '已拉取到 {head}',
         'branch.fetch': '获取远程更新',
         'branch.fetching': '正在获取远程更新…',
         'branch.upstreamGone': '上游已删除',
@@ -2049,9 +2049,6 @@ window.__ModuleLoader__.load({
         'update.pluginUpToDate': 'Plugin is up to date (v{version})',
         'update.pluginNewer': 'New version v{version} available (current v{current})',
         'update.openRelease': 'Open release page',
-        'update.fetching': 'Fetching remote…',
-        'update.upstreamChecked': 'Upstream {upstream} ({time})',
-        'toolbar.fetchUpstream': 'Check upstream (git fetch)',
         'update.checking': 'Checking for updates…',
         'update.upToDate': 'Up to date ({upstream})',
         'update.behind': '{count} commits behind ({upstream})',
@@ -2114,6 +2111,9 @@ window.__ModuleLoader__.load({
         'branch.localTag': 'local',
         'branch.remoteTag': 'remote',
         'branch.trackHint': 'No local branch yet — clicking creates a local tracking branch for {ref}',
+        'branch.pull': 'Pull latest for current branch',
+        'branch.pulling': 'Pulling…',
+        'branch.pulled': 'Pulled to {head}',
         'branch.fetch': 'Fetch remote updates',
         'branch.fetching': 'Fetching…',
         'branch.upstreamGone': 'upstream gone',
@@ -2635,8 +2635,6 @@ window.__ModuleLoader__.load({
         const [pluginState, setPluginState] = useState({
           version: null, busy: false, latestVersion: null, url: '', publishedAt: '', newer: false, checkedAt: 0, error: null
         })
-        /** 上游（git fetch）检查结果：只影响提示与 tooltip。 */
-        const [upstreamState, setUpstreamState] = useState({ fetchedAt: 0, ahead: 0, behind: 0, upstream: null })
         /** 工具条提示：插件检查结果与上游检查结果共用一条，谁最后动作显示谁。 */
         const [toolbarNote, setToolbarNote] = useState(null)
         const checkSeq = useLatestGuard()
@@ -2644,7 +2642,7 @@ window.__ModuleLoader__.load({
         // 派生值只依赖 state，放在动作之前：checkUpdates/openRemote 要用到它们
         const versionText = pluginState.version === null ? '—' : 'v' + pluginState.version
         const remoteWebUrl = webUrlOf(status === null ? null : status.remoteUrl)
-        const versionTitle = buildVersionTitle(pluginState, upstreamState, t)
+        const versionTitle = buildVersionTitle(pluginState, t)
         const updateNote = toolbarNote
         const draftsRef = useRef(drafts)
         draftsRef.current = drafts
@@ -3028,29 +3026,6 @@ window.__ModuleLoader__.load({
             alive = false
           }
         }, [])
-
-        /** 上游检查（git fetch）：手动触发，结果只报告不自动合并。 */
-        const fetchUpstream = useCallback(async () => {
-          if (activeRoot === null || activeRoot.isGit !== true) return
-          setToolbarNote({ tone: 'info', text: tRef.current('update.fetching') })
-          try {
-            const value = await api.fetchRemote({ rootPath: activeRoot.path })
-            setUpstreamState({
-              fetchedAt: value.fetchedAt,
-              ahead: value.ahead,
-              behind: value.behind,
-              upstream: value.upstream
-            })
-            setToolbarNote(buildUpstreamNote(value, tRef.current))
-            // fetch 改了远端跟踪引用：status 里的 ahead/behind 也要跟上
-            refreshStatus()
-          } catch (error) {
-            setToolbarNote({
-              tone: 'error',
-              text: tRef.current('update.failed', { message: api.describeError(error, tRef.current) })
-            })
-          }
-        }, [activeRoot, refreshStatus])
 
         /** 打开远端仓库网页（本地路径类远端没有网页，按钮此时是禁用的）。 */
         const openRemote = useCallback(() => {
@@ -3481,14 +3456,35 @@ window.__ModuleLoader__.load({
         }, [resolveProject, refreshStatus])
 
         /** 分支菜单里的「获取远程更新」：git fetch 后重读分支列表。 */
-        const fetchBranches = useCallback(async (root) => {
+        /** 拉取该仓库当前分支的最新代码（fetch + 只允许快进，不做自动合并）。 */
+        const pullBranchNow = useCallback(async (root) => {
+          let value
           try {
-            await api.fetchRemote({ rootPath: root.path })
+            value = await api.pullBranch({ rootPath: root.path })
           } catch (error) {
             throw new Error(api.describeError(error, tRef.current))
           }
+          setToolbarNote({
+            tone: 'info',
+            text: tRef.current('branch.pulled', { head: String(value.head).slice(0, 7) })
+          })
+          await resolveProject()
+          await refreshAll()
+          return value
+        }, [resolveProject, refreshAll])
+
+        const fetchBranches = useCallback(async (root) => {
+          let fetched
+          try {
+            fetched = await api.fetchRemote({ rootPath: root.path })
+          } catch (error) {
+            throw new Error(api.describeError(error, tRef.current))
+          }
+          // fetch 只更新远端跟踪引用：把 ahead/behind 报出来，用户才知道要不要真的拉取
+          setToolbarNote(buildUpstreamNote(fetched, tRef.current))
+          if (activeRoot !== null && activeRoot.id === root.id) refreshStatus()
           return api.listBranches({ rootPath: root.path })
-        }, [])
+        }, [activeRoot, refreshStatus])
 
         const switchBranch = useCallback(async (root, name) => {
           try {
@@ -4072,8 +4068,8 @@ window.__ModuleLoader__.load({
         }, [refreshAll, mode])
 
 
-      /** 版本号按钮的 tooltip：插件版本 · 最新版本 · 上游 · 检测时间。 */
-      function buildVersionTitle(pluginState, upstreamState, t) {
+      /** 版本号按钮的 tooltip：插件版本 · 最新版本 · 检测时间（与仓库状态无关）。 */
+      function buildVersionTitle(pluginState, t) {
         const parts = [t('toolbar.checkUpdates')]
         if (pluginState.version !== null) parts.push(t('update.currentVersion', { version: pluginState.version }))
         if (pluginState.checkedAt > 0 && pluginState.error === null) {
@@ -4081,12 +4077,6 @@ window.__ModuleLoader__.load({
             ? t('update.latestVersion', { version: pluginState.latestVersion })
             : t('update.pluginUpToDate', { version: pluginState.version }))
           parts.push(t('update.checkedAt', { time: formatClock(pluginState.checkedAt) }))
-        }
-        if (upstreamState.fetchedAt > 0) {
-          parts.push(t('update.upstreamChecked', {
-            upstream: upstreamState.upstream === null ? '' : upstreamState.upstream,
-            time: formatClock(upstreamState.fetchedAt)
-          }))
         }
         return parts.join(' \u00b7 ')
       }
@@ -4344,6 +4334,7 @@ window.__ModuleLoader__.load({
                 onLoadBranches: loadBranches,
                 onSwitchBranch: switchBranch,
                 onFetchBranches: fetchBranches,
+                onPullBranch: pullBranchNow,
                 onTrackBranch: trackBranchAt,
                 onCreateBranch: createBranch,
                 t
@@ -4534,15 +4525,6 @@ window.__ModuleLoader__.load({
           label: t('toolbar.refreshNow'),
           onClick: () => {
             refreshAll()
-            setMoreOpen(false)
-          }
-        }),
-        h(MenuItem, {
-          icon: 'sync',
-          label: t('toolbar.fetchUpstream'),
-          disabled: activeRoot === null || activeRoot.isGit !== true,
-          onClick: () => {
-            fetchUpstream()
             setMoreOpen(false)
           }
         }),
@@ -5054,6 +5036,22 @@ window.__ModuleLoader__.load({
             })
         }
 
+        /**
+         * 拉取当前分支最新代码（真正的 pull）。
+         * 与「获取远程更新」不同：那只是 fetch（更新远端跟踪引用），不会改工作区文件。
+         */
+        const pullCurrent = (menu) => {
+          if (typeof source.onPullBranch !== 'function') return
+          setBranchMenu({ ...menu, pulling: true, error: null })
+          Promise.resolve(source.onPullBranch(menu.root))
+            .then(() => setBranchMenu(null))
+            .catch((error) => {
+              setBranchMenu((previous) => (previous === null
+                ? previous
+                : { ...previous, pulling: false, error: error && error.message ? error.message : String(error) }))
+            })
+        }
+
         /** 拉取远程更新（git fetch）后重读分支列表：别人新推的分支这时才会出现。 */
         const fetchRemote = (menu) => {
           if (typeof source.onFetchBranches !== 'function') return
@@ -5126,6 +5124,13 @@ window.__ModuleLoader__.load({
               disabled: menuBusy,
               dataKey: 'fetch-branches',
               onClick: () => fetchRemote(branchMenu)
+            }),
+            h(MenuItem, {
+              icon: 'refresh',
+              label: branchMenu.pulling === true ? translate('branch.pulling') : translate('branch.pull'),
+              disabled: menuBusy,
+              dataKey: 'pull-branch',
+              onClick: () => pullCurrent(branchMenu)
             }),
             h('div', { className: 'dgp-menu-sep', role: 'separator' }),
             branchMenu.loading ? h(MenuLabel, null, translate('branch.loading')) : null,
@@ -7252,6 +7257,11 @@ window.__ModuleLoader__.load({
         return call('pr/prepare', payload, options)
       }
 
+      /** 拉取当前分支最新代码（fetch + 只允许快进）。 */
+      function pullBranch(payload, options) {
+        return call('branch/pull', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
+      }
+
       /** 当前安装的插件版本（本地读，不联网）。 */
       function pluginInfo(payload, options) {
         return call('plugin/info', payload, options)
@@ -7323,7 +7333,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, prPrepare, pluginInfo, pluginUpdate, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, prPrepare, pullBranch, pluginInfo, pluginUpdate, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {

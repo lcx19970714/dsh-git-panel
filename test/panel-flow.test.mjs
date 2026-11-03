@@ -4472,13 +4472,19 @@ test('用例 10c：检查插件更新失败 → 错误提示（不留"看起来�
 /* 用例 10f：上游检查（git fetch）在 ⋯ 菜单里                             */
 /* ================================================================== */
 
-test('用例 10f：⋯ 菜单里的「检查上游更新」执行 git fetch 并报落后提交数', async () => {
+test('用例 10f：分支菜单里 fetch 只报差距，pull 才真的拉代码', async () => {
   const fetches = []
+  const pulls = []
   await withPanel({
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
       status: () => sayOk({ ...statusThree(), remoteUrl: 'git@github.com:owner/repo.git' }),
-      'plugin/info': () => sayOk({ name: 'dsh-git-panel', version: '0.35.1', repositoryUrl: '', fullName: null }),
+      'branch/list': () => sayOk({
+        branches: [
+          { name: 'main', ref: 'refs/heads/main', current: true, remote: false, upstream: 'origin/main', ahead: 0, behind: 3 },
+          { name: 'feat', ref: 'refs/heads/feat', current: false, remote: false, upstream: null, ahead: 0, behind: 0 }
+        ]
+      }),
       'remote/fetch': (payload) => {
         fetches.push(payload)
         return sayOk({
@@ -4486,26 +4492,39 @@ test('用例 10f：⋯ 菜单里的「检查上游更新」执行 git fetch 并�
           branch: 'main', head: 'abc1234', upstream: 'origin/main',
           ahead: 0, behind: 3, fetchedAt: Date.now()
         })
+      },
+      'branch/pull': (payload) => {
+        pulls.push(payload)
+        return sayOk({
+          branch: 'main', upstream: 'origin/main', head: 'def5678', previousHead: 'abc1234', ahead: 0, behind: 0
+        })
       }
     }
   }, async (panel) => {
     await panel.flush()
-    // 打开 ⋯ 菜单
-    const more = panel.one((node) => isHost(node) && attr(node, 'data-action') === 'more')
-    click(more)
-    await panel.flush()
-    const item = panel.one((node) => isHost(node) && textOf(node) === '检查上游更新（git fetch）')
-    assert(item !== null, '⋯ 菜单里应有「检查上游更新」')
-    click(item)
+
+    // 打开分支菜单（储存库行右侧的分支按钮）
+    const branchBtn = panel.one((node) => isHost(node) && node.type === 'button' && attr(node, 'data-dgp-branch') !== undefined)
+    assert(branchBtn !== null, '应能找到分支按钮')
+    click(branchBtn)
     await panel.flush()
 
+    // fetch：只更新远端信息
+    click(panel.one((node) => isHost(node) && textOf(node) === '获取远程更新'))
+    await panel.flush()
     eq(fetches.length, 1, '应执行一次 git fetch')
-    eq(fetches[0], { rootPath: PROJECT })
+    eq(pulls.length, 0, 'fetch 不应触发拉取')
     const note = findOne(panel.tree, (node) => isHost(node) && node.props['data-update-note'] !== undefined)
-    assert(note !== null, '应显示上游检查结果')
-    eq(attr(note, 'data-update-note'), 'warn', '落后时应是 warn')
+    assert(note !== null, 'fetch 后应报差距')
     assert(textOf(note).includes('落后 3 个提交'), '文案：' + textOf(note))
-    assert(textOf(note).includes('origin/main'), '要带上游名：' + textOf(note))
+
+    // pull：真正拉代码
+    click(panel.one((node) => isHost(node) && textOf(node) === '拉取当前分支最新代码'))
+    await panel.flush()
+    eq(pulls.length, 1, '应调用 branch/pull')
+    eq(pulls[0], { rootPath: PROJECT })
+    const pulledNote = findOne(panel.tree, (node) => isHost(node) && node.props['data-update-note'] !== undefined)
+    assert(textOf(pulledNote).includes('def5678'), '拉取后要报新提交：' + textOf(pulledNote))
   })
 })
 

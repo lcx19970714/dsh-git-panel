@@ -497,6 +497,59 @@ test('深度审阅的准备：找本地仓库 → 切分支；没有则克隆到
   assert.ok(existsSync(path.join(empty, 'a.js')))
 })
 
+test('拉取当前分支：只允许快进；分叉、没有上游、工作区冲突都明确拒绝', async () => {
+  const { pullBranch, readHead } = await import('../host/git.js')
+  const platform = path.join(tempDir('dgp-pull-platform-'), 'repo.git')
+  execFileSync('git', ['init', '--bare', '-q', platform], { stdio: 'pipe' })
+  // 裸仓库的 HEAD 默认指向 master；我们先推 main，所以要把 HEAD 指到 main，clone 才有主线
+  execFileSync('git', ['--git-dir', platform, 'symbolic-ref', 'HEAD', 'refs/heads/main'], { stdio: 'pipe' })
+
+  const work = makeRepo(path.join(tempDir('dgp-pull-work-'), 'repo'))
+  const g = (...args) => execFileSync('git', args, { cwd: work, stdio: 'pipe' })
+  g('remote', 'add', 'origin', platform)
+  g('push', '-q', 'origin', 'HEAD:refs/heads/main')
+  g('fetch', '-q', 'origin')
+  g('branch', '--set-upstream-to=origin/main')
+
+  const other = path.join(tempDir('dgp-pull-other-'), 'other')
+  execFileSync('git', ['clone', '-q', platform, other], { stdio: 'pipe' })
+  const o = (...args) => execFileSync('git', args, { cwd: other, stdio: 'pipe' })
+  o('checkout', '-q', '-B', 'main', 'origin/main')
+  o('config', 'user.email', 'o@b.c')
+  o('config', 'user.name', 'o')
+  writeFileSync(path.join(other, 'new.txt'), 'from upstream\n')
+  o('add', '-A')
+  o('commit', '-qm', 'upstream commit')
+  o('push', '-q', 'origin', 'HEAD:refs/heads/main')
+
+  const before = await readHead(work)
+  const pulled = await pullBranch(work)
+  assert.notEqual(pulled.head, before.head, '应真的前进到远端最新提交')
+  assert.equal(pulled.branch, before.branch)
+  assert.ok(existsSync(path.join(work, 'new.txt')), '拉取后工作区必须拿到远端文件')
+  assert.equal((await readHead(work)).behind, 0, '拉取后不应再落后')
+
+  // 分叉：本地有远端没有的提交 → 拒绝快进
+  writeFileSync(path.join(work, 'local.txt'), 'local only\n')
+  g('add', '-A')
+  g('commit', '-qm', 'local commit')
+  writeFileSync(path.join(other, 'another.txt'), 'upstream again\n')
+  o('add', '-A')
+  o('commit', '-qm', 'upstream again')
+  o('push', '-q', 'origin', 'HEAD:refs/heads/main')
+  await assert.rejects(
+    () => pullBranch(work),
+    (error) => error.code === 'not-fast-forward' && error.message.includes('分叉')
+  )
+
+  // 没有上游：直接说清楚，不猜
+  const lonely = makeRepo(path.join(tempDir('dgp-pull-lonely-'), 'repo'))
+  await assert.rejects(
+    () => pullBranch(lonely),
+    (error) => error.code === 'no-upstream'
+  )
+})
+
 test('插件版本与更新检查：本地版本取 package.json，最新版本严格比较，失败明确报错', async () => {
   const { pluginInfo, compareVersions, checkPluginUpdate } = await import('../host/plugin-meta.js')
   const pkgText = readFileSync(new URL('../package.json', import.meta.url), 'utf8')

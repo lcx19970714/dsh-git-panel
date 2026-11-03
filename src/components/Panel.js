@@ -181,8 +181,6 @@ export function Panel(props) {
   const [pluginState, setPluginState] = useState({
     version: null, busy: false, latestVersion: null, url: '', publishedAt: '', newer: false, checkedAt: 0, error: null
   })
-  /** 上游（git fetch）检查结果：只影响提示与 tooltip。 */
-  const [upstreamState, setUpstreamState] = useState({ fetchedAt: 0, ahead: 0, behind: 0, upstream: null })
   /** 工具条提示：插件检查结果与上游检查结果共用一条，谁最后动作显示谁。 */
   const [toolbarNote, setToolbarNote] = useState(null)
   const checkSeq = useLatestGuard()
@@ -190,7 +188,7 @@ export function Panel(props) {
   // 派生值只依赖 state，放在动作之前：checkUpdates/openRemote 要用到它们
   const versionText = pluginState.version === null ? '—' : 'v' + pluginState.version
   const remoteWebUrl = webUrlOf(status === null ? null : status.remoteUrl)
-  const versionTitle = buildVersionTitle(pluginState, upstreamState, t)
+  const versionTitle = buildVersionTitle(pluginState, t)
   const updateNote = toolbarNote
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
@@ -574,29 +572,6 @@ export function Panel(props) {
       alive = false
     }
   }, [])
-
-  /** 上游检查（git fetch）：手动触发，结果只报告不自动合并。 */
-  const fetchUpstream = useCallback(async () => {
-    if (activeRoot === null || activeRoot.isGit !== true) return
-    setToolbarNote({ tone: 'info', text: tRef.current('update.fetching') })
-    try {
-      const value = await api.fetchRemote({ rootPath: activeRoot.path })
-      setUpstreamState({
-        fetchedAt: value.fetchedAt,
-        ahead: value.ahead,
-        behind: value.behind,
-        upstream: value.upstream
-      })
-      setToolbarNote(buildUpstreamNote(value, tRef.current))
-      // fetch 改了远端跟踪引用：status 里的 ahead/behind 也要跟上
-      refreshStatus()
-    } catch (error) {
-      setToolbarNote({
-        tone: 'error',
-        text: tRef.current('update.failed', { message: api.describeError(error, tRef.current) })
-      })
-    }
-  }, [activeRoot, refreshStatus])
 
   /** 打开远端仓库网页（本地路径类远端没有网页，按钮此时是禁用的）。 */
   const openRemote = useCallback(() => {
@@ -1027,14 +1002,35 @@ export function Panel(props) {
   }, [resolveProject, refreshStatus])
 
   /** 分支菜单里的「获取远程更新」：git fetch 后重读分支列表。 */
-  const fetchBranches = useCallback(async (root) => {
+  /** 拉取该仓库当前分支的最新代码（fetch + 只允许快进，不做自动合并）。 */
+  const pullBranchNow = useCallback(async (root) => {
+    let value
     try {
-      await api.fetchRemote({ rootPath: root.path })
+      value = await api.pullBranch({ rootPath: root.path })
     } catch (error) {
       throw new Error(api.describeError(error, tRef.current))
     }
+    setToolbarNote({
+      tone: 'info',
+      text: tRef.current('branch.pulled', { head: String(value.head).slice(0, 7) })
+    })
+    await resolveProject()
+    await refreshAll()
+    return value
+  }, [resolveProject, refreshAll])
+
+  const fetchBranches = useCallback(async (root) => {
+    let fetched
+    try {
+      fetched = await api.fetchRemote({ rootPath: root.path })
+    } catch (error) {
+      throw new Error(api.describeError(error, tRef.current))
+    }
+    // fetch 只更新远端跟踪引用：把 ahead/behind 报出来，用户才知道要不要真的拉取
+    setToolbarNote(buildUpstreamNote(fetched, tRef.current))
+    if (activeRoot !== null && activeRoot.id === root.id) refreshStatus()
     return api.listBranches({ rootPath: root.path })
-  }, [])
+  }, [activeRoot, refreshStatus])
 
   const switchBranch = useCallback(async (root, name) => {
     try {
@@ -1618,8 +1614,8 @@ export function Panel(props) {
   }, [refreshAll, mode])
 
 
-/** 版本号按钮的 tooltip：插件版本 · 最新版本 · 上游 · 检测时间。 */
-function buildVersionTitle(pluginState, upstreamState, t) {
+/** 版本号按钮的 tooltip：插件版本 · 最新版本 · 检测时间（与仓库状态无关）。 */
+function buildVersionTitle(pluginState, t) {
   const parts = [t('toolbar.checkUpdates')]
   if (pluginState.version !== null) parts.push(t('update.currentVersion', { version: pluginState.version }))
   if (pluginState.checkedAt > 0 && pluginState.error === null) {
@@ -1627,12 +1623,6 @@ function buildVersionTitle(pluginState, upstreamState, t) {
       ? t('update.latestVersion', { version: pluginState.latestVersion })
       : t('update.pluginUpToDate', { version: pluginState.version }))
     parts.push(t('update.checkedAt', { time: formatClock(pluginState.checkedAt) }))
-  }
-  if (upstreamState.fetchedAt > 0) {
-    parts.push(t('update.upstreamChecked', {
-      upstream: upstreamState.upstream === null ? '' : upstreamState.upstream,
-      time: formatClock(upstreamState.fetchedAt)
-    }))
   }
   return parts.join(' \u00b7 ')
 }
@@ -1890,6 +1880,7 @@ function buildUpstreamNote(value, t) {
           onLoadBranches: loadBranches,
           onSwitchBranch: switchBranch,
           onFetchBranches: fetchBranches,
+          onPullBranch: pullBranchNow,
           onTrackBranch: trackBranchAt,
           onCreateBranch: createBranch,
           t
@@ -2080,15 +2071,6 @@ function buildUpstreamNote(value, t) {
     label: t('toolbar.refreshNow'),
     onClick: () => {
       refreshAll()
-      setMoreOpen(false)
-    }
-  }),
-  h(MenuItem, {
-    icon: 'sync',
-    label: t('toolbar.fetchUpstream'),
-    disabled: activeRoot === null || activeRoot.isGit !== true,
-    onClick: () => {
-      fetchUpstream()
       setMoreOpen(false)
     }
   }),

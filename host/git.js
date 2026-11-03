@@ -1253,6 +1253,52 @@ export async function trackRemoteBranch(repoRoot, remote, name, options = {}) {
   return { branch: head.branch, head: head.head, upstream: head.upstream ?? null }
 }
 
+/* --------------------------------------------------------- 拉取当前分支 */
+
+/**
+ * 拉取当前分支的最新代码：git fetch + git merge --ff-only @{u}。
+ *
+ * 拒绝的情况都明确报错，不自动 stash、不自动 merge 提交：
+ *  - 游离 HEAD：不知道要更新哪个分支
+ *  - 没有上游：fetch 之后也不知道该合并谁
+ *  - 分叉：本地有上游没有的提交，快进不可能
+ *  - 工作区脏：git 会拒绝覆盖，原样上抛
+ */
+export async function pullBranch(repoRoot, options = {}) {
+  const { signal } = options
+  const before = await readHead(repoRoot)
+  if (before.branch === null || before.detached === true) {
+    throw new GitError('detached-head', '当前不在任何分支上：先切到一个分支再拉取')
+  }
+  if (before.upstream === null || before.upstream === '') {
+    throw new GitError('no-upstream', '分支 ' + before.branch + ' 没有跟踪上游：先设置上游（git branch -u）再拉取')
+  }
+
+  await runGit(repoRoot, ['fetch', '--no-tags', 'origin'], { signal, timeoutMs: 5 * 60 * 1000 })
+
+  try {
+    await runGit(repoRoot, ['merge', '--ff-only', '@{u}'], { signal, timeoutMs: 5 * 60 * 1000 })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/Not possible to fast-forward|diverged|would be overwritten/i.test(message)) {
+      throw new GitError('not-fast-forward',
+        '本地分支 ' + before.branch + ' 与上游 ' + before.upstream + ' 已经分叉（或工作区有改动会冲突），'
+        + '无法快进。请自己决定合并还是变基，插件不会自动产生合并提交。原始错误：' + message)
+    }
+    throw error
+  }
+
+  const after = await readHead(repoRoot)
+  return {
+    branch: after.branch,
+    upstream: before.upstream,
+    head: after.head,
+    previousHead: before.head,
+    ahead: after.ahead,
+    behind: after.behind
+  }
+}
+
 /* ------------------------------------------------------- 创建 PR 的本地信息 */
 
 const REMOTE_URL_PATTERNS = [

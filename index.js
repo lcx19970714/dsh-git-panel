@@ -570,11 +570,12 @@ function createDispatcher(ctx) {
     const number = request.number
     const source = await remotesOf().reviewSource({ accountId, fullName, number }, { signal })
     const diff = await remotesOf().pullDiff({ accountId, fullName, number }, { signal })
-    // 本地有对应仓库时复用它：有 rootPath 就解析出仓库根，交给 deepReview 判断是否匹配
-    let localRoot = null
-    if (typeof request.rootPath === 'string' && request.rootPath !== '') {
-      const repo = await resolveRepo(requireAbsolute(request.rootPath, 'rootPath'))
-      if (repo?.repoRoot) localRoot = normalizeSlashes(repo.repoRoot)
+    // 本地有对应仓库时复用它：把项目里的所有仓库根都交给 deepReview 逐个匹配 origin
+    const localRoots = []
+    for (const candidate of Array.isArray(request.rootPaths) ? request.rootPaths : []) {
+      if (typeof candidate !== 'string' || candidate === '') continue
+      const repo = await resolveRepo(requireAbsolute(candidate, 'rootPaths[]'))
+      if (repo?.repoRoot) localRoots.push(normalizeSlashes(repo.repoRoot))
     }
     return deepReview({
       llm: llmService,
@@ -582,7 +583,7 @@ function createDispatcher(ctx) {
       source,
       pull: source.pull,
       files: diff.files,
-      localRoot,
+      localRoots,
       signal
     })
   }

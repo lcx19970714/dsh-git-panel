@@ -2564,7 +2564,7 @@ test('用例 1S：深度审阅按钮调用 deep-review，并显示复用了本�
 
     eq(deepCalls.length, 1, '应调用 deep-review')
     eq(deepCalls[0].number, 7)
-    eq(deepCalls[0].rootPath, PROJECT, '应带上本地仓库根，供宿主复用对象库')
+    eq(deepCalls[0].rootPaths, [PROJECT], '应带上项目里所有仓库根，供宿主逐个匹配 origin')
     const info = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-deep-info')
     assert(info !== null, '深度审阅结果要显示读取信息')
     assert(textOf(info).includes('复用了本地仓库'), '要说明复用了本地仓库：' + textOf(info))

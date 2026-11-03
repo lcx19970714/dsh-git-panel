@@ -1619,8 +1619,8 @@ function buildUpdateNote(updateState, t) {
       onPass: passPull,
       onAiReview: aiReviewPull,
       onDeepReview: deepReviewPull,
-      // 本地有对应仓库时深度审阅可以复用它的对象库（快很多）
-      localRepoRoot: activeRoot !== null && activeRoot.isGit === true ? activeRoot.path : null,
+      // 深度审阅会拿这些仓库逐个比对 origin，命中就复用它的对象库（快很多）
+      localRepoRoots: gitRoots.map((root) => root.path),
       onComment: commentPull,
       onOpenSettings: openSettings,
       onMerge: mergePull,

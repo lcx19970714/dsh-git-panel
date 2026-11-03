@@ -50,7 +50,7 @@ function GuideArtworkGit() {
 export const name = PLUGIN_ID
 
 /** 这些服务由宿主 bundle 提供，缺一个就不激活 —— 明确地「要么全有、要么不跑」。 */
-export const inject = ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight']
+export const inject = ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight', 'uiWorkspace']
 
 export function apply(ctx) {
   try {

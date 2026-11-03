@@ -370,7 +370,7 @@ test('导出 name / apply / inject', () => {
   eq(exportsObject.name, 'dsh-git-panel', 'name')
   eq(typeof exportsObject.apply, 'function', 'apply 是函数')
   assert(Array.isArray(exportsObject.inject), 'inject 是数组')
-  eq(exportsObject.inject, ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight'], 'inject 清单')
+  eq(exportsObject.inject, ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight', 'uiWorkspace'], 'inject 清单')
 })
 
 test('执行 apply(ctx) 不抛错', () => {

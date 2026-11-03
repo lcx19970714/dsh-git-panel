@@ -191,6 +191,10 @@ export function remotePullPrepareReview(payload, options) {
   return call('remote/pull/prepare-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
 }
 
+export function remotePullSessionReview(payload, options) {
+  return call('remote/pull/session-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
+}
+
 export function remotePullDeepReview(payload, options) {
   // 阶段二：只读完整文件 + 调模型
   return call('remote/pull/deep-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })

@@ -2668,7 +2668,7 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
 })
 
 test('用例 1S：深度审阅先找本地仓库，没有就弹框确认克隆到哪里', async () => {
-  const deepCalls = []
+  const sessionCalls = []
   const prepCalls = []
   const clones = []
   await withPanel({
@@ -2714,7 +2714,14 @@ test('用例 1S：深度审阅先找本地仓库，没有就弹框确认克隆�
         prepCalls.push(payload)
         return sayOk({ needsClone: true, repoUsed: 'alice/app', headBranch: 'feat', suggestedName: 'app', url: 'https://github.com/alice/app.git' })
       },
-      // 阶段二：只读文件 + 调模型
+      // 阶段二：新建会话并发送审阅指令
+      'remote/pull/session-review': (payload) => {
+        sessionCalls.push(payload)
+        return sayOk({
+          sessionId: 'session-review-1', rootPath: payload.rootPath, branch: payload.branch,
+          steps: [{ at: 0, level: 'info', step: '已新建审阅会话', detail: 'session-review-1' }], logPath: null
+        })
+      },
       'remote/pull/deep-review': (payload) => {
         deepCalls.push(payload)
         return sayOk({
@@ -2748,7 +2755,7 @@ test('用例 1S：深度审阅先找本地仓库，没有就弹框确认克隆�
     await panel.flush()
     eq(prepCalls.length, 1, '应先调用阶段一 prepare-review')
     eq(prepCalls[0].rootPaths, [PROJECT], '先带项目里的仓库根让宿主找')
-    eq(deepCalls.length, 0, '阶段一还没准备好，不应进入阶段二')
+    eq(sessionCalls.length, 0, '阶段一还没准备好，不应进入阶段二')
     eq(clones.length, 0, '还没确认前不应克隆')
 
     // 确认框：文案说明要拉到哪里
@@ -2762,20 +2769,13 @@ test('用例 1S：深度审阅先找本地仓库，没有就弹框确认克隆�
     eq(clones.length, 1, '应调用 clone-for-review')
     eq(clones[0].targetDir, PROJECT + '/app', '默认克隆到项目工作区下的仓库名目录')
     eq(prepCalls.length, 1, '克隆后直接进阶段二，不再重复准备')
-    eq(deepCalls.length, 1, '克隆完要进入审阅阶段')
-    eq(deepCalls[0].rootPath, PROJECT + '/app', '带着刚克隆的目录')
-    eq(deepCalls[0].branch, 'feat')
+    eq(sessionCalls.length, 1, '克隆完要进入会话审阅阶段')
+    eq(sessionCalls[0].rootPath, PROJECT + '/app', '带着刚克隆的目录')
+    eq(sessionCalls[0].branch, 'feat')
 
-    const info = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-deep-info')
-    assert(info !== null, '深度审阅结果要显示读取信息')
-    assert(textOf(info).includes('复用了本地仓库'), '要说明用的是哪个本地目录：' + textOf(info))
-
-    // 执行步骤：每一步做了什么要能看到
-    const steps = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-steps')
-    assert(steps !== null, '应显示执行步骤')
-    assert(textOf(steps).includes('查找本地仓库'), '步骤里要有查找仓库：' + textOf(steps))
-    assert(textOf(steps).includes('拉取并切换到 PR 分支'), '步骤里要有切分支：' + textOf(steps))
-    assert(textOf(steps).includes('review.log'), '要能看到日志路径：' + textOf(steps))
+    const session = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-session')
+    assert(session !== null, '会话审阅结果要显示已开始')
+    assert(textOf(session).includes('session-review-1'), '要显示会话 id：' + textOf(session))
   })
 })
 
@@ -2813,7 +2813,7 @@ test('用例 1Q：面板外切了分支（status 先看到新分支）时，储�
 test('用例 1T：PR 深度审阅切了本地分支后，储存库行的分支名要跟上', async () => {
   let repoBranch = 'main'
   let resolveCalls = 0
-  const deepCalls = []
+  const sessionCalls = []
   await withPanel({
     routes: {
       'project/resolve': () => {
@@ -2860,16 +2860,9 @@ test('用例 1T：PR 深度审阅切了本地分支后，储存库行的分支�
         repoBranch = 'feat'
         return sayOk({ mode: 'local', rootPath: PROJECT, branch: 'feat', steps: [{ at: 0, level: 'info', step: '拉取并切换到 PR 分支', detail: 'origin/feat' }], logPath: null })
       },
-      'remote/pull/deep-review': (payload) => {
-        deepCalls.push(payload)
-        return sayOk({
-          summary: '深度审阅结论', verdict: 'comment',
-          findings: [],
-          comment: '',
-          model: 'p1/m1', truncated: false, filesIncluded: 1,
-          deep: true, objectSource: 'local', localRootUsed: PROJECT, branch: 'feat',
-          filesRead: 1, fullFilesSkipped: []
-        })
+      'remote/pull/session-review': (payload) => {
+        sessionCalls.push(payload)
+        return sayOk({ sessionId: 'session-review-1', rootPath: payload.rootPath, branch: payload.branch, steps: [], logPath: null })
       }
     }
   }, async (panel) => {
@@ -2882,9 +2875,9 @@ test('用例 1T：PR 深度审阅切了本地分支后，储存库行的分支�
     await panel.flush()
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-deep-run'))
     await panel.flush()
-    eq(deepCalls.length, 1, '阶段二应调用一次深度审阅')
-    eq(deepCalls[0].rootPath, PROJECT, '阶段二用的是阶段一准备好的目录')
-    eq(deepCalls[0].branch, 'feat')
+    eq(sessionCalls.length, 1, '阶段二应创建一次审阅会话')
+    eq(sessionCalls[0].rootPath, PROJECT, '阶段二用的是阶段一准备好的目录')
+    eq(sessionCalls[0].branch, 'feat')
 
     // 回到变更页签：储存库行上的分支名必须是审阅切过去的那一个
     click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[0])

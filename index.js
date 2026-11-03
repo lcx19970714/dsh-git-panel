@@ -126,6 +126,7 @@ export const ENDPOINTS = Object.freeze([
   'remote/pull/diff',
   'remote/pull/review',
   'remote/pull/ai-review',
+  'remote/pull/prepare-review',
   'remote/pull/deep-review',
   'remote/pull/clone-for-review',
   'remote/pull/comment',
@@ -637,18 +638,13 @@ function createDispatcher(ctx) {
     return { source, localRoot: local.rootPath, branch: prepared.branch, prepared }
   }
 
-  async function remotePullDeepReview(request, signal) {
-    const settings = await readSettings()
-    if (settings.reviewModel === null) {
-      throw new GitError('no-review-model', '还没有配置 AI 审阅模型（设置页里选「审阅模型」）')
-    }
+  /** 阶段一：准备本地目录（查找 / 判断是否已在 PR 提交 / 切分支）。 */
+  async function remotePullPrepareReview(request, signal) {
     const accountId = requireString(request.accountId, 'accountId')
     const fullName = requireString(request.fullName, 'fullName')
     const number = request.number
     const log = createReviewLog({ logger: ctx.logger }, fullName + '#' + number)
-    log.info('开始深度审阅', '模型 ' + settings.reviewModel.provider + '/' + settings.reviewModel.model
-      + '，本地仓库候选 ' + (Array.isArray(request.rootPaths) ? request.rootPaths.length : 0) + ' 个')
-
+    log.info('阶段一：准备本地目录', '本地仓库候选 ' + (Array.isArray(request.rootPaths) ? request.rootPaths.length : 0) + ' 个')
     try {
       const prepared = await prepareReviewDir({
         accountId, fullName, number,
@@ -656,7 +652,6 @@ function createDispatcher(ctx) {
         rootPath: request.rootPath,
         branch: request.branch
       }, signal, log)
-
       if (prepared.localRoot === null) {
         log.warn('等待确认克隆位置', 'repo=' + (prepared.source.repoUsed ?? fullName))
         return {
@@ -669,29 +664,62 @@ function createDispatcher(ctx) {
           logPath: log.logPath
         }
       }
+      log.info('阶段一完成', '目录 ' + prepared.localRoot + '，分支 ' + (prepared.branch ?? '?'))
+      return {
+        mode: 'local',
+        rootPath: prepared.localRoot,
+        branch: prepared.branch,
+        pull: prepared.source.pull,
+        steps: log.steps,
+        logPath: log.logPath
+      }
+    } catch (error) {
+      log.error('准备本地目录失败', error instanceof Error ? error.message : String(error))
+      if (error instanceof GitError) {
+        error.details = { ...(error.details ?? {}), steps: log.steps, logPath: log.logPath }
+      }
+      throw error
+    }
+  }
 
-      log.info('读取 PR 文件列表', fullName + ' #' + number)
+  /** 阶段二：读完整文件 + 调模型（不做任何 git 操作）。 */
+  async function remotePullDeepReview(request, signal) {
+    const settings = await readSettings()
+    if (settings.reviewModel === null) {
+      throw new GitError('no-review-model', '还没有配置 AI 审阅模型（设置页里选「审阅模型」）')
+    }
+    const accountId = requireString(request.accountId, 'accountId')
+    const fullName = requireString(request.fullName, 'fullName')
+    const number = request.number
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const branch = typeof request.branch === 'string' ? request.branch : null
+    const log = createReviewLog({ logger: ctx.logger }, fullName + '#' + number)
+    log.info('阶段二：读取文件并审阅', '模型 ' + settings.reviewModel.provider + '/' + settings.reviewModel.model
+      + '，目录 ' + rootPath)
+    try {
+      const repo = await resolveRepo(rootPath)
+      if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+      const localRoot = normalizeSlashes(repo.repoRoot)
+      const source = await log.time('读取 PR 详情', fullName + ' #' + number,
+        () => remotesOf().reviewSource({ accountId, fullName, number }, { signal }))
       const diff = await log.time('读取 PR 文件列表', '最多 300 个文件',
         () => remotesOf().pullDiff({ accountId, fullName, number }, { signal }))
-      log.info('文件列表', diff.files.length + ' 个文件' + (diff.truncated ? '（平台只返回部分，已标记 truncated）' : ''))
-
-      const review = await log.time('调用审阅模型', '读取完整文件 + 模型 ' + settings.reviewModel.model,
+      log.info('文件列表', diff.files.length + ' 个文件' + (diff.truncated ? '（平台只返回部分）' : ''))
+      const review = await log.time('读取完整文件并调用模型', '模型 ' + settings.reviewModel.model,
         () => deepReview({
           llm: llmService,
           pair: settings.reviewModel,
-          source: prepared.source,
-          pull: prepared.source.pull,
+          pull: source.pull,
           files: diff.files,
           filesTruncated: diff.truncated,
-          localRoot: prepared.localRoot,
-          branch: prepared.branch,
+          localRoot,
+          branch,
           signal
         }))
       log.info('完成', '读取完整文件 ' + review.filesRead + ' 个，问题 ' + review.findings.length + ' 条')
       return { ...review, steps: log.steps, logPath: log.logPath }
     } catch (error) {
-      log.error('失败', (error instanceof Error ? error.message : String(error)))
-      // 把步骤与日志路径挂到错误上，界面能显示完整过程
+      log.error('审阅失败', error instanceof Error ? error.message : String(error))
       if (error instanceof GitError) {
         error.details = { ...(error.details ?? {}), steps: log.steps, logPath: log.logPath }
       }
@@ -978,6 +1006,7 @@ function createDispatcher(ctx) {
     'remote/pull': (request, signal) => remotePull(request, signal),
     'remote/pull/diff': (request, signal) => remotePullDiff(request, signal),
     'remote/pull/ai-review': (request, signal) => remotePullAiReview(request, signal),
+    'remote/pull/prepare-review': (request, signal) => remotePullPrepareReview(request, signal),
     'remote/pull/deep-review': (request, signal) => remotePullDeepReview(request, signal),
     'remote/pull/clone-for-review': (request, signal) => remotePullCloneForReview(request, signal),
     'remote/pull/comment': (request, signal) => remotePullComment(request, signal),

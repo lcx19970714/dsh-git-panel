@@ -179,7 +179,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 41 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 42 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -217,6 +217,9 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 
 **深度审阅约定**：`remote/pull/deep-review` 不只发 diff：直接读**真实本地目录**里改动文件的完整内容再审。
 
+- **两阶段**：`remote/pull/prepare-review` 只做「找目录 + 切分支」（界面文案「正在准备本地代码」），
+  `remote/pull/deep-review` 只做「读完整文件 + 调模型」（界面文案「正在读取完整文件并审阅」）；
+  两个阶段的步骤合并显示，失败时能看到卡在哪一阶段；
 - 目录来源（按顺序）：
   1. 请求带 `rootPath`（刚克隆完 / 复用上次目录）→ 直接审；
   2. 否则在 `rootPaths`（变更里所有仓库根）里按 `remote.origin.url` 匹配 PR 仓库（`repoUsed`，fork PR 指向 head 仓库），
@@ -284,6 +287,7 @@ PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 J
 | `remote/pull/pass` | `{accountId, fullName, number, body?}` | `{completed, failures}`；按平台能力依次执行审查/测试，部分成功照实返回 |
 | `remote/pull/diff` | `{accountId, fullName, number}` | `{files: [{filename, status, additions, deletions, changes, patch}], truncated}`；两家都走 `pulls/{n}/files`，每页 100、最多 3 页 |
 | `remote/pull/ai-review` | `{accountId, fullName, number}` | `{summary, verdict, findings[], comment, model, truncated, filesIncluded}`；读 `reviewModel`，输出严格校验 |
+| `remote/pull/prepare-review` | `{accountId, fullName, number, rootPaths?, rootPath?, branch?}` | `{mode:'local', rootPath, branch, pull, steps, logPath}` 或 `{needsClone, repoUsed, headBranch, suggestedName, url, steps}`；阶段一：找仓库/判是否已在 PR 提交/切分支（必要时才 fetch） |
 | `remote/pull/deep-review` | `{accountId, fullName, number, rootPath?}` | 同 ai-review 的返回 + `deep, filesRead, fullFilesSkipped, objectSource`；把 PR head 拉到临时裸仓库/worktree 读完整文件再审，临时目录用完即删 |
 | `remote/pull/clone-for-review` | `{accountId, fullName, number, targetDir}` | `{rootPath, branch, head}`；目标目录必须绝对且为空/不存在；克隆后切到 PR 分支 |
 | `remote/pull/comment` | `{accountId, fullName, number, comment}` | `{posted, url}`；内容由用户在面板里确认/编辑后提交 |
@@ -322,7 +326,7 @@ node scripts/install-profile.mjs --dry-run
 | `remote` | 远端地址 → 网页地址（scp/ssh/https/git 形式）、凭据不入地址栏、本地路径 → null |
 | `build` | 打包器：产物无残留 import/export、能真跑、循环依赖报错 |
 | `git` | git 引擎（需要 `_sandbox/repo` 夹具：`node test/make-fixture.mjs`） |
-| `host` | 41 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表、切换与创建、代码托管账号（令牌存 DSH 凭据服务）、远端仓库列表与克隆、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
+| `host` | 42 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表、切换与创建、代码托管账号（令牌存 DSH 凭据服务）、远端仓库列表与克隆、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
 | `client` | 产物装载 + `apply()` 契约 + 用假 react 真渲染 tab body（不需要浏览器）+ 样式表合法性（规则外不得有裸文本行，否则浏览器会吞掉下一条规则） |
 | `components` | 组件渲染契约：编辑器脏/冲突态、不可编辑占位、换行开关下的行号隐藏 |
 | `flow` | 面板端到端数据流：选根→status→diff→文件读→编辑保存→冲突→检测更新（假 fetch，不起服务） |

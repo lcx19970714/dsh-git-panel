@@ -1045,6 +1045,18 @@ export function Panel(props) {
     }
   }, [])
 
+  /** 把 PR 克隆到用户选的目录（深度审阅前的准备步骤）。 */
+  const cloneForReviewPull = useCallback(async (input) => {
+    try {
+      const result = await api.remotePullCloneForReview(input)
+      // 克隆完成后重新解析项目：如果落在项目里，「变更」会立刻多出这个仓库
+      await resolveProject()
+      return { ok: true, ...result }
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current) }
+    }
+  }, [resolveProject])
+
   /** 提交评论（内容已由用户在面板里确认过）。 */
   const commentPull = useCallback(async (input) => {
     try {
@@ -1619,6 +1631,8 @@ function buildUpdateNote(updateState, t) {
       onPass: passPull,
       onAiReview: aiReviewPull,
       onDeepReview: deepReviewPull,
+      onCloneForReview: cloneForReviewPull,
+      projectRoot: project.projectRoot,
       // 深度审阅会拿这些仓库逐个比对 origin，命中就复用它的对象库（快很多）
       localRepoRoots: gitRoots.map((root) => root.path),
       onComment: commentPull,

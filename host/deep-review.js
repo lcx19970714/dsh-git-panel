@@ -1,124 +1,29 @@
 /**
- * host/deep-review.js —— 深度审阅：把 PR 的 head 拉到临时目录后做「本地审阅」。
+ * host/deep-review.js —— 深度审阅（直接读真实本地目录）
  *
- * 全程隔离，不碰用户的工作区与仓库：
- *   1. 在系统临时目录建一个**裸仓库**（git init --bare）
- *   2. `git fetch --depth=1 <平台地址> <refspec>` 只拉这个 PR 的 head（令牌用
- *      `-c http.extraHeader` 一次性传入，不落盘）
- *   3. `git worktree add --detach` 检出到临时目录，读改动文件的**完整内容**
- *   4. 交给 review 模块（deep 模式：diff + 完整文件），最后删掉整个临时目录
+ * 交互逻辑（越简单越好）：
+ *  1. 变更那边（项目里所有仓库根）已经有这个项目 → 把那个目录切到 PR 对应的分支，直接审；
+ *  2. 没有 → 返回 needsClone，由界面弹框确认「拉到项目工作区 / 指定目录」，克隆后再审。
  *
- * 不用「切换到本地分支」的原因：那会改用户的工作区（未提交改动可能丢失），
- * 而且本地仓库不一定就是这个 PR 的克隆。裸仓库 + worktree 是等价且安全的做法。
+ * 因此这里不再有临时裸仓库与 worktree：审的就是真实目录，方便用户自己调试、切分支。
+ * 克隆/切分支的编排在 index.js（那边能拿到 provider、凭据与项目根）。
  */
-import { randomBytes } from 'node:crypto'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
-import os from 'node:os'
+import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
-import { GitError, runGit } from './git.js'
-import { DEEP_FILE_LIMIT, generateReview } from './review.js'
+import { generateReview } from './review.js'
 
-/** 超过这个字节数的文件不读（避免把几十 MB 的产物读进内存）。 */
+/** 超过这个字节数的文件不读完整内容（避免把几十 MB 的产物读进内存）。 */
 const MAX_READ_BYTES = 2 * 1024 * 1024
-const FETCH_TIMEOUT_MS = 5 * 60 * 1000
-
-function authArgs(user, token) {
-  if (typeof token !== 'string' || token === '') return []
-  const basic = Buffer.from(String(user) + ':' + token, 'utf8').toString('base64')
-  return ['-c', 'http.extraHeader=AUTHORIZATION: basic ' + basic]
-}
-
-/** 本地仓库的 origin 是否就是这个 PR 的仓库。 */
-async function localRepoMatches(root, fullName) {
-  const result = await runGit(root, ['config', '--get', 'remote.origin.url'], { allowFailure: true })
-  if (result.code !== 0) return false
-  const url = result.stdout.toString('utf8').trim().toLowerCase()
-    .replace(/\\/g, '/')
-    .replace(/\.git$/, '')
-  return url.includes('/' + String(fullName).toLowerCase())
-}
 
 /**
- * 把 PR 的 head 检出到临时目录。
- *
- * 两条路径：
- *  - 本地仓库匹配（origin 指向同一个仓库）：复用它的对象库，fetch 一个临时 ref + 临时 worktree，
- *    已存在的提交不会再下载 —— 通常近乎瞬时；结束后删 worktree 与 ref，不碰当前分支。
- *  - 否则：在系统临时目录建裸仓库，`--depth=1` 只拉这个 PR 的 head，用完删除。
- *
- * @returns {Promise<{ root: string, tree: string, objectSource: 'local'|'temp', cleanup: () => Promise<void> }>}
- */
-export async function materializePull(source, options = {}) {
-  const { signal, tempRoot } = options
-  const candidates = Array.isArray(options.localRoots)
-    ? options.localRoots.filter((root) => typeof root === 'string' && root !== '')
-    : []
-  // 逐个试项目里的仓库根：命中第一个就复用（同一仓库的多个克隆对象内容一致）
-  let localRoot = null
-  for (const candidate of candidates) {
-    if (await localRepoMatches(candidate, source.fullName)) {
-      localRoot = candidate
-      break
-    }
-  }
-  const useLocal = localRoot !== null
-
-  if (useLocal) {
-    const base = await mkdtemp(path.join(tempRoot ?? os.tmpdir(), 'dsh-deep-review-local-'))
-    const repoDir = path.join(base, 'repo')
-    const tree = path.join(base, 'tree')
-    const cleanup = async () => {
-      await rm(base, { recursive: true, force: true })
-    }
-    try {
-      // --shared：用 alternates 借用本地对象库，不复制、不改动源仓库
-      await runGit(base, ['clone', '-q', '--shared', '--no-checkout', localRoot, repoDir], { signal })
-      await runGit(base, [
-        '-C', repoDir,
-        ...authArgs(source.user, source.token),
-        'fetch', '--depth=1', '--no-tags', source.url, '+' + source.remoteRef + ':refs/dsh/review'
-      ], { signal, timeoutMs: FETCH_TIMEOUT_MS })
-      await runGit(base, ['-C', repoDir, 'worktree', 'add', '--detach', tree, 'refs/dsh/review'], { signal })
-    } catch (error) {
-      await cleanup()
-      if (error instanceof GitError) throw error
-      throw new GitError('deep-review-failed', '从本地仓库取 PR 代码失败：' + (error instanceof Error ? error.message : String(error)))
-    }
-    return { root: base, tree, objectSource: 'local', localRoot, cleanup }
-  }
-
-  const base = await mkdtemp(path.join(tempRoot ?? os.tmpdir(), 'dsh-deep-review-'))
-  const repoDir = path.join(base, 'repo.git')
-  const tree = path.join(base, 'tree')
-  const localRef = 'refs/dsh/review'
-  const cleanup = async () => {
-    await rm(base, { recursive: true, force: true })
-  }
-  try {
-    await runGit(base, ['init', '--bare', '-q', repoDir], { signal })
-    await runGit(base, [
-      '-C', repoDir,
-      ...authArgs(source.user, source.token),
-      'fetch', '--depth=1', '--no-tags', source.url, '+' + source.remoteRef + ':' + localRef
-    ], { signal, timeoutMs: FETCH_TIMEOUT_MS })
-    await runGit(base, ['-C', repoDir, 'worktree', 'add', '--detach', tree, localRef], { signal })
-  } catch (error) {
-    await cleanup()
-    if (error instanceof GitError) throw error
-    throw new GitError('deep-review-failed', '拉取 PR 代码失败：' + (error instanceof Error ? error.message : String(error)))
-  }
-  return { root: base, tree, objectSource: 'temp', localRoot: null, cleanup }
-}
-
-/**
- * 读改动文件的完整内容。
+ * 读改动文件的完整内容（相对某个真实工作目录）。
  *
  * 只读普通文本文件；二进制（含 NUL 字节）与超大文件跳过，并在 skipped 里说明原因。
  */
-export async function readChangedFiles(tree, files, options = {}) {
+export async function readChangedFiles(rootDir, files, options = {}) {
   const limitBytes = Number.isFinite(options.maxBytes) ? options.maxBytes : MAX_READ_BYTES
-  const root = path.resolve(tree)
+  const root = path.resolve(rootDir)
   const fullFiles = []
   const skipped = []
   for (const file of files) {
@@ -137,7 +42,7 @@ export async function readChangedFiles(tree, files, options = {}) {
     try {
       info = await stat(abs)
     } catch {
-      skipped.push({ filename, reason: '工作区里没有这个文件' })
+      skipped.push({ filename, reason: '目录里没有这个文件' })
       continue
     }
     if (!info.isFile()) {
@@ -153,54 +58,36 @@ export async function readChangedFiles(tree, files, options = {}) {
       skipped.push({ filename, reason: '二进制文件' })
       continue
     }
-    const text = buffer.toString('utf8')
-    fullFiles.push({ filename, text, size: info.size })
+    fullFiles.push({ filename, text: buffer.toString('utf8'), size: info.size })
   }
   return { fullFiles, skipped }
 }
 
 /**
- * 深度审阅：拉代码 → 读完整文件 → 调模型 → 清理。
+ * 深度审阅：从一个**已准备好的真实目录**读完整文件后交给模型。
  *
- * @param {{ llm: object, pair: {provider: string, model: string}, source: {url: string, refspec: string, user?: string, token?: string}, pull: object, files: object[], signal?: AbortSignal, tempRoot?: string }} input
+ * @param {{ llm: object, pair: {provider: string, model: string}, pull: object, files: object[],
+ *           localRoot: string, branch?: string, filesTruncated?: boolean, signal?: AbortSignal }} input
  */
 export async function deepReview(input) {
-  const { llm, pair, source, pull, files, signal } = input
-  const materialized = await materializePull(source, {
-    signal,
-    tempRoot: input.tempRoot,
-    localRoots: input.localRoots
+  const { llm, pair, pull, files, localRoot, signal } = input
+  const { fullFiles, skipped } = await readChangedFiles(localRoot, files, {
+    maxBytes: input.maxReadBytes
   })
-  let result
-  let cleanupError = null
-  try {
-    const { fullFiles, skipped } = await readChangedFiles(materialized.tree, files, {
-      maxBytes: input.maxReadBytes
-    })
-    result = await generateReview(llm, pair, { pull, files }, {
-      mode: 'deep',
-      fullFiles,
-      filesTruncated: input.filesTruncated,
-      signal,
-      timeoutMs: input.timeoutMs
-    })
-    result = {
-      ...result,
-      deep: true,
-      objectSource: materialized.objectSource,
-      localRootUsed: materialized.localRoot,
-      filesRead: fullFiles.length,
-      // 没读到完整内容的文件（二进制/过大/已删除）要如实带出去
-      fullFilesSkipped: skipped
-    }
-  } finally {
-    try {
-      await materialized.cleanup()
-    } catch (error) {
-      cleanupError = error instanceof Error ? error.message : String(error)
-    }
+  const review = await generateReview(llm, pair, { pull, files }, {
+    mode: 'deep',
+    fullFiles,
+    filesTruncated: input.filesTruncated,
+    signal,
+    timeoutMs: input.timeoutMs
+  })
+  return {
+    ...review,
+    deep: true,
+    objectSource: 'local',
+    localRootUsed: localRoot,
+    branch: typeof input.branch === 'string' ? input.branch : null,
+    filesRead: fullFiles.length,
+    fullFilesSkipped: skipped
   }
-  return cleanupError === null ? result : { ...result, cleanupError }
 }
-
-export { DEEP_FILE_LIMIT }

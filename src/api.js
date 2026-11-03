@@ -189,6 +189,11 @@ export function remotePullDeepReview(payload, options) {
   return call('remote/pull/deep-review', payload, options)
 }
 
+/** 把 PR 克隆到指定目录（深度审阅前的准备步骤）。 */
+export function remotePullCloneForReview(payload, options) {
+  return call('remote/pull/clone-for-review', payload, options)
+}
+
 /** 提交用户确认过的 PR 评论。 */
 export function remotePullComment(payload, options) {
   return call('remote/pull/comment', payload, options)

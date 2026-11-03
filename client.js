@@ -1229,6 +1229,18 @@ window.__ModuleLoader__.load({
       .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
       .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .dgp-ai-error > .dgp-detail-failure { margin: 0; }
+      /* 深度审阅前的「拉到哪里」确认框 */
+      .dgp-ai-clone {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px;
+        border: 1px solid var(--dsw-alias-border-l1);
+        border-radius: var(--dsw-radius-sm);
+        background: var(--dsw-alias-bg-module-platform);
+      }
+      .dgp-ai-clone-custom { display: flex; gap: 6px; align-items: center; }
+      .dgp-ai-clone-custom > .dgp-input { flex: 1 1 auto; min-width: 0; }
       /* AI 审阅：平台没返回内容的文件 */
       .dgp-ai-skipped { display: flex; flex-direction: column; gap: 2px; }
       .dgp-skipped-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
@@ -1654,6 +1666,12 @@ window.__ModuleLoader__.load({
         'settings.reviewModelLabel': 'AI 审阅模型',
         'settings.reviewModelHint': '用于审阅 PR 的模型；建议选能力更强的，审阅比写提交说明难得多。两个模型互不影响。',
         'pull.aiTitle': 'AI 审阅',
+        'pull.aiCloneTitle': '本地没有 {repo} 的克隆：要拉到哪里？',
+        'pull.aiCloneHint': '拉到项目工作区后，「变更」里也能直接看到它；也可以指定任意目录方便自己调试。',
+        'pull.aiCloneWorkspace': '克隆到项目工作区',
+        'pull.aiCloneCustom': '克隆到指定目录',
+        'pull.aiClonePlaceholder': '输入本机绝对路径，例如 D:\\code\\repo',
+        'pull.aiCloneNoPath': '请先填一个绝对路径',
         'pull.aiDeepRun': '深度审阅',
         'pull.aiDeepRerun': '重新深度审阅',
         'pull.aiDeepHint': '把 PR 的分支拉到临时目录，连同完整文件内容一起审（更慢，但能看上下文）',
@@ -1980,6 +1998,12 @@ window.__ModuleLoader__.load({
         'settings.reviewModelLabel': 'AI review model',
         'settings.reviewModelHint': 'Model used to review PRs; pick a stronger one — reviewing is harder than writing a commit message. The two models are independent.',
         'pull.aiTitle': 'AI review',
+        'pull.aiCloneTitle': 'No local clone of {repo} — where should it go?',
+        'pull.aiCloneHint': 'Cloning into the project workspace also makes it show up in Changes; you can also pick any folder you like.',
+        'pull.aiCloneWorkspace': 'Clone into workspace',
+        'pull.aiCloneCustom': 'Clone into folder',
+        'pull.aiClonePlaceholder': 'Absolute path, e.g. D:\\code\\repo',
+        'pull.aiCloneNoPath': 'Enter an absolute path first',
         'pull.aiDeepRun': 'Deep review',
         'pull.aiDeepRerun': 'Deep review again',
         'pull.aiDeepHint': 'Fetch the PR branch into a temp folder and review with full file contents (slower, but sees context)',
@@ -3280,6 +3304,18 @@ window.__ModuleLoader__.load({
           }
         }, [])
 
+        /** 把 PR 克隆到用户选的目录（深度审阅前的准备步骤）。 */
+        const cloneForReviewPull = useCallback(async (input) => {
+          try {
+            const result = await api.remotePullCloneForReview(input)
+            // 克隆完成后重新解析项目：如果落在项目里，「变更」会立刻多出这个仓库
+            await resolveProject()
+            return { ok: true, ...result }
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current) }
+          }
+        }, [resolveProject])
+
         /** 提交评论（内容已由用户在面板里确认过）。 */
         const commentPull = useCallback(async (input) => {
           try {
@@ -3854,6 +3890,8 @@ window.__ModuleLoader__.load({
             onPass: passPull,
             onAiReview: aiReviewPull,
             onDeepReview: deepReviewPull,
+            onCloneForReview: cloneForReviewPull,
+            projectRoot: project.projectRoot,
             // 深度审阅会拿这些仓库逐个比对 origin，命中就复用它的对象库（快很多）
             localRepoRoots: gitRoots.map((root) => root.path),
             onComment: commentPull,
@@ -6570,6 +6608,11 @@ window.__ModuleLoader__.load({
         return call('remote/pull/deep-review', payload, options)
       }
 
+      /** 把 PR 克隆到指定目录（深度审阅前的准备步骤）。 */
+      function remotePullCloneForReview(payload, options) {
+        return call('remote/pull/clone-for-review', payload, options)
+      }
+
       /** 提交用户确认过的 PR 评论。 */
       function remotePullComment(payload, options) {
         return call('remote/pull/comment', payload, options)
@@ -6676,7 +6719,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullDeepReview, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullDeepReview, remotePullCloneForReview, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -8941,6 +8984,8 @@ window.__ModuleLoader__.load({
         const [notice, setNotice] = useState(null)
         // AI 审阅：idle / loading / done(result) / error
         const [ai, setAi] = useState({ status: 'idle', mode: 'diff', result: null, error: null })
+        // 本地没有这个仓库时：{ repoUsed, suggestedName, headBranch, target, customPath, busy, error }
+        const [clonePrompt, setClonePrompt] = useState(null)
         // 评论草稿：AI 生成后填入，用户可改，只有点「提交评论」才发出去
         const [draft, setDraft] = useState('')
         const [commentBusy, setCommentBusy] = useState(false)
@@ -9034,20 +9079,36 @@ window.__ModuleLoader__.load({
         }
 
         /** 跑一次 AI 审阅（宿主负责取 diff 与调模型）。 */
-        const runAi = async (mode) => {
+        const runAi = async (mode, prepared = null) => {
           const handler = mode === 'deep' ? source.onDeepReview : source.onAiReview
           if (typeof handler !== 'function') return
           setAi({ status: 'loading', mode, result: null, error: null })
           setCommentNotice(null)
+          setClonePrompt(null)
           const result = await handler({
             accountId: selection.accountId,
             fullName: selection.fullName,
             number: pull.number,
             // 深度审阅：把项目里的仓库根都带上，宿主逐个比对 origin 后决定是否复用
-            ...(mode === 'deep' && Array.isArray(source.localRepoRoots)
+            ...(mode === 'deep' && Array.isArray(source.localRepoRoots) && prepared === null
               ? { rootPaths: source.localRepoRoots }
-              : {})
+              : {}),
+            // 已经准备好目录（刚克隆完）：直接审那个目录
+            ...(prepared === null ? {} : { rootPath: prepared.rootPath, branch: prepared.branch })
           })
+          // 本地没有这个项目：弹出「拉到哪里」的确认框
+          if (mode === 'deep' && result !== null && result !== undefined && result.ok === true && result.needsClone === true) {
+            setAi({ status: 'idle', mode, result: null, error: null })
+            setClonePrompt({
+              repoUsed: result.repoUsed,
+              suggestedName: result.suggestedName,
+              headBranch: result.headBranch,
+              customPath: '',
+              busy: false,
+              error: null
+            })
+            return
+          }
           if (result !== null && result !== undefined && result.ok === true) {
             setAi({ status: 'done', mode, result, error: null })
             setDraft(result.comment ?? '')
@@ -9064,6 +9125,32 @@ window.__ModuleLoader__.load({
         }
 
         /** 提交评论：内容就是输入框里的（用户可改过的）文本。 */
+        /** 确认克隆位置：workspace = 项目工作区；custom = 用户填的绝对路径。 */
+        const startClone = async (target) => {
+          if (typeof source.onCloneForReview !== 'function' || clonePrompt === null) return
+          const targetDir = target === 'workspace'
+            ? String(source.projectRoot ?? '') + '/' + clonePrompt.suggestedName
+            : clonePrompt.customPath.trim()
+          if (targetDir === '' || targetDir === '/undefined') {
+            setClonePrompt((previous) => (previous === null ? previous : { ...previous, error: t('pull.aiCloneNoPath') }))
+            return
+          }
+          setClonePrompt((previous) => (previous === null ? previous : { ...previous, busy: true, error: null }))
+          const result = await source.onCloneForReview({
+            accountId: selection.accountId,
+            fullName: selection.fullName,
+            number: pull.number,
+            targetDir
+          })
+          if (result === null || result === undefined || result.ok !== true) {
+            setClonePrompt((previous) => (previous === null
+              ? previous
+              : { ...previous, busy: false, error: result === null || result === undefined ? '克隆失败' : result.error }))
+            return
+          }
+          await runAi('deep', { rootPath: result.rootPath, branch: result.branch })
+        }
+
         const submitComment = async () => {
           if (typeof source.onComment !== 'function' || commentBusy) return
           setCommentBusy(true)
@@ -9188,6 +9275,51 @@ window.__ModuleLoader__.load({
               ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' },
                 t(ai.mode === 'deep' ? 'pull.aiDeepRunning' : 'pull.aiRunning'))
               : null,
+            clonePrompt === null ? null : h('div', { className: 'dgp-ai-clone', 'data-dgp-pull': 'clone-prompt' },
+              h('p', { className: 'dgp-ai-summary' }, t('pull.aiCloneTitle', { repo: clonePrompt.repoUsed })),
+              h('p', { className: 'dgp-detail-meta' }, t('pull.aiCloneHint')),
+              clonePrompt.error === null
+                ? null
+                : h('p', { className: 'dgp-detail-failure' }, clonePrompt.error),
+              h('div', { className: 'dgp-pull-actions' },
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-variant': 'primary',
+                  'data-dgp-pull': 'clone-workspace',
+                  disabled: clonePrompt.busy,
+                  onClick: () => startClone('workspace')
+                }, t('pull.aiCloneWorkspace')),
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-variant': 'ghost',
+                  'data-dgp-pull': 'clone-cancel',
+                  disabled: clonePrompt.busy,
+                  onClick: () => setClonePrompt(null)
+                }, t('action.cancel'))),
+              h('div', { className: 'dgp-ai-clone-custom' },
+                h('input', {
+                  className: 'dgp-input',
+                  'data-dgp-pull': 'clone-path',
+                  placeholder: t('pull.aiClonePlaceholder'),
+                  value: clonePrompt.customPath,
+                  spellCheck: false,
+                  disabled: clonePrompt.busy,
+                  onChange: (event) => setClonePrompt((previous) => (previous === null
+                    ? previous
+                    : { ...previous, customPath: event.target.value, error: null }))
+                }),
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-dgp-pull': 'clone-custom',
+                  disabled: clonePrompt.busy || clonePrompt.customPath.trim() === '',
+                  onClick: () => startClone('custom')
+                }, t('pull.aiCloneCustom')))),
             ai.status === 'error'
               ? h('div', { className: 'dgp-ai-error' },
                 h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error),

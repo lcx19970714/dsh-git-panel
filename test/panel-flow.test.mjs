@@ -2501,8 +2501,9 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
   })
 })
 
-test('用例 1S：深度审阅按钮调用 deep-review，并显示复用了本地仓库', async () => {
+test('用例 1S：深度审阅先找本地仓库，没有就弹框确认克隆到哪里', async () => {
   const deepCalls = []
+  const clones = []
   await withPanel({
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
@@ -2543,13 +2544,22 @@ test('用例 1S：深度审阅按钮调用 deep-review，并显示复用了本�
       }),
       'remote/pull/deep-review': (payload) => {
         deepCalls.push(payload)
+        // 第一次：本地没有这个仓库 → 让界面确认拉到哪里
+        if (payload.rootPath === undefined) {
+          return sayOk({ needsClone: true, repoUsed: 'alice/app', headBranch: 'feat', suggestedName: 'app', url: 'https://github.com/alice/app.git' })
+        }
         return sayOk({
           summary: '深度审阅结论', verdict: 'comment',
           findings: [{ severity: 'minor', file: 'src/a.js', line: 3, title: '边界', detail: 'd', suggestion: 's' }],
           comment: '1. 边界检查',
           model: 'p1/m1', truncated: false, filesIncluded: 1,
-          deep: true, objectSource: 'local', filesRead: 1, fullFilesSkipped: []
+          deep: true, objectSource: 'local', localRootUsed: payload.rootPath, branch: payload.branch,
+          filesRead: 1, fullFilesSkipped: []
         })
+      },
+      'remote/pull/clone-for-review': (payload) => {
+        clones.push(payload)
+        return sayOk({ rootPath: PROJECT + '/app', branch: 'feat', head: 'abc1234' })
       }
     }
   }, async (panel) => {
@@ -2561,13 +2571,27 @@ test('用例 1S：深度审阅按钮调用 deep-review，并显示复用了本�
 
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-deep-run'))
     await panel.flush()
+    eq(deepCalls.length, 1, '应调用一次 deep-review')
+    eq(deepCalls[0].rootPaths, [PROJECT], '先带项目里的仓库根让宿主找')
+    eq(clones.length, 0, '还没确认前不应克隆')
 
-    eq(deepCalls.length, 1, '应调用 deep-review')
-    eq(deepCalls[0].number, 7)
-    eq(deepCalls[0].rootPaths, [PROJECT], '应带上项目里所有仓库根，供宿主逐个匹配 origin')
+    // 确认框：文案说明要拉到哪里
+    const prompt = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'clone-prompt')
+    assert(prompt !== null, '本地没有仓库时应出现确认框')
+    assert(textOf(prompt).includes('alice/app'), '确认框要写清是哪个仓库：' + textOf(prompt))
+
+    // 选「克隆到项目工作区」
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'clone-workspace'))
+    await panel.flush()
+    eq(clones.length, 1, '应调用 clone-for-review')
+    eq(clones[0].targetDir, PROJECT + '/app', '默认克隆到项目工作区下的仓库名目录')
+    eq(deepCalls.length, 2, '克隆完要再发一次审阅')
+    eq(deepCalls[1].rootPath, PROJECT + '/app', '第二次带着刚克隆的目录')
+    eq(deepCalls[1].branch, 'feat')
+
     const info = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-deep-info')
     assert(info !== null, '深度审阅结果要显示读取信息')
-    assert(textOf(info).includes('复用了本地仓库'), '要说明复用了本地仓库：' + textOf(info))
+    assert(textOf(info).includes('复用了本地仓库'), '要说明用的是哪个本地目录：' + textOf(info))
   })
 })
 

@@ -178,7 +178,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 40 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 41 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -214,28 +214,17 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 远端时间一律用 `formatDateTime`：今天 = HH:MM，今年 = MM-DD HH:MM，跨年 = YYYY-MM-DD HH:MM
 （只显示时分秒会让人误以为是当天）。
 
-**深度审阅约定**：`remote/pull/deep-review` 不只发 diff：宿主把 PR 的 head 拉到临时目录，
-读**改动文件的完整内容**后再交给模型（输入上限 600k 字符、单文件 80k）。
+**深度审阅约定**：`remote/pull/deep-review` 不只发 diff：直接读**真实本地目录**里改动文件的完整内容再审。
 
-- 找本地仓库：客户端把项目里**所有**仓库根的路径都发给宿主（不是只发当前选中的那个），
-  宿主逐个读 `remote.origin.url`，去掉 `.git`、统一小写与正斜杠后判断是否包含 PR 的 `owner/repo`，
-  命中第一个就复用它；命中不到才临时拉取。结果里带 `localRootUsed`，界面显示用的是哪个仓库。
-- fork PR：GitHub 用 base 仓库的 `refs/pull/{n}/head`（对 fork 同样有效）；
-  Gitee 没有 pull refs，必须按 PR 的 `head.repo` 从 **fork 仓库** 拉 `refs/heads/{head}`，
-  否则会出现「couldn't find remote ref」；
-- 平台单次只返回前 300 个文件（`pullDiff` 的 `truncated`）：这个事实会写进提示词并随结果返回，
-  界面明确提示「文件清单不完整」；
-- 临时目录清理失败不回滚结论，但会随 `cleanupError` 返回并显示（不允许静默遗留）。
-- 拉取方式：本地仓库的 origin 与 PR 仓库一致时，用 `git clone --shared` 在临时目录借用它的对象库
-  （用户仓库零写入：不新增 ref、不注册 worktree），再 `--depth=1` fetch 只下载缺失对象；
-  不一致或没有本地仓库时，在系统临时目录建裸仓库 `git fetch --depth=1`，用完整个目录删除；
-- 绝不切换用户当前分支、不写用户工作区：全程只读对象 + 临时 worktree，finally 里清理；
-- 二进制、超过 2MB、已删除的文件不读完整内容，原因随 `fullFilesSkipped` 返回并显示在界面上。
-
-- 拉取方式：本地仓库的 origin 与 PR 仓库一致时，直接复用它的对象库（`git fetch origin` + 临时 worktree），
-  已经有的提交不会再下载；不一致时在系统临时目录建裸仓库 `git fetch --depth=1`，用完删除；
-- 绝不切换用户当前分支、不写用户工作区：全程只读对象 + 临时 worktree，finally 里清理；
-- 二进制、超过 2MB、已删除的文件不读完整内容，原因随 `fullFilesSkipped` 返回并显示在界面上。
+- 目录来源（按顺序）：
+  1. 请求带 `rootPath`（刚克隆完 / 复用上次目录）→ 直接审；
+  2. 否则在 `rootPaths`（变更里所有仓库根）里按 `remote.origin.url` 匹配 PR 仓库（`repoUsed`，fork PR 指向 head 仓库），
+     命中就 `git fetch` PR head 到独立分支 `dsh-review/pr-<n>` 并切过去再审；
+  3. 都没有 → 返回 `{needsClone:true, repoUsed, headBranch, suggestedName, url}`，界面弹框让用户选
+     「克隆到项目工作区」或「指定目录」，`remote/pull/clone-for-review` 克隆后再审。
+- 不复用临时裸仓库/worktree：审的就是真实目录，方便用户自己调试、切分支；
+- 切换分支不动未提交改动：工作区脏时 git 自己拒绝，错误原样上抛；
+- 二进制、超过 2MB、已删除的文件不读完整内容，原因随 `fullFilesSkipped` 返回并显示。
 
 **AI 审阅约定**：`remote/pull/ai-review` 由宿主取 `pulls/{n}/files` 的 patch，拼成
 PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 JSON（summary / verdict / findings[] / comment）。
@@ -273,6 +262,7 @@ PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 J
 | `remote/pull/diff` | `{accountId, fullName, number}` | `{files: [{filename, status, additions, deletions, changes, patch}], truncated}`；两家都走 `pulls/{n}/files`，每页 100、最多 3 页 |
 | `remote/pull/ai-review` | `{accountId, fullName, number}` | `{summary, verdict, findings[], comment, model, truncated, filesIncluded}`；读 `reviewModel`，输出严格校验 |
 | `remote/pull/deep-review` | `{accountId, fullName, number, rootPath?}` | 同 ai-review 的返回 + `deep, filesRead, fullFilesSkipped, objectSource`；把 PR head 拉到临时裸仓库/worktree 读完整文件再审，临时目录用完即删 |
+| `remote/pull/clone-for-review` | `{accountId, fullName, number, targetDir}` | `{rootPath, branch, head}`；目标目录必须绝对且为空/不存在；克隆后切到 PR 分支 |
 | `remote/pull/comment` | `{accountId, fullName, number, comment}` | `{posted, url}`；内容由用户在面板里确认/编辑后提交 |
 | `remote/pull/test` | `{accountId, fullName, number}` | `{tested}`；Gitee 专用（POST /pulls/{n}/test，无请求体），GitHub 报不支持 |
 | `remote/pull/merge` | `{accountId, fullName, number, method, deleteBranch?}` | `{merged, method, branchDeleted, headBranch}`；不可合并/已合并/非打开状态在宿主侧拦下 |
@@ -309,7 +299,7 @@ node scripts/install-profile.mjs --dry-run
 | `remote` | 远端地址 → 网页地址（scp/ssh/https/git 形式）、凭据不入地址栏、本地路径 → null |
 | `build` | 打包器：产物无残留 import/export、能真跑、循环依赖报错 |
 | `git` | git 引擎（需要 `_sandbox/repo` 夹具：`node test/make-fixture.mjs`） |
-| `host` | 40 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表、切换与创建、代码托管账号（令牌存 DSH 凭据服务）、远端仓库列表与克隆、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
+| `host` | 41 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表、切换与创建、代码托管账号（令牌存 DSH 凭据服务）、远端仓库列表与克隆、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
 | `client` | 产物装载 + `apply()` 契约 + 用假 react 真渲染 tab body（不需要浏览器）+ 样式表合法性（规则外不得有裸文本行，否则浏览器会吞掉下一条规则） |
 | `components` | 组件渲染契约：编辑器脏/冲突态、不可编辑占位、换行开关下的行号隐藏 |
 | `flow` | 面板端到端数据流：选根→status→diff→文件读→编辑保存→冲突→检测更新（假 fetch，不起服务） |

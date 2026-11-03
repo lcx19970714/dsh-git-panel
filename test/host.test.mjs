@@ -327,6 +327,23 @@ test('pr/prepare 路由：origin 是 GitHub 时要走到分支检查（助手必
     '不能是「变量未定义」这类实现错误：' + result.error.message)
 })
 
+test('评论转会话的提示词：带评论原文、先判断、不自动提交/推送', async () => {
+  const { buildCommentSessionPrompt } = await import('../host/session-review.js')
+  const prompt = buildCommentSessionPrompt({
+    fullName: 'alice/app',
+    localRoot: 'H:/code/app',
+    branch: 'feat/x',
+    pull: { number: 7, title: 'T', headBranch: 'feat/x', baseBranch: 'dev' },
+    comment: { author: 'bob', createdAt: '2026-11-01T10:00:00Z', body: '这里没有判空，会 NPE，改一下' }
+  })
+  assert.ok(prompt.includes('alice/app'))
+  assert.ok(prompt.includes('#7'))
+  assert.ok(prompt.includes('这里没有判空，会 NPE，改一下'), '必须带评论原文')
+  assert.ok(prompt.includes('先判断这条意见是否成立'), '必须先判断')
+  assert.ok(prompt.includes('不要 commit、不要 push'), '必须明确不提交不推送')
+  assert.ok(prompt.includes('需要向评论人确认'), '说不清时要停下来问')
+})
+
 test('创建 PR 的本地信息：远端地址识别、远端分支、是否已推送、base..HEAD 提交', async () => {
   const { remoteInfoFor, listRemoteBranches, pushedState, branchCommits } = await import('../host/git.js')
   const platform = path.join(tempDir('dgp-pr-platform-'), 'repo.git')

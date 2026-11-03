@@ -35,6 +35,8 @@ export function PullDetail(props) {
   const [commentNotice, setCommentNotice] = useState(null)
   // 常驻评论框：人工审阅后也能随时给对方留言
   const [commentDraft, setCommentDraft] = useState('')
+  // 评论转会话：{ busyId, error, notice }
+  const [commentAi, setCommentAi] = useState({ busyId: null, error: null, notice: null })
   // 关闭 PR 是两步操作：先确认再发，避免误点
   const [closeConfirm, setCloseConfirm] = useState(false)
   const [stateBusy, setStateBusy] = useState(false)
@@ -261,6 +263,46 @@ export function PullDetail(props) {
   }
 
   /** 确认克隆位置：workspace = 项目工作区；custom = 用户填的绝对路径。 */
+  /**
+   * 把一条评论交给会话处理：宿主准备目录 → 新建会话（先判断再改，不自动 push）。
+   * 本地没有仓库时复用克隆确认框，克隆完继续处理同一条评论。
+   */
+  const runCommentAi = async (comment) => {
+    if (typeof source.onCommentSession !== 'function' || commentAi.busyId !== null) return
+    setCommentAi({ busyId: comment.id ?? 0, error: null, notice: null })
+    const result = await source.onCommentSession({
+      accountId: selection.accountId,
+      fullName: selection.fullName,
+      number: pull.number,
+      rootPaths: Array.isArray(source.localRepoRoots) ? source.localRepoRoots : [],
+      comment: {
+        id: comment.id,
+        author: comment.author,
+        body: comment.body,
+        createdAt: comment.createdAt
+      }
+    })
+    if (result !== null && result !== undefined && result.ok === true && result.needsClone === true) {
+      setCommentAi({ busyId: null, error: null, notice: null })
+      setClonePrompt({
+        repoUsed: result.repoUsed,
+        suggestedName: result.suggestedName,
+        headBranch: result.headBranch,
+        customPath: '',
+        busy: false,
+        error: null,
+        intent: 'comment',
+        comment
+      })
+      return
+    }
+    if (result !== null && result !== undefined && result.ok === true) {
+      setCommentAi({ busyId: null, error: null, notice: t('pull.commentAiStarted', { id: result.sessionId }) })
+      return
+    }
+    setCommentAi({ busyId: null, error: result === null || result === undefined ? '处理失败' : result.error, notice: null })
+  }
+
   const startClone = async (target) => {
     if (typeof source.onCloneForReview !== 'function' || clonePrompt === null) return
     const targetDir = target === 'workspace'
@@ -281,6 +323,25 @@ export function PullDetail(props) {
       setClonePrompt((previous) => (previous === null
         ? previous
         : { ...previous, busy: false, error: result === null || result === undefined ? '克隆失败' : result.error }))
+      return
+    }
+    if (clonePrompt.intent === 'comment' && clonePrompt.comment !== undefined) {
+      // 克隆完继续处理那条评论（用刚准备好的目录）
+      const comment = clonePrompt.comment
+      setClonePrompt(null)
+      const handled = await source.onCommentSession({
+        accountId: selection.accountId,
+        fullName: selection.fullName,
+        number: pull.number,
+        rootPath: result.rootPath,
+        branch: result.branch,
+        comment: { id: comment.id, author: comment.author, body: comment.body, createdAt: comment.createdAt }
+      })
+      if (handled !== null && handled !== undefined && handled.ok === true) {
+        setCommentAi({ busyId: null, error: null, notice: t('pull.commentAiStarted', { id: handled.sessionId }) })
+      } else {
+        setCommentAi({ busyId: null, error: handled === null || handled === undefined ? '处理失败' : handled.error, notice: null })
+      }
       return
     }
     await runAi('deep', { rootPath: result.rootPath, branch: result.branch })
@@ -654,10 +715,28 @@ export function PullDetail(props) {
             className: 'dgp-detail-item',
             'data-dgp-comment': String(comment.id ?? index)
           },
-          h('span', { className: 'dgp-detail-meta' },
-            h('span', { className: 'dgp-detail-author' }, comment.author),
-            comment.createdAt === '' ? null : h('span', null, formatDateTime(Date.parse(comment.createdAt)))),
+          h('div', { className: 'dgp-comment-head' },
+            h('span', { className: 'dgp-detail-meta' },
+              h('span', { className: 'dgp-detail-author' }, comment.author),
+              comment.createdAt === '' ? null : h('span', null, formatDateTime(Date.parse(comment.createdAt)))),
+            typeof source.onCommentSession === 'function'
+              ? h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'ghost',
+                'data-dgp-pull': 'comment-ai',
+                disabled: commentAi.busyId !== null,
+                onClick: () => runCommentAi(comment)
+              }, t(commentAi.busyId === (comment.id ?? 0) ? 'pull.commentAiBusy' : 'pull.commentAi'))
+              : null),
           h('pre', { className: 'dgp-comment-body' }, comment.body)))),
+      commentAi.notice === null
+        ? null
+        : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-ai-notice' }, commentAi.notice),
+      commentAi.error === null
+        ? null
+        : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'comment-ai-error' }, commentAi.error),
       h('div', { className: 'dgp-comment-compose' },
         h('textarea', {
           className: 'dgp-input dgp-ai-textarea',

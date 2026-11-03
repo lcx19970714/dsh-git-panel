@@ -3068,6 +3068,88 @@ test('用例 1V：变更页签创建 PR：选目标分支、生成标题描述�
   })
 })
 
+test('用例 1W：变更页签显示当前分支的 PR 状态与未读反馈，可点开；评论可交给 AI 处理', async () => {
+  const storage = createFakeStorage()
+  const sessionCalls = []
+  await withPanel({
+    storage,
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'pr/linked': () => sayOk({
+        linked: true,
+        provider: 'github',
+        fullName: 'alice/app',
+        branch: 'feat/x',
+        accountId: 'github:alice',
+        number: 7,
+        pull: {
+          number: 7, title: 'PR seven', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'alice', baseBranch: 'dev', headBranch: 'feat/x', additions: 1, deletions: 0, changedFiles: 1,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
+        },
+        gate: { review: { state: 'changes-requested', approvals: 0, changesRequested: 1 }, test: { state: 'unknown' }, mergeState: null },
+        comments: [
+          { id: 1, author: 'bob', body: '这里没判空', createdAt: '2026-11-01T10:00:00Z', url: '' },
+          { id: 2, author: 'bob', body: '顺便补个测试', createdAt: '2026-11-02T10:00:00Z', url: '' }
+        ],
+        commentsUnavailable: null
+      }),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({ repos: [], page: 1, hasMore: false }),
+      'remote/pull': (payload) => sayOk({
+        pull: {
+          number: payload.number, title: 'PR seven', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'alice', baseBranch: 'dev', headBranch: 'feat/x', additions: 1, deletions: 0, changedFiles: 1,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
+        },
+        reviews: [],
+        comments: [
+          { id: 1, author: 'bob', body: '这里没判空', createdAt: '2026-11-01T10:00:00Z', url: '' },
+          { id: 2, author: 'bob', body: '顺便补个测试', createdAt: '2026-11-02T10:00:00Z', url: '' }
+        ],
+        commentsUnavailable: null,
+        commits: [],
+        commitsUnavailable: null,
+        gate: { review: { state: 'changes-requested', approvals: 0, changesRequested: 1 }, test: { state: 'unknown' }, mergeState: null },
+        capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
+      }),
+      'remote/pull/session-review': (payload) => {
+        sessionCalls.push(payload)
+        return sayOk({ sessionId: 'session-c1', steps: [], logPath: null })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    // 卡片：需要修改 + 2 条未读
+    const card = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr-card') === 'changes')
+    assert(card !== null, '应显示 PR 状态卡')
+    assert(textOf(card).includes('需要修改'), '状态要显示「需要修改」：' + textOf(card))
+    assert(textOf(card).includes('2 条新反馈'), '未读数：' + textOf(card))
+
+    // 点开：切到远端页签并载入详情，未读清零（已读水位写入）
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr-card') === 'open'))
+    await panel.flush()
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comments') !== null, '应进入 PR 详情')
+
+    // 评论「让 AI 处理」
+    const buttons = panel.all((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-ai')
+    assert(buttons.length === 2, '每条评论都有 AI 处理按钮')
+    click(buttons[1])
+    await panel.flush()
+    eq(sessionCalls.length, 1, '应调用会话端点')
+    eq(sessionCalls[0].comment.body, '顺便补个测试', '带的是点中的那条评论')
+    eq(sessionCalls[0].number, 7)
+    assert(Array.isArray(sessionCalls[0].rootPaths), '要带本地仓库候选')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-ai-notice') !== null,
+      '要提示已新建会话')
+  })
+})
+
 test('用例 1R：没配 AI 审阅模型时，报错旁边有「去设置模型」入口', async () => {
   await withPanel({
     routes: {

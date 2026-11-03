@@ -672,6 +672,42 @@ await test('Gitee 的 fork PR：读不到 fork 仓库时直接说清原因（不
   )
 })
 
+await test('找当前分支的 PR：GitHub 用 head 查询，Gitee 用作者列表按 head 匹配', async () => {
+  const credentials = fakeCredentials()
+  const urls = []
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/repos\/alice\/app\/pulls\?head=alice%3Afeat%2Fx/, (url) => {
+      urls.push(url)
+      return { json: [{ number: 7, title: 'T', state: 'open', head: { ref: 'feat/x' }, base: { ref: 'dev' } }] }
+    }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/pulls\?state=all&author=bob/, (url) => {
+      urls.push(url)
+      return {
+        json: [
+          { number: 3, title: 'other', state: 'open', head: { ref: 'other', label: 'bob:other' }, base: { ref: 'dev' } },
+          { number: 4, title: 'mine', state: 'open', head: { ref: 'feat/y', label: 'bob:feat/y' }, base: { ref: 'dev' } }
+        ]
+      }
+    }],
+    [/\/repos\/alice\/app\/pulls\?head=alice%3Amissing/, { json: [] }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+  await remotes.addAccount({ provider: 'gitee', token: 'b' })
+
+  const github = await remotes.findPullForBranch({ accountId: 'github:alice', fullName: 'alice/app', branch: 'feat/x' })
+  assert.equal(github?.number, 7)
+  assert.ok(urls[0].includes('head=alice%3Afeat%2Fx'))
+
+  const gitee = await remotes.findPullForBranch({ accountId: 'gitee:bob', fullName: 'bob/tool', branch: 'feat/y' })
+  assert.equal(gitee?.number, 4, 'Gitee 应按 head.label 匹配到自己的分支')
+
+  const none = await remotes.findPullForBranch({ accountId: 'github:alice', fullName: 'alice/app', branch: 'missing' })
+  assert.equal(none, null)
+})
+
 await test('创建 PR：POST /pulls，body 带 title/head/base/body；源与目标相同直接拒绝', async () => {
   const credentials = fakeCredentials()
   const calls = []

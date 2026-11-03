@@ -1048,6 +1048,27 @@ export const CSS = `
 .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dgp-ai-error > .dgp-detail-failure { margin: 0; }
 .dgp-pull-confirm { display: inline-flex; gap: 6px; align-items: center; }
+/* 变更页签：当前分支的 PR 状态卡 */
+.dgp-pr-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-secondary);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dgp-pr-card-head { display: flex; align-items: baseline; gap: 6px; justify-content: space-between; }
+.dgp-pr-card-title { font-size: 12px; font-weight: 500; color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dgp-pr-card-status { flex: none; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dgp-pr-card-status[data-status="changes"] { color: var(--dsw-alias-state-warn-label); }
+.dgp-pr-card-status[data-status="approved"] { color: var(--dsw-alias-state-success-primary); }
+.dgp-pr-card-status[data-status="merged"] { color: var(--dsw-alias-state-success-primary); }
+.dgp-pr-card-meta { display: flex; gap: 8px; font-size: 11px; color: var(--dsw-alias-label-tertiary); flex-wrap: wrap; }
+.dgp-pr-card-unread { color: var(--dsw-alias-state-warn-label); }
+.dgp-pr-card-latest { font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.dgp-pr-card-actions { display: flex; justify-content: flex-end; }
+.dgp-comment-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 /* 创建 PR 表单（右侧面板） */
 .dgp-pr-form { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; overflow-y: auto; }
 .dgp-pr-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

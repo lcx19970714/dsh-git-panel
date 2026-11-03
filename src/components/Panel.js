@@ -25,6 +25,7 @@ import { FileEditor } from './FileEditor.js'
 import { EmptyState, LoadingState, InlineNote } from './States.js'
 import { CommitBox } from './CommitBox.js'
 import { CreatePullForm } from './CreatePullForm.js'
+import { PullStatusCard } from './PullStatusCard.js'
 import { SettingsView } from './SettingsView.js'
 import { RemotePane } from './RemotePane.js'
 import { RemoteDetail } from './RemoteDetail.js'
@@ -202,6 +203,10 @@ export function Panel(props) {
    *   pushed, generating, creating, created, notice }
    */
   const [pullForm, setPullForm] = useState(null)
+  /** 当前分支的 PR 状态卡：{ loading, error, data } */
+  const [linkedPull, setLinkedPull] = useState(null)
+  // 状态卡的刷新函数：createPull 等更早定义的回调用它，避免依赖顺序（TDZ）
+  const refreshLinkedRef = useRef(null)
   const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
 
   const [moreOpen, setMoreOpen] = useState(false)
@@ -819,6 +824,7 @@ export function Panel(props) {
         body: pullForm.body
       })
       writePref('pullTargets', { ...(readPrefs().pullTargets ?? {}), [pullTargetKey(pullForm.repo)]: pullForm.base })
+      await refreshLinkedRef.current?.()
       await refreshStatus()
       setPullForm((previous) => (previous === null ? previous : { ...previous, creating: false, created }))
     } catch (error) {
@@ -1096,6 +1102,12 @@ export function Panel(props) {
         number: selection.number
       })
       setPullDetail({ loading: false, error: null, data })
+      // 详情里能看到评论 = 用户已读：记水位供状态卡算未读
+      const count = Array.isArray(data.comments) ? data.comments.length : 0
+      writePref('pullSeen', {
+        ...(readPrefs().pullSeen ?? {}),
+        [selection.accountId + '#' + selection.number]: count
+      })
     } catch (error) {
       setPullDetail({ loading: false, error: api.describeError(error, tRef.current), data: null })
     }
@@ -1123,6 +1135,41 @@ export function Panel(props) {
     setRemoteNotice(null)
     setOpenPull(selection)
   }, [])
+
+  /** 读当前分支的 PR 状态（变更页签顶部卡片）。 */
+  const loadLinkedPull = useCallback(async () => {
+    if (activeRoot === null || activeRoot.isGit !== true) {
+      setLinkedPull(null)
+      return
+    }
+    setLinkedPull({ loading: true, error: null, data: null })
+    try {
+      const data = await api.prLinked({ rootPath: activeRoot.path })
+      setLinkedPull({ loading: false, error: null, data })
+    } catch (error) {
+      setLinkedPull({ loading: false, error: api.describeError(error, tRef.current), data: null })
+    }
+  }, [activeRoot])
+
+  refreshLinkedRef.current = loadLinkedPull
+
+  // 切到变更页签或分支变化时刷新；不轮询（面板没有后台任务）
+  useEffect(() => {
+    if (mode !== MODE.changes || activeRoot === null || activeRoot.isGit !== true) return
+    loadLinkedPull()
+  }, [mode, status === null ? '' : status.branch, loadLinkedPull, activeRoot])
+
+  /** 从卡片打开 PR：切到远端页签并载入详情，同时记已读。 */
+  const openLinkedPull = useCallback(async () => {
+    if (linkedPull === null || linkedPull.data === null || linkedPull.data.linked !== true) return
+    const data = linkedPull.data
+    const selection = { accountId: data.accountId, fullName: data.fullName, number: data.number }
+    setMode(MODE.remote)
+    setRemoteSelection(selection)
+    openPullWith(selection)
+    await loadPullDetail(selection)
+  }, [linkedPull, setMode, loadPullDetail, openPullWith])
+
 
   /** 审查：统一把失败包成 { ok:false, error }，界面就地显示。 */
   const reviewPull = useCallback(async (input) => {
@@ -1784,6 +1831,18 @@ function buildUpdateNote(updateState, t) {
           onCreateBranch: createBranch,
           t
         }),
+        mode === MODE.changes && linkedPull !== null
+          ? h(PullStatusCard, {
+            card: linkedPull,
+            unread: linkedPull.data !== null && linkedPull.data.linked === true
+              ? Math.max(0, (Array.isArray(linkedPull.data.comments) ? linkedPull.data.comments.length : 0)
+                - (readPrefs().pullSeen?.[linkedPull.data.accountId + '#' + linkedPull.data.number] ?? 0))
+              : 0,
+            onOpen: openLinkedPull,
+            onRefresh: loadLinkedPull,
+            t
+          })
+          : null,
         h(CommitBox, {
           message: commitMessage,
           stagedCount,
@@ -1861,6 +1920,7 @@ function buildUpdateNote(updateState, t) {
       onPrepareReview: prepareReviewPull,
       onDeepReview: deepReviewPull,
       onSessionReview: sessionReviewPull,
+      onCommentSession: sessionReviewPull,
       onCloneForReview: cloneForReviewPull,
       projectRoot: project.projectRoot,
       // 深度审阅会拿这些仓库逐个比对 origin，命中就复用它的对象库（快很多）

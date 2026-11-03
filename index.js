@@ -79,7 +79,7 @@ import {
 } from './host/models.js'
 import { generateReview } from './host/review.js'
 import { deepReview } from './host/deep-review.js'
-import { findWorkspaceForSession, startSessionReview } from './host/session-review.js'
+import { buildCommentSessionPrompt, findWorkspaceForSession, startSessionReview } from './host/session-review.js'
 import { resolveRoots, addExtraRoot, removeExtraRoot, hideRoot, unhideRoot } from './host/roots.js'
 
 export const name = 'dsh-git-panel'
@@ -149,6 +149,7 @@ export const ENDPOINTS = Object.freeze([
   'commit',
   'commit/message',
   'pr/prepare',
+  'pr/linked',
   'pr/generate',
   'pr/create',
   'models/list',
@@ -778,7 +779,20 @@ function createDispatcher(ctx) {
       () => findWorkspaceForSession(workspaceControllerService, request.sessionId, signal))
     if (workspace === null) log.warn('没有找到当前工作区', '将用目录方式建会话（界面里会是未分组）')
     else log.info('工作区', workspace.title + '（' + workspace.path + '）→ ' + workspace.workspaceId)
-    const started = await log.time('新建审阅会话并发指令',
+    const comment = request.comment !== null && typeof request.comment === 'object' ? request.comment : null
+    if (comment !== null) {
+      log.info('处理评论', '评论人 ' + (comment.author ?? '?') + '，内容 ' + String(comment.body ?? '').slice(0, 60))
+    }
+    const promptText = comment === null
+      ? undefined
+      : buildCommentSessionPrompt({
+        fullName,
+        pull: prepared.source.pull,
+        branch: prepared.branch,
+        localRoot: prepared.localRoot,
+        comment
+      })
+    const started = await log.time(comment === null ? '新建审阅会话并发指令' : '新建会话并发送评论处理指令',
       workspace === null ? '目录 ' + prepared.localRoot : '工作区 ' + workspace.title,
       () => startSessionReview({
         sessionController: sessionControllerService,
@@ -788,6 +802,7 @@ function createDispatcher(ctx) {
         pull: prepared.source.pull,
         files: diff.files,
         filesTruncated: diff.truncated,
+        promptText,
         workspaceId: workspace === null ? null : workspace.workspaceId,
         // DSH 的 sessionController 需要 AbortSignal：把本次请求的 signal 传进去
         signal
@@ -1030,6 +1045,50 @@ function createDispatcher(ctx) {
     }
   }
 
+  /**
+   * 当前分支关联的 PR 摘要（状态 / 门禁 / 评论）。
+   *
+   * 没有关联 PR、没有对应账号都不是错误：这是「状态查询」，用 linked:false + reason 表达。
+   */
+  async function prLinked(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    const repoRoot = normalizeSlashes(repo.repoRoot)
+    const info = await remoteInfoFor(repoRoot, { signal })
+    if (info === null) return { linked: false, reason: 'no-remote-repo' }
+    const head = await readHead(repoRoot)
+    if (head.branch === null || head.detached === true) return { linked: false, reason: 'detached-head' }
+    const accounts = (await remotesOf().listAccounts()).accounts.filter((account) => account.provider === info.provider)
+    if (accounts.length === 0) {
+      return { linked: false, reason: 'no-account', provider: info.provider, fullName: info.fullName, branch: head.branch }
+    }
+    const accountId = typeof request.accountId === 'string' && request.accountId !== ''
+      ? request.accountId
+      : accounts[0].id
+    const found = await remotesOf().findPullForBranch({
+      accountId,
+      fullName: info.fullName,
+      branch: head.branch
+    }, { signal })
+    if (found === null) {
+      return { linked: false, reason: 'no-pull', provider: info.provider, fullName: info.fullName, branch: head.branch }
+    }
+    const detail = await remotesOf().pullDetail({ accountId, fullName: info.fullName, number: found.number }, { signal })
+    return {
+      linked: true,
+      provider: info.provider,
+      fullName: info.fullName,
+      branch: head.branch,
+      accountId,
+      number: found.number,
+      pull: detail.pull,
+      gate: detail.gate,
+      comments: detail.comments,
+      commentsUnavailable: detail.commentsUnavailable
+    }
+  }
+
   /** 生成 PR 标题与描述（用提交说明的模型）。 */
   async function prGenerate(request, signal) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
@@ -1229,6 +1288,7 @@ function createDispatcher(ctx) {
     'commit': (request, signal) => commit(request, signal),
     'commit/message': (request, signal) => commitMessage(request, signal),
     'pr/prepare': (request, signal) => prPrepare(request, signal),
+    'pr/linked': (request, signal) => prLinked(request, signal),
     'pr/generate': (request, signal) => prGenerate(request, signal),
     'pr/create': (request, signal) => prCreate(request, signal),
     'models/list': () => modelsList(),

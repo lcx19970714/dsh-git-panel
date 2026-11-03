@@ -2287,7 +2287,7 @@ window.__ModuleLoader__.load({
       const { RemotePane } = __m("./components/RemotePane.js");
       const { RemoteDetail } = __m("./components/RemoteDetail.js");
       const { PullDetail } = __m("./components/PullDetail.js");
-      const { MODE, readRemoteAccount, saveRemoteAccount, usePref, useLatestGuard, workspaceKeyOf } = __m("./store.js");
+      const { MODE, readRemoteAccount, saveRemoteAccount, usePref, useLatestGuard } = __m("./store.js");
       const api = __m("./api.js");
       const { openExternalUrl } = __m("./util/openUrl.js");
       const { reconcileSelection } = __m("./util/changes.js");
@@ -2342,13 +2342,6 @@ window.__ModuleLoader__.load({
         const [accounts, setAccounts] = useState([])
         const [accountsLoaded, setAccountsLoaded] = useState(false)
         const [remoteAccountId, setRemoteAccountId] = useState(null)
-        /**
-         * 远端账号的「按工作区记忆」两个 ref：
-         *  · userPicked —— 用户亲手点过 chip 后，就以他的选择为准，项目根解析得晚也不回退到记忆值；
-         *  · restoredFor —— 已经为哪个工作区解析过记忆值（账号列表重新加载时不反复覆盖选择）。
-         */
-        const remoteUserPickedRef = useRef(false)
-        const remoteRestoredForRef = useRef(null)
         const [remoteRepos, setRemoteRepos] = useState([])
         const [remoteHasMore, setRemoteHasMore] = useState(false)
         const [remoteLoading, setRemoteLoading] = useState(false)
@@ -2604,24 +2597,21 @@ window.__ModuleLoader__.load({
         }, [autoRefresh, mode, refreshStatus])
 
         /**
-         * 「储存库」行上的分支名是 project/resolve 的快照，但 HEAD 可能在面板之外被切走
-         * （PR 深度审阅会真的把本地仓库切到 PR 分支；也可能是在终端 / VS Code 里切的）。
-         * 这时 status 读到的是新分支、根上还是旧值，分支菜单（每次都重读 branches/list）
-         * 会和行尾按钮对不上 —— 所以拿 status.branch 和根上的分支对一次，不一致就补一次
-         * resolveProject，让行尾按钮跟上真实分支。
-         * 同一个 status.branch 只重试一次：宿主真的返回旧值时不至于每轮刷新都重新解析。
+         * 「储存库」行上的分支名是 project/resolve 的快照，而 status 是活动仓库的实时状态。
+         * 两者不一致 = HEAD 在面板之外被切走了（PR 深度审阅会真的切、终端 / VS Code 也会切）；
+         * 这时分支菜单（每次重读 branches/list）勾的是新分支、行尾还是旧值，两处对不上。
+         *
+         * 所以每次 status 更新后对一次：不一致就补一次 resolveProject 让快照跟上。
+         * 只依赖 status（解析结果不会反过来改 status），因此不会形成解析循环；
+         * 宿主真返回旧值时，最多是下一轮 status 再解析一次，不会变成请求风暴。
          */
-        const branchDriftRetryRef = useRef(undefined)
         useEffect(() => {
-          if (status === null || activeRoot === null || activeRoot.isGit !== true) return
-          if (status.branch === activeRoot.branch) {
-            branchDriftRetryRef.current = undefined
-            return
-          }
-          if (branchDriftRetryRef.current === status.branch) return
-          branchDriftRetryRef.current = status.branch
+          if (status === null) return
+          const root = activeRootRef.current
+          if (root === null || root.isGit !== true) return
+          if (status.branch === root.branch) return
           resolveProject()
-        }, [status, activeRoot, resolveProject])
+        }, [status, resolveProject])
 
         /* ============================== 取 diff ============================== */
         useEffect(() => {
@@ -3197,17 +3187,6 @@ window.__ModuleLoader__.load({
             setAccounts(value.accounts)
             setProviders(value.providers)
             setAccountsLoaded(true)
-            /*
-             * 选中账号的优先级：当前选中的（仍存在） → 本工作区上次选中的 → 第一个。
-             * 账号列表是全局的，但「用哪个」按工作区记（store.js 的 readRemoteAccount），
-             * 所以切去别的工作区再回来、或者重新打开面板，都不会退回第一个账号。
-             */
-            setRemoteAccountId((previous) => {
-              if (typeof previous === 'string' && value.accounts.some((account) => account.id === previous)) return previous
-              const remembered = readRemoteAccount(projectRef.current.projectRoot)
-              if (remembered !== null && value.accounts.some((account) => account.id === remembered)) return remembered
-              return value.accounts.length > 0 ? value.accounts[0].id : null
-            })
           } catch (error) {
             setAccountsLoaded(true)
             setRemoteError(api.describeError(error, tRef.current))
@@ -3412,11 +3391,9 @@ window.__ModuleLoader__.load({
           }
         }, [loadPullDetail, loadRemoteDetail])
 
-        /** 选中账号：立刻记到当前工作区（切到别的工作区再回来仍是它）。 */
+        /** 选中账号：记到当前工作区（切到别的工作区再回来仍是它）。账号 chip 只在面板内容渲染后才会出现，那时 projectRoot 一定有值。 */
         const selectRemoteAccount = useCallback((accountId) => {
-          remoteUserPickedRef.current = true
           setRemoteAccountId(accountId)
-          // 项目根还没解析出来时这里写空；解析出来后由恢复记忆的 effect 补写
           saveRemoteAccount(projectRef.current.projectRoot, accountId)
         }, [])
 
@@ -3459,44 +3436,23 @@ window.__ModuleLoader__.load({
         }, [mode, remoteAccountId, loadRepos])
 
         /**
-         * 会话切换时面板实例可能被复用（sessionId 变了、工作区也就变了）：
-         * 清掉「已解析」标记，让下面的记忆恢复按新工作区重新走一遍。
+         * 选中账号是 (工作区, 账号列表) 的派生：工作区已知、账号到手后，
+         * 优先保留当前选中的（仍存在），其次用本工作区上次记下的，最后落第一个账号。
+         *
+         * 账号列表是全局的，但「用哪个」按工作区记（store.js 的 readRemoteAccount），
+         * 所以切去别的工作区再回来、或者重新打开面板，都不会退回第一个账号。
+         * 记忆只在用户点选时写（见 selectRemoteAccount），这里只读。
          */
         useEffect(() => {
-          remoteUserPickedRef.current = false
-          remoteRestoredForRef.current = null
-        }, [sessionId])
-
-        /**
-         * 每个工作区记住自己的远端账号。
-         *
-         * 只在**两个明确时机**写记忆，避免「自动选中的第一个账号」把用户的选择覆盖掉：
-         *  1. 用户亲手点了账号 chip（selectRemoteAccount 里写；项目根未知时由这里补写）；
-         *  2. 项目根解析得比账号列表晚时（先读到账号、后知道是哪个工作区），
-         *     这里补一次记忆恢复 —— 否则会停在「第一个账号」上。
-         *
-         * 记忆只解析一次（restoredFor），所以账号列表重新加载（新增/删除账号）不会
-         * 把用户刚点好的选择改回去。
-         */
-        useEffect(() => {
-          if (accounts.length === 0) return
-          const workspace = project.projectRoot
-          const key = workspaceKeyOf(workspace)
-          if (key === null) return
-          if (remoteUserPickedRef.current === true) {
-            // 用户在知道工作区之前就点过账号：等知道了再补写，选择本身不覆盖
-            if (remoteAccountId !== null && accounts.some((account) => account.id === remoteAccountId)) {
-              saveRemoteAccount(workspace, remoteAccountId)
-            }
-            return
-          }
-          if (remoteRestoredForRef.current === key) return
-          remoteRestoredForRef.current = key
-          const remembered = readRemoteAccount(workspace)
-          if (remembered !== null && accounts.some((account) => account.id === remembered) && remembered !== remoteAccountId) {
-            setRemoteAccountId(remembered)
-          }
-        }, [accounts, remoteAccountId, project])
+          if (project.projectRoot === null || accounts.length === 0) return
+          setRemoteAccountId((previous) => {
+            // 账号 id 一定是非空字符串，所以这里不用先判断 previous/remembered 是不是 null
+            if (accounts.some((account) => account.id === previous)) return previous
+            const remembered = readRemoteAccount(project.projectRoot)
+            if (accounts.some((account) => account.id === remembered)) return remembered
+            return accounts[0].id
+          })
+        }, [project.projectRoot, accounts])
 
         /** 克隆期间每 200ms 刷新已等待秒数。 */
         useEffect(() => {
@@ -9725,45 +9681,25 @@ window.__ModuleLoader__.load({
       /* ==================== 每个工作区记住的远端账号 ==================== */
 
       /**
-       * 「远端」页签的账号是**按工作区**记的，不是全局偏好。
+       * 「远端」页签选中的账号按工作区记：`{ "<projectRoot>": "<accountId>" }`。
        *
-       * 为什么必须按工作区：代码托管账号列表是全局的（DSH 凭据服务里一份），
-       * 但每个项目日常用的账号往往不同（工作号 / 私人号 / 内网 Gitee）。
-       * 如果只存在组件状态里，切到别的工作区再回来、或者重新打开面板，都会退回
-       * 账号列表的第一个 —— 用户每切一次就要重选一次。
+       * 为什么按工作区：账号列表是全局的（DSH 凭据服务里一份），但每个项目日常用的账号
+       * 往往不同（工作号 / 私人号 / 内网 Gitee）。只存组件状态的话，切到别的工作区再回来、
+       * 或者重新打开面板，都会退回账号列表的第一个 —— 每切一次就要重选一次。
        *
-       * 落盘形状（独立 key，不和显示偏好共用，任一份格式变化不牵连另一份）：
-       *   { "version": 1, "workspaces": { "<规范化项目根>": { "remoteAccount": "github:alice" } } }
+       * 工作区身份直接用宿主下发的 projectRoot：它已经是 `path.resolve` + 正斜杠的绝对路径，
+       * 同一工作区每次解析都是同一个值。客户端不再自己折叠大小写 / 斜杠 —— 那是宿主的事，
+       * 在这边猜反而会出现「同一目录两个键」。
        *
-       * 只存账号 id（`provider:login`），不存任何令牌；读的时候逐条结构校验，
-       * 手改坏的数据只会让对应工作区回到默认（第一个账号），绝不抛异常。
+       * 只存账号 id（`provider:login`），不存任何令牌。localStorage 可能被手改 / 写坏，
+       * 读的时候只保留「非空字符串 → 非空字符串」的条目；坏数据当作没记过，不抛异常。
        */
-      const WORKSPACE_STORAGE_KEY = 'dsh-git-panel:workspaces:v1'
-      const WORKSPACE_VERSION = 1
+      const REMOTE_ACCOUNTS_KEY = 'dsh-git-panel:remote-accounts:v1'
 
-      /**
-       * 工作区标识 = 规范化后的项目根。
-       *
-       * 正斜杠、去尾斜杠；盘符路径与 UNC 路径（Windows）不区分大小写，统一小写，
-       * 避免同一个目录因为 `C:/Work` 与 `c:/work` 被记成两个工作区。
-       * 宿主下发的 projectRoot 已经是正斜杠绝对路径，这里只负责兜住不同来源的写法。
-       *
-       * @param {string|null|undefined} projectRoot
-       * @returns {string|null} 无法得到稳定标识时返回 null（调用方按「没有记忆」处理）
-       */
-      function workspaceKeyOf(projectRoot) {
-        if (typeof projectRoot !== 'string') return null
-        let key = projectRoot.trim().replace(/\\/g, '/').replace(/\/+$/, '')
-        if (key === '') return null
-        if (/^[a-zA-Z]:\//.test(key) || key.startsWith('//')) key = key.toLowerCase()
-        return key
-      }
-
-      /** 读整份工作区记忆；任何异常/坏形状都收敛成空对象。 */
-      function readWorkspaceState() {
+      function readRemoteAccounts() {
         let raw = null
         try {
-          raw = localStorage.getItem(WORKSPACE_STORAGE_KEY)
+          raw = localStorage.getItem(REMOTE_ACCOUNTS_KEY)
         } catch {
           return {}
         }
@@ -9775,55 +9711,37 @@ window.__ModuleLoader__.load({
           return {}
         }
         if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-        // 版本不认识就当没有：未来格式由未来的代码迁移，宁可回默认也别按旧结构硬读
-        if (parsed.version !== WORKSPACE_VERSION) return {}
-        const map = parsed.workspaces
-        if (map === null || typeof map !== 'object' || Array.isArray(map)) return {}
         const out = {}
-        for (const [key, value] of Object.entries(map)) {
-          if (typeof key !== 'string' || key === '') continue
-          if (value === null || typeof value !== 'object' || Array.isArray(value)) continue
-          if (typeof value.remoteAccount !== 'string' || value.remoteAccount === '') continue
-          out[key] = { remoteAccount: value.remoteAccount }
+        for (const [workspace, accountId] of Object.entries(parsed)) {
+          if (typeof accountId !== 'string' || accountId === '') continue
+          out[workspace] = accountId
         }
         return out
       }
 
-      /** 写整份工作区记忆；存不下（隐私模式/配额满）时静默 —— 记不住不影响当前会话。 */
-      function writeWorkspaceState(map) {
-        try {
-          localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({ version: WORKSPACE_VERSION, workspaces: map }))
-        } catch {
-          /* ignore */
-        }
-      }
-
       /**
        * 某个工作区上次在「远端」页签选中的账号 id。
-       * @param {string|null|undefined} projectRoot
-       * @returns {string|null} 没有记录 / 记录不可用时返回 null
+       * @param {string} projectRoot 宿主下发的项目根
+       * @returns {string|null} 没记过时返回 null
        */
       function readRemoteAccount(projectRoot) {
-        const key = workspaceKeyOf(projectRoot)
-        if (key === null) return null
-        const entry = readWorkspaceState()[key]
-        return entry === undefined ? null : entry.remoteAccount
+        const accountId = readRemoteAccounts()[projectRoot]
+        return accountId === undefined ? null : accountId
       }
 
       /**
        * 记住某个工作区在「远端」页签选中的账号。
-       * 幂等：值没变就不写盘（避免每次渲染都碰 localStorage）。
-       * @param {string|null|undefined} projectRoot
-       * @param {string|null|undefined} accountId 账号 id（`provider:login`）；空值表示不记
+       * @param {string} projectRoot 宿主下发的项目根
+       * @param {string} accountId 账号 id（`provider:login`）
        */
       function saveRemoteAccount(projectRoot, accountId) {
-        const key = workspaceKeyOf(projectRoot)
-        if (key === null || typeof accountId !== 'string' || accountId === '') return
-        const map = readWorkspaceState()
-        const previous = map[key]
-        if (previous !== undefined && previous.remoteAccount === accountId) return
-        map[key] = { remoteAccount: accountId }
-        writeWorkspaceState(map)
+        const accounts = readRemoteAccounts()
+        accounts[projectRoot] = accountId
+        try {
+          localStorage.setItem(REMOTE_ACCOUNTS_KEY, JSON.stringify(accounts))
+        } catch {
+          /* 隐私模式/配额满：记不住不影响当前会话 */
+        }
       }
 
       /**
@@ -9844,7 +9762,7 @@ window.__ModuleLoader__.load({
         return useMemo(() => ({ begin, isLatest }), [begin, isLatest])
       }
 
-      Object.assign(exports, { MODE, MODES, UNTRACKED_MODES, usePref, workspaceKeyOf, readRemoteAccount, saveRemoteAccount, useLatestGuard });
+      Object.assign(exports, { MODE, MODES, UNTRACKED_MODES, usePref, readRemoteAccount, saveRemoteAccount, useLatestGuard });
 
     });
     __define("./util/remote.js", (exports, module) => {

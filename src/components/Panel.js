@@ -1060,6 +1060,26 @@ export function Panel(props) {
    * 切分支发生在面板之外，所以成功后要重新解析根 + 重读 status：
    * 否则「储存库」行上的分支名还是旧的，而分支菜单里新分支已经打了勾 —— 两处对不上。
    */
+  /** 深度审阅阶段一：准备本地目录（查找仓库 / 判断是否已在 PR 提交 / 切分支）。 */
+  const prepareReviewPull = useCallback(async (input) => {
+    try {
+      const prepared = await api.remotePullPrepareReview(input)
+      if (prepared.mode === 'local') {
+        // 切了分支：储存库行的分支名与 status 都要跟着刷新
+        await resolveProject()
+        await refreshStatus()
+      }
+      return { ok: true, ...prepared }
+    } catch (error) {
+      return {
+        ok: false,
+        error: api.describeError(error, tRef.current),
+        code: error?.code ?? null,
+        details: error?.details ?? null
+      }
+    }
+  }, [resolveProject, refreshStatus])
+
   const deepReviewPull = useCallback(async (input) => {
     try {
       const review = await api.remotePullDeepReview(input)
@@ -1688,6 +1708,7 @@ function buildUpdateNote(updateState, t) {
       onTest: testPull,
       onPass: passPull,
       onAiReview: aiReviewPull,
+      onPrepareReview: prepareReviewPull,
       onDeepReview: deepReviewPull,
       onCloneForReview: cloneForReviewPull,
       projectRoot: project.projectRoot,

@@ -1691,7 +1691,8 @@ window.__ModuleLoader__.load({
         'pull.aiDeepRun': '深度审阅',
         'pull.aiDeepRerun': '重新深度审阅',
         'pull.aiDeepHint': '把 PR 的分支拉到临时目录，连同完整文件内容一起审（更慢，但能看上下文）',
-        'pull.aiDeepRunning': '正在拉取 PR 代码并读取完整文件，可能需要更久…',
+        'pull.aiPreparing': '正在准备本地代码：查找仓库、切换分支（已在该提交上会跳过拉取）…',
+        'pull.aiReviewing': '正在读取完整文件并审阅…',
         'pull.aiDeepInfo': '深度审阅：已读取 {count} 个完整文件',
         'pull.aiDeepLocal': '复用了本地仓库 {repo} 的对象（已存在的提交不会重下）',
         'pull.aiDeepTemp': '临时拉取（项目里没有这个仓库的本地克隆）',
@@ -2025,7 +2026,8 @@ window.__ModuleLoader__.load({
         'pull.aiDeepRun': 'Deep review',
         'pull.aiDeepRerun': 'Deep review again',
         'pull.aiDeepHint': 'Fetch the PR branch into a temp folder and review with full file contents (slower, but sees context)',
-        'pull.aiDeepRunning': 'Fetching the PR and reading full files — this takes longer…',
+        'pull.aiPreparing': 'Preparing local code: locating the repo and switching branches (skips fetching if already at that commit)…',
+        'pull.aiReviewing': 'Reading full files and reviewing…',
         'pull.aiDeepInfo': 'Deep review: read {count} full files',
         'pull.aiDeepLocal': 'reused objects from your local clone {repo}',
         'pull.aiDeepTemp': 'fetched into a temporary repo (no matching local clone)',
@@ -3339,6 +3341,26 @@ window.__ModuleLoader__.load({
          * 切分支发生在面板之外，所以成功后要重新解析根 + 重读 status：
          * 否则「储存库」行上的分支名还是旧的，而分支菜单里新分支已经打了勾 —— 两处对不上。
          */
+        /** 深度审阅阶段一：准备本地目录（查找仓库 / 判断是否已在 PR 提交 / 切分支）。 */
+        const prepareReviewPull = useCallback(async (input) => {
+          try {
+            const prepared = await api.remotePullPrepareReview(input)
+            if (prepared.mode === 'local') {
+              // 切了分支：储存库行的分支名与 status 都要跟着刷新
+              await resolveProject()
+              await refreshStatus()
+            }
+            return { ok: true, ...prepared }
+          } catch (error) {
+            return {
+              ok: false,
+              error: api.describeError(error, tRef.current),
+              code: error?.code ?? null,
+              details: error?.details ?? null
+            }
+          }
+        }, [resolveProject, refreshStatus])
+
         const deepReviewPull = useCallback(async (input) => {
           try {
             const review = await api.remotePullDeepReview(input)
@@ -3967,6 +3989,7 @@ window.__ModuleLoader__.load({
             onTest: testPull,
             onPass: passPull,
             onAiReview: aiReviewPull,
+            onPrepareReview: prepareReviewPull,
             onDeepReview: deepReviewPull,
             onCloneForReview: cloneForReviewPull,
             projectRoot: project.projectRoot,
@@ -6683,9 +6706,14 @@ window.__ModuleLoader__.load({
       }
 
       /** 深度审阅：宿主拉取 PR head 到临时 worktree，读完整文件后再让模型审。 */
+      function remotePullPrepareReview(payload, options) {
+        // 阶段一：找仓库 / 判断是否已在 PR 提交 / 切分支（必要时才 fetch）
+        return call('remote/pull/prepare-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
+      }
+
       function remotePullDeepReview(payload, options) {
-        // 深度审阅 = 拉代码/切分支（最长 5 分钟）+ 读文件 + 调模型（最长 3 分钟），给足 10 分钟
-        return call('remote/pull/deep-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
+        // 阶段二：只读完整文件 + 调模型
+        return call('remote/pull/deep-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
       }
 
       /** 把 PR 克隆到指定目录（深度审阅前的准备步骤）。 */
@@ -6799,7 +6827,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullDeepReview, remotePullCloneForReview, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullDeepReview, remotePullCloneForReview, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -9180,40 +9208,75 @@ window.__ModuleLoader__.load({
 
         /** 跑一次 AI 审阅（宿主负责取 diff 与调模型）。 */
         const runAi = async (mode, prepared = null) => {
-          const handler = mode === 'deep' ? source.onDeepReview : source.onAiReview
-          if (typeof handler !== 'function') return
-          setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null })
           setCommentNotice(null)
           setClonePrompt(null)
-          const result = await handler({
-            accountId: selection.accountId,
-            fullName: selection.fullName,
-            number: pull.number,
-            // 深度审阅：把项目里的仓库根都带上，宿主逐个比对 origin 后决定是否复用
-            ...(mode === 'deep' && Array.isArray(source.localRepoRoots) && prepared === null
-              ? { rootPaths: source.localRepoRoots }
-              : {}),
-            // 已经准备好目录（刚克隆完）：直接审那个目录
-            ...(prepared === null ? {} : { rootPath: prepared.rootPath, branch: prepared.branch })
-          })
-          // 本地没有这个项目：弹出「拉到哪里」的确认框
-          if (mode === 'deep' && result !== null && result !== undefined && result.ok === true && result.needsClone === true) {
-            setAi({ status: 'idle', mode, result: null, error: null })
-            setClonePrompt({
-              repoUsed: result.repoUsed,
-              suggestedName: result.suggestedName,
-              headBranch: result.headBranch,
-              customPath: '',
-              busy: false,
-              error: null
-            })
-            return
+          if (mode === 'deep') setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null, phase: 'prepare' })
+          else setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null, phase: null })
+
+          const base = { accountId: selection.accountId, fullName: selection.fullName, number: pull.number }
+          let result
+
+          if (mode === 'deep') {
+            let target = prepared
+            if (target === null) {
+              if (typeof source.onPrepareReview !== 'function') return
+              const prep = await source.onPrepareReview({
+                ...base,
+                rootPaths: Array.isArray(source.localRepoRoots) ? source.localRepoRoots : []
+              })
+              if (prep === null || prep === undefined || prep.ok !== true) {
+                setAi({
+                  status: 'error', mode, result: null,
+                  error: prep === null || prep === undefined ? '准备失败' : prep.error,
+                  code: prep?.code ?? null,
+                  steps: prep?.details?.steps ?? [],
+                  logPath: prep?.details?.logPath ?? null,
+                  phase: null
+                })
+                return
+              }
+              if (prep.needsClone === true) {
+                setAi({ status: 'idle', mode, result: null, error: null, steps: [], logPath: null, phase: null })
+                setClonePrompt({
+                  repoUsed: prep.repoUsed,
+                  suggestedName: prep.suggestedName,
+                  headBranch: prep.headBranch,
+                  customPath: '',
+                  busy: false,
+                  error: null
+                })
+                return
+              }
+              target = { rootPath: prep.rootPath, branch: prep.branch, steps: prep.steps ?? [], logPath: prep.logPath ?? null }
+            }
+            // 阶段二：读文件 + 调模型
+            setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
+            if (typeof source.onDeepReview !== 'function') return
+            const reviewed = await source.onDeepReview({ ...base, rootPath: target.rootPath, branch: target.branch })
+            const mergedSteps = [...(target.steps ?? []), ...((reviewed?.steps) ?? [])]
+            result = reviewed === null || reviewed === undefined
+              ? reviewed
+              : reviewed.ok === true
+                ? { ...reviewed, steps: mergedSteps, logPath: reviewed.logPath ?? target.logPath ?? null }
+                : {
+                    ...reviewed,
+                    details: {
+                      ...(reviewed.details ?? {}),
+                      steps: mergedSteps,
+                      logPath: reviewed.details?.logPath ?? target.logPath ?? null
+                    }
+                  }
+          } else {
+            if (typeof source.onAiReview !== 'function') return
+            result = await source.onAiReview({ ...base })
           }
+
           if (result !== null && result !== undefined && result.ok === true) {
             setAi({
               status: 'done', mode, result, error: null,
               steps: Array.isArray(result.steps) ? result.steps : [],
-              logPath: result.logPath ?? null
+              logPath: result.logPath ?? null,
+              phase: null
             })
             setDraft(result.comment ?? '')
             return
@@ -9223,17 +9286,15 @@ window.__ModuleLoader__.load({
             mode,
             result: null,
             error: result === null || result === undefined ? '审阅失败' : result.error,
-            // 只有「没配审阅模型」这种情况值得给快捷入口，其它错误去设置页也没用
             code: result === null || result === undefined ? null : (result.code ?? null),
-            // 失败也要能看到走到哪一步了
             steps: result !== null && result !== undefined && result.details !== null && result.details !== undefined
               && Array.isArray(result.details.steps) ? result.details.steps : [],
             logPath: result !== null && result !== undefined && result.details !== null && result.details !== undefined
-              ? result.details.logPath ?? null : null
+              ? result.details.logPath ?? null : null,
+            phase: null
           })
         }
 
-        /** 提交评论：内容就是输入框里的（用户可改过的）文本。 */
         /** 确认克隆位置：workspace = 项目工作区；custom = 用户填的绝对路径。 */
         const startClone = async (target) => {
           if (typeof source.onCloneForReview !== 'function' || clonePrompt === null) return
@@ -9382,7 +9443,7 @@ window.__ModuleLoader__.load({
               }, t(ai.status === 'done' && ai.mode === 'deep' ? 'pull.aiDeepRerun' : 'pull.aiDeepRun'))),
             ai.status === 'loading'
               ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' },
-                t(ai.mode === 'deep' ? 'pull.aiDeepRunning' : 'pull.aiRunning'))
+                t(ai.mode !== 'deep' ? 'pull.aiRunning' : (ai.phase === 'prepare' ? 'pull.aiPreparing' : 'pull.aiReviewing')))
               : null,
             clonePrompt === null ? null : h('div', { className: 'dgp-ai-clone', 'data-dgp-pull': 'clone-prompt' },
               h('p', { className: 'dgp-ai-summary' }, t('pull.aiCloneTitle', { repo: clonePrompt.repoUsed })),

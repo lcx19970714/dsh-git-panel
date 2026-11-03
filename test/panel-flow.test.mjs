@@ -781,6 +781,25 @@ function fakeClearTimeout() {}
 function fakeSetInterval() { return 0 }
 function fakeClearInterval() {}
 
+/**
+ * 内存版 localStorage。
+ *
+ * 同一份 storage 可以喂给多次 loadBundle()（= 多次「重新打开面板」），
+ * 这样能验证「关掉再开」和「换工作区再回来」时状态真的从存储里恢复。
+ * 不传 storage 时保持原来的行为：localStorage 是 undefined，usePref 全用默认值。
+ */
+function createFakeStorage(initial) {
+  const data = new Map(Object.entries(initial ?? {}))
+  return {
+    getItem(key) { return data.has(key) ? data.get(key) : null },
+    setItem(key, value) { data.set(key, String(value)) },
+    removeItem(key) { data.delete(key) },
+    clear() { data.clear() },
+    /** 直接读原始内容（断言落盘形状用）。 */
+    raw(key) { return data.has(key) ? data.get(key) : null }
+  }
+}
+
 let BUNDLE = null
 try {
   BUNDLE = await readFile(BUNDLE_PATH, 'utf8')
@@ -789,7 +808,7 @@ try {
   process.exit(1)
 }
 
-function loadBundle() {
+function loadBundle(storage) {
   let factory = null
   const fakeWindow = {
     __ModuleLoader__: {
@@ -833,7 +852,7 @@ function loadBundle() {
     fakeSetInterval,
     fakeClearInterval,
     fakeRequire,
-    undefined // 没有 localStorage → usePref 用内置默认值
+    storage // 不传 → undefined：usePref 用内置默认值，按工作区记忆也读不到东西
   )
   if (typeof factory !== 'function') throw new Error('产物没有注册模块工厂')
   return {
@@ -923,7 +942,7 @@ function keydown(node, key, extra) {
 
 async function setup(config) {
   const reconciler = createReconciler()
-  const loaded = loadBundle()
+  const loaded = loadBundle(config.storage)
   const api = loaded.create(reconciler)
   const router = createRouter()
   const registrations = {
@@ -1144,6 +1163,37 @@ function resolveOk(roots, projectRoot) {
 
 function sayOk(value) { return { ok: true, value } }
 function sayFail(code, message) { return { ok: false, error: { code, message, details: {} } } }
+
+/** 工具条上的「远端」页签按钮（变更 / 文件 / 远端 的第三个）。 */
+function remoteTab(panel) {
+  return panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2]
+}
+
+/** 远端页签顶部的账号 chip（顺序 = 账号列表顺序）。 */
+function accountChips(panel) {
+  return panel.all((node) => isHost(node) && attr(node, 'data-dgp-account') !== undefined)
+}
+
+/** 当前处于选中态的账号 id（正常情况只有一个）。 */
+function activeAccounts(panel) {
+  return accountChips(panel)
+    .filter((node) => attr(node, 'data-active') === 'true')
+    .map((node) => attr(node, 'data-dgp-account'))
+}
+
+/** 两个平台各一个账号：用来验证「记住的是哪一个」。 */
+function twoAccounts() {
+  return sayOk({
+    accounts: [
+      { id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' },
+      { id: 'gitee:bob', provider: 'gitee', login: 'bob', label: '私人号', providerLabel: 'Gitee' }
+    ],
+    providers: [{ id: 'github', label: 'GitHub' }, { id: 'gitee', label: 'Gitee' }]
+  })
+}
+
+/** 工作区记忆的存储 key（store.js 里的 WORKSPACE_STORAGE_KEY）。 */
+const WORKSPACE_STORAGE = 'dsh-git-panel:workspaces:v1'
 
 /**
  * 手动刷新现在的入口是「⋯」菜单里的「立即刷新」（工具条上的刷新按钮已去掉，
@@ -1604,6 +1654,130 @@ test('用例 1D：没有账号时远端页签给空态，可直接去设置', as
       '点「去设置」应打开设置页')
     assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-accounts') === 'add') !== null,
       '设置页应有添加账号的入口')
+  })
+})
+
+/* ---------------------- 远端账号按工作区记忆（store + Panel） ---------------------- */
+
+test('store：工作区标识规范化、远端账号只存 id、坏数据不炸', async () => {
+  const storage = createFakeStorage()
+  await withPanel({
+    storage,
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree())
+    }
+  }, async (panel) => {
+    const store = panel.loadModule('./store.js')
+
+    eq(store.workspaceKeyOf('C:\\Work\\Proj\\'), 'c:/work/proj', '反斜杠 / 尾斜杠 / 盘符大小写都规范化')
+    eq(store.workspaceKeyOf('c:/WORK/project'), 'c:/work/project', '同一目录的不同写法得到同一个键')
+    eq(store.workspaceKeyOf('  '), null, '空字符串没有工作区标识')
+    eq(store.workspaceKeyOf(null), null, 'null 没有工作区标识')
+
+    eq(store.readRemoteAccount(PROJECT), null, '一开始没有记忆')
+    store.saveRemoteAccount(PROJECT, 'gitee:bob')
+    eq(store.readRemoteAccount('C:/WORK/PROJECT'), 'gitee:bob', '大小写不同也能读回来')
+    eq(JSON.parse(storage.raw(WORKSPACE_STORAGE)), {
+      version: 1,
+      workspaces: { 'c:/work/project': { remoteAccount: 'gitee:bob' } }
+    }, '只记账号 id（provider:login），不落任何令牌')
+
+    // 幂等：同样的值再存一次不改变内容
+    const before = storage.raw(WORKSPACE_STORAGE)
+    store.saveRemoteAccount(PROJECT, 'gitee:bob')
+    eq(storage.raw(WORKSPACE_STORAGE), before, '值没变就不写盘')
+
+    // 坏数据：JSON 坏了 / 值类型不对 → 当作没有记忆，绝不抛异常把面板打挂
+    storage.setItem(WORKSPACE_STORAGE, '{oops')
+    eq(store.readRemoteAccount(PROJECT), null, 'JSON 坏了按没有记忆处理')
+    storage.setItem(WORKSPACE_STORAGE, JSON.stringify({
+      version: 1,
+      workspaces: { 'c:/work/project': { remoteAccount: 42 } }
+    }))
+    eq(store.readRemoteAccount(PROJECT), null, '值不是非空字符串也按没有记忆处理')
+  })
+})
+
+test('用例 1E：远端页签按工作区记住选中的账号（重开 / 切工作区都不退回第一个）', async () => {
+  const storage = createFakeStorage()
+  const OTHER = 'C:/work/other'
+  const OTHER_ROOT = { ...ROOT, id: 'root-2', path: OTHER, repoRoot: OTHER, name: 'other' }
+  const routesFor = (root, projectRoot) => ({
+    'project/resolve': () => resolveOk([root], projectRoot),
+    status: () => sayOk(statusThree()),
+    'accounts/list': twoAccounts,
+    'remote/repos': () => sayOk({ repos: [], page: 1, hasMore: false })
+  })
+
+  // 工作区 A：第一次进入用第一个账号；点选第二个后应立刻记住
+  await withPanel({ storage, routes: routesFor(ROOT, PROJECT) }, async (panel) => {
+    await panel.flush()
+    click(remoteTab(panel))
+    await panel.flush()
+    eq(activeAccounts(panel), ['github:alice'], '第一次进入用第一个账号')
+    eq(accountChips(panel).length, 2, '两个账号都要列出来')
+
+    click(accountChips(panel)[1])
+    await panel.flush()
+    eq(activeAccounts(panel), ['gitee:bob'], '点选后选中态切到第二个账号')
+
+    const saved = JSON.parse(storage.raw(WORKSPACE_STORAGE))
+    eq(saved.workspaces['c:/work/project'], { remoteAccount: 'gitee:bob' }, '按项目根记下这个选择')
+  })
+
+  // 重新打开同一工作区：恢复上次选中的账号，而不是第一个
+  await withPanel({ storage, routes: routesFor(ROOT, PROJECT) }, async (panel) => {
+    await panel.flush()
+    eq(activeAccounts(panel), ['gitee:bob'], '重开面板恢复上次选中的账号')
+  })
+
+  // 另一个工作区：只用自己的记忆（没有记忆就还是第一个），不会跟着 A 走
+  await withPanel({ storage, routes: routesFor(OTHER_ROOT, OTHER) }, async (panel) => {
+    await panel.flush()
+    eq(activeAccounts(panel), ['github:alice'], '别的工作区不继承 A 的选择')
+    click(accountChips(panel)[0])
+    await panel.flush()
+    eq(activeAccounts(panel), ['github:alice'], 'B 明确选中第一个账号')
+    eq(JSON.parse(storage.raw(WORKSPACE_STORAGE)).workspaces['c:/work/other'],
+      { remoteAccount: 'github:alice' }, 'B 记住的是自己的选择')
+  })
+
+  // 两个工作区各自恢复自己的选择（A=bob / B=alice，互不影响）
+  await withPanel({ storage, routes: routesFor(OTHER_ROOT, OTHER) }, async (panel) => {
+    await panel.flush()
+    eq(activeAccounts(panel), ['github:alice'], '重开 B 恢复 B 的选择')
+  })
+  await withPanel({ storage, routes: routesFor(ROOT, PROJECT) }, async (panel) => {
+    await panel.flush()
+    eq(activeAccounts(panel), ['gitee:bob'], '切回 A 还是 A 的选择')
+  })
+})
+
+test('用例 1F：记住的账号被删掉时回退到第一个，不崩', async () => {
+  const storage = createFakeStorage({
+    [WORKSPACE_STORAGE]: JSON.stringify({
+      version: 1,
+      workspaces: { 'c:/work/project': { remoteAccount: 'gitee:gone' } }
+    })
+  })
+  await withPanel({
+    storage,
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub' }]
+      }),
+      'remote/repos': () => sayOk({ repos: [], page: 1, hasMore: false })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(remoteTab(panel))
+    await panel.flush()
+    eq(activeAccounts(panel), ['github:alice'], '记的账号已不存在 → 回退到第一个')
+    eq(accountChips(panel).length, 1, '只列出真实存在的账号')
   })
 })
 

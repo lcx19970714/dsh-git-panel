@@ -316,6 +316,17 @@ test('会话级深度审阅：create/prompt 都必须带 AbortSignal（否则 DS
   assert.ok(noSignal[0] instanceof AbortSignal, '调用方没给 signal 时也要传一个真实的 AbortSignal')
 })
 
+test('pr/prepare 路由：origin 是 GitHub 时要走到分支检查（助手必须真的被导入）', async () => {
+  const repo = makeRepo(path.join(tempDir('dgp-pr-route-'), 'repo'))
+  execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/alice/app.git'], { cwd: repo, stdio: 'pipe' })
+  const result = await callRoute('pr/prepare', { rootPath: repo })
+  assert.equal(result.ok, false, '没有账号时应当失败')
+  assert.equal(typeof result.error?.code, 'string', '要有明确错误码：' + JSON.stringify(result))
+  assert.notEqual(result.error.code, 'internal', '不能是内部异常：' + result.error.message)
+  assert.ok(!String(result.error.message).includes('is not defined'),
+    '不能是「变量未定义」这类实现错误：' + result.error.message)
+})
+
 test('创建 PR 的本地信息：远端地址识别、远端分支、是否已推送、base..HEAD 提交', async () => {
   const { remoteInfoFor, listRemoteBranches, pushedState, branchCommits } = await import('../host/git.js')
   const platform = path.join(tempDir('dgp-pr-platform-'), 'repo.git')
@@ -467,6 +478,19 @@ test('深度审阅的准备：找本地仓库 → 切分支；没有则克隆到
   })
   assert.equal(cloned.branch, 'pr-branch', '应切到 PR 分支')
   assert.ok(existsSync(path.join(empty, 'a.js')))
+})
+
+test('index.js 用到的 host/git.js 助手必须都已导入（防 readHead is not defined 复发）', async () => {
+  const fs = await import('node:fs')
+  const indexText = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8')
+  const match = indexText.match(/import \{([\s\S]*?)\} from '\.\/host\/git\.js'/)
+  assert.ok(match !== null, '找不到 git.js 导入块')
+  const imported = new Set(match[1].split(',').map((item) => item.trim()).filter(Boolean))
+  const gitText = fs.readFileSync(new URL('../host/git.js', import.meta.url), 'utf8')
+  const exports = [...gitText.matchAll(/export (?:async )?function (\w+)/g)].map((item) => item[1])
+  const body = indexText.slice(indexText.indexOf(match[0]) + match[0].length)
+  const missingImports = exports.filter((name) => new RegExp('\\b' + name + '\\s*\\(').test(body) && !imported.has(name))
+  assert.deepEqual(missingImports, [], '这些助手被使用了但没导入：' + missingImports.join(', '))
 })
 
 test('文档与端点清单必须一致：数量一致，且每个端点都在文档端点表里', async () => {

@@ -7,7 +7,7 @@
  *
  * 它做三件事（都不需要登录态）：
  *   1. 读公开的 SSE `/plugins/events`，确认插件出现在客户端 bundle 表里、rev 与磁盘一致；
- *   2. 探测插件自有 RPC 通道 `/dsh-git/<endpoint>`：
+ *   2. 探测插件自有 RPC 通道 `/api/dsh-git/<endpoint>`：
  *        405 → 宿主半体还没被组合进去（需要重启/重组合 profile）
  *        401 → 通道已注册、只是没登录态 —— 这才说明宿主插件跑起来了
  *   3. 打印结论与下一步。
@@ -20,7 +20,8 @@ import { createHash } from 'node:crypto'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PLUGIN_DIR = path.resolve(HERE, '..')
 const PACKAGE_NAME = 'dsh-git-panel'
-const CHANNEL_PREFIX = '/dsh-git'
+/** 与 index.js 的 routePathOf 同源：`/api/dsh-git/<endpoint>`。 */
+const CHANNEL_PREFIX = '/api/dsh-git'
 
 const args = process.argv.slice(2)
 const argValue = (flag, fallback) => {

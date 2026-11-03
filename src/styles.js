@@ -1047,6 +1047,7 @@ export const CSS = `
 .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
 .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dgp-ai-error > .dgp-detail-failure { margin: 0; }
+.dgp-pull-confirm { display: inline-flex; gap: 6px; align-items: center; }
 /* PR 评论：已有对话 + 常驻输入框 */
 .dgp-comment-body {
   margin: 0;

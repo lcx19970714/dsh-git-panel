@@ -179,7 +179,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 43 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 44 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -264,6 +264,11 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 - `sessionController.create / prompt` 是「(参数, signal)」两个实参，必须传 AbortSignal；
 - 提示词里带**代码目录绝对路径**：工作区路径与 PR 代码目录可能不是同一个。
 
+**PR 提交与状态**：PR 详情会一并读提交列表（`GET /pulls/{n}/commits?per_page=50`），
+读失败不拖垮详情，但带 `commitsUnavailable` 明确标记。
+关闭 / 重新打开走 `remote/pull/state`（`PATCH /pulls/{n}` + `state`），两家路径与字段一致；
+关闭在界面里是两步确认，重新打开直接执行。
+
 **PR 评论约定**：PR 详情（`remote/pull`）会一并读评论列表：
 GitHub 走 `GET /issues/{n}/comments`、Gitee 走 `GET /pulls/{n}/comments`（与发表评论同路径）。
 读失败不拖垮详情，但会带上 `commentsUnavailable` 原因，界面明确显示。
@@ -309,6 +314,7 @@ PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 J
 | `remote/pull/deep-review` | `{accountId, fullName, number, rootPath?}` | 同 ai-review 的返回 + `deep, filesRead, fullFilesSkipped, objectSource`；把 PR head 拉到临时裸仓库/worktree 读完整文件再审，临时目录用完即删 |
 | `remote/pull/session-review` | `{accountId, fullName, number, rootPaths?, rootPath?, branch?}` | `{sessionId, rootPath, branch, steps, logPath}`；阶段一与 prepare-review 相同（主工作区切分支；没有本地仓库返回 `needsClone`），阶段二新建真实会话并把审阅指令作为首条消息发过去，用户在会话里继续追问 |
 | `remote/pull/clone-for-review` | `{accountId, fullName, number, targetDir}` | `{rootPath, branch, head}`；目标目录必须绝对且为空/不存在；克隆后切到 PR 分支 |
+| `remote/pull/state` | `{accountId, fullName, number, state}` | `{number, state}`；`PATCH /pulls/{n}` 带 `state: open/closed`（两家一致），关闭需界面二次确认 |
 | `remote/pull/comment` | `{accountId, fullName, number, comment}` | `{posted, url}`；内容由用户在面板里确认/编辑后提交 |
 | `remote/pull/test` | `{accountId, fullName, number}` | `{tested}`；Gitee 专用（POST /pulls/{n}/test，无请求体），GitHub 报不支持 |
 | `remote/pull/merge` | `{accountId, fullName, number, method, deleteBranch?}` | `{merged, method, branchDeleted, headBranch}`；不可合并/已合并/非打开状态在宿主侧拦下 |

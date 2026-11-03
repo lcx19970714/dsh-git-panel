@@ -2673,6 +2673,8 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
     eq(comments[0].comment, '我自己改过的评论内容', '提交的是用户编辑后的内容')
     eq(comments[0].number, 7)
     assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-notice') !== null, '提交后要有提示')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-draft').props.value, '',
+      '提交成功后评论框要清空')
   })
 })
 
@@ -2893,6 +2895,95 @@ test('用例 1T：PR 深度审阅切了本地分支后，储存库行的分支�
     await panel.flush()
     eq(rowBranchText(panel), 'feat', '深度审阅切了分支后，储存库行尾按钮要跟着变')
     assert(resolveCalls >= 2, '深度审阅成功后应重新解析根：' + resolveCalls)
+  })
+})
+
+test('用例 1U：PR 可以关闭（两步确认）与重新打开，并能看到提交列表', async () => {
+  const states = []
+  let pullState = 'open'
+  const detail = () => ({
+    repo: {
+      fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
+      sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
+      issuesUrl: 'x', pullsUrl: 'x'
+    },
+    issues: { total: 0, items: [] },
+    pulls: { total: 1, items: [{ number: 7, title: 'PR seven', url: 'x', author: 'alice', comments: 0, createdAt: '', updatedAt: '' }] },
+    failures: []
+  })
+  const pullDetail = () => ({
+    pull: {
+      number: 7, title: 'PR seven', body: '', state: pullState, draft: false, merged: false, mergeable: true,
+      author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 1, deletions: 0, changedFiles: 1,
+      commits: 2, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
+    },
+    reviews: [],
+    comments: [],
+    commentsUnavailable: null,
+    commits: [
+      { sha: 'abc1234def', message: 'feat: first\n\nbody', author: 'alice', date: '2026-11-01T10:00:00Z', url: '' },
+      { sha: 'def5678abc', message: 'fix: second', author: 'bob', date: '2026-11-02T10:00:00Z', url: '' }
+    ],
+    commitsUnavailable: null,
+    gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: null },
+    capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
+  })
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'main',
+          htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git',
+          provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk(detail()),
+      'remote/pull': () => sayOk(pullDetail()),
+      'remote/pull/state': (payload) => {
+        states.push(payload)
+        pullState = payload.state
+        return sayOk({ number: payload.number, state: payload.state })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+
+    // 提交列表：短 sha + 第一行标题
+    const commitRow = panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit-row') === 'abc1234def')
+    assert(commitRow !== null, '应列出 PR 的提交')
+    assert(textOf(commitRow).includes('abc1234'), '要显示短 sha：' + textOf(commitRow))
+    assert(textOf(commitRow).includes('feat: first'), '要显示提交标题')
+
+    // 关闭：第一步只是确认，不发请求
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'close-pull'))
+    await panel.flush()
+    eq(states.length, 0, '第一次点击只是确认，不应发请求')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'close-confirm') !== null, '应出现确认')
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'close-run'))
+    await panel.flush()
+    eq(states.length, 1, '确认后应请求关闭')
+    eq(states[0], { accountId: 'github:alice', fullName: 'alice/app', number: 7, state: 'closed' })
+
+    // 关闭后详情刷新：出现「重新打开」
+    const reopen = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'reopen-pull')
+    assert(reopen !== null, '关闭后应出现重新打开')
+    click(reopen)
+    await panel.flush()
+    eq(states.length, 2, '重新打开只发一次请求')
+    eq(states[1].state, 'open')
   })
 })
 

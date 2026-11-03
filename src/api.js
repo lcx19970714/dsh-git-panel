@@ -205,6 +205,11 @@ export function remotePullCloneForReview(payload, options) {
   return call('remote/pull/clone-for-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 900_000 })
 }
 
+/** 关闭 / 重新打开 PR（state: 'open' | 'closed'）。 */
+export function remotePullState(payload, options) {
+  return call('remote/pull/state', payload, options)
+}
+
 /** 提交用户确认过的 PR 评论。 */
 export function remotePullComment(payload, options) {
   return call('remote/pull/comment', payload, options)

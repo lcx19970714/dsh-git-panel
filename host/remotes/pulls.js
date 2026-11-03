@@ -31,6 +31,18 @@ export function createPulls(deps) {
 
     const detail = await readObject(await send(base), 'PR 详情')
 
+    // 提交列表：读失败不拖垮详情，但明确标记
+    let commits = []
+    let commitsUnavailable = null
+    try {
+      const repoBase = provider.apiBase + provider.repoPath(fullName)
+      const listed = await readJson(await send(repoBase + provider.commitsPath(number)))
+      if (Array.isArray(listed)) commits = listed.map(provider.pull.normalizeCommit)
+      else commitsUnavailable = '平台返回的提交列表不是数组'
+    } catch (error) {
+      commitsUnavailable = error instanceof GitError ? error.message : String(error)
+    }
+
     // 评论列表：GET 与 POST 同一个路径（GitHub issues/{n}/comments、Gitee pulls/{n}/comments）
     let comments = []
     let commentsUnavailable = null
@@ -58,6 +70,8 @@ export function createPulls(deps) {
       reviews,
       comments,
       commentsUnavailable,
+      commits,
+      commitsUnavailable,
       gate: {
         review: reviewGate,
         // 两家都没有「查询测试状态」的接口，只能执行或从合并被拒反推
@@ -259,6 +273,34 @@ export function createPulls(deps) {
     return { files, truncated, pagesRead: Math.min(MAX_PAGES, Math.ceil(files.length / 50) || 1) }
   }
 
+  /**
+   * 关闭 / 重新打开 PR。
+   *
+   * 两个平台都是 PATCH /pulls/{n}，body 里带 state；只允许 open / closed 两个值。
+   */
+  async function setPullState(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    const state = input.state
+    if (state !== 'open' && state !== 'closed') {
+      throw new GitError('bad-request', 'state 只能是 open 或 closed：' + String(state))
+    }
+    const headers = provider.headers(account.token)
+    const url = provider.apiBase + provider.repoPath(fullName) + provider.pullPath(number)
+    const updated = await readJson(await requestJson(fetchImpl, provider.authorize(url, account.token), {
+      method: 'PATCH',
+      headers,
+      json: { state }
+    }, options.signal))
+    return {
+      number,
+      state: updated !== null && typeof updated === 'object' && typeof updated.state === 'string'
+        ? updated.state
+        : state
+    }
+  }
+
   /** 发一条 PR 评论（内容由用户在界面上确认/编辑后提交）。 */
   async function commentPull(input, options = {}) {
     const { provider, account } = await findAccount(input.accountId)
@@ -359,5 +401,5 @@ export function createPulls(deps) {
     }
   }
 
-  return { pullDetail, pullDiff, reviewSource, assertRepoAccess, reviewPull, testPull, passPull, commentPull, mergePull }
+  return { pullDetail, pullDiff, reviewSource, assertRepoAccess, reviewPull, testPull, passPull, commentPull, setPullState, mergePull }
 }

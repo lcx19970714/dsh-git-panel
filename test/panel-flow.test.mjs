@@ -4518,6 +4518,13 @@ test('用例 10f：分支菜单里 fetch 只报差距，pull 才真的拉代码'
     click(branchBtn)
     await panel.flush()
 
+    // 顺序：拉取在前（真正拿代码），获取远程更新在后（只问不改）
+    const keys = panel.all((node) => isHost(node) && attr(node, 'data-menu-key') !== undefined)
+      .map((node) => String(attr(node, 'data-menu-key')))
+    assert(keys.indexOf('pull-branch') !== -1 && keys.indexOf('fetch-branches') !== -1, '两个动作都应在菜单里')
+    assert(keys.indexOf('pull-branch') < keys.indexOf('fetch-branches'),
+      '「拉取当前分支最新代码」应排在「获取远程更新」前面：' + keys.join(','))
+
     // fetch：只更新远端信息
     click(panel.one((node) => isHost(node) && textOf(node) === '获取远程更新'))
     await panel.flush()

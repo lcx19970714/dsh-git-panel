@@ -176,18 +176,18 @@ export function RepoList(props) {
     : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 240 },
       h(MenuLabel, null, translate('branch.title', { name: branchMenu.root.name })),
       h(MenuItem, {
-        icon: 'sync',
-        label: branchMenu.fetching === true ? translate('branch.fetching') : translate('branch.fetch'),
-        disabled: menuBusy,
-        dataKey: 'fetch-branches',
-        onClick: () => fetchRemote(branchMenu)
-      }),
-      h(MenuItem, {
         icon: 'refresh',
         label: branchMenu.pulling === true ? translate('branch.pulling') : translate('branch.pull'),
         disabled: menuBusy,
         dataKey: 'pull-branch',
         onClick: () => pullCurrent(branchMenu)
+      }),
+      h(MenuItem, {
+        icon: 'sync',
+        label: branchMenu.fetching === true ? translate('branch.fetching') : translate('branch.fetch'),
+        disabled: menuBusy,
+        dataKey: 'fetch-branches',
+        onClick: () => fetchRemote(branchMenu)
       }),
       h('div', { className: 'dgp-menu-sep', role: 'separator' }),
       branchMenu.loading ? h(MenuLabel, null, translate('branch.loading')) : null,

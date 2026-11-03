@@ -14,7 +14,7 @@
  * 刷新策略：挂载 / 切根 / 切模式 / 窗口重新可见+聚焦 / 手动 ⟳ / 可选 8s 轮询；
  * 每次请求带序号守护，切根时 abort 掉旧请求。
  */
-import { h, useCallback, useEffect, useMemo, useRef, useState } from '../platform.js'
+import { h, useCallback, useEffect, useMemo, useRef, useState, getPluginContext } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
 import { PopupMenu, MenuItem, MenuLabel, MenuSeparator } from '../ui/Menu.js'
 import { RepoList } from './RepoList.js'
@@ -1098,6 +1098,26 @@ export function Panel(props) {
     }
   }, [resolveProject, refreshStatus])
 
+  /** 会话级深度审阅：主工作区切分支后新建会话，把审阅指令发过去并自动打开。 */
+  const sessionReviewPull = useCallback(async (input) => {
+    try {
+      const started = await api.remotePullSessionReview(input)
+      if (started?.sessionId) {
+        await resolveProject()
+        await refreshStatus()
+        getPluginContext()?.uiWorkspace?.openSession?.(started.sessionId)
+      }
+      return { ok: true, ...started }
+    } catch (error) {
+      return {
+        ok: false,
+        error: api.describeError(error, tRef.current),
+        code: error?.code ?? null,
+        details: error?.details ?? null
+      }
+    }
+  }, [resolveProject, refreshStatus])
+
   /** 把 PR 克隆到用户选的目录（深度审阅前的准备步骤）。 */
   const cloneForReviewPull = useCallback(async (input) => {
     try {
@@ -1710,6 +1730,7 @@ function buildUpdateNote(updateState, t) {
       onAiReview: aiReviewPull,
       onPrepareReview: prepareReviewPull,
       onDeepReview: deepReviewPull,
+      onSessionReview: sessionReviewPull,
       onCloneForReview: cloneForReviewPull,
       projectRoot: project.projectRoot,
       // 深度审阅会拿这些仓库逐个比对 origin，命中就复用它的对象库（快很多）

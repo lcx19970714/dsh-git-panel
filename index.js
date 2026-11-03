@@ -70,6 +70,7 @@ import {
 } from './host/models.js'
 import { generateReview } from './host/review.js'
 import { deepReview } from './host/deep-review.js'
+import { startSessionReview } from './host/session-review.js'
 import { resolveRoots, addExtraRoot, removeExtraRoot, hideRoot, unhideRoot } from './host/roots.js'
 
 export const name = 'dsh-git-panel'
@@ -128,6 +129,7 @@ export const ENDPOINTS = Object.freeze([
   'remote/pull/ai-review',
   'remote/pull/prepare-review',
   'remote/pull/deep-review',
+  'remote/pull/session-review',
   'remote/pull/clone-for-review',
   'remote/pull/comment',
   'remote/pull/test',
@@ -728,6 +730,57 @@ function createDispatcher(ctx) {
   }
 
   /** 克隆到用户确认的目录，并切到 PR 分支。 */
+  /** 会话级深度审阅：准备真实目录（切分支/克隆）→ 新建会话 → 发送审阅指令。 */
+  async function remotePullSessionReview(request, signal) {
+    const accountId = requireString(request.accountId, 'accountId')
+    const fullName = requireString(request.fullName, 'fullName')
+    const number = request.number
+    if (!Number.isInteger(number) || number <= 0) throw new GitError('bad-request', 'PR 编号不合法')
+    const log = createReviewLog({ logger: ctx.logger }, fullName + '#' + number)
+    log.info('会话深度审阅：准备本地目录', '候选 ' + (Array.isArray(request.rootPaths) ? request.rootPaths.length : 0) + ' 个仓库根')
+    const prepared = await prepareReviewDir({
+      accountId,
+      fullName,
+      number,
+      rootPaths: request.rootPaths,
+      rootPath: request.rootPath,
+      branch: request.branch
+    }, signal, log)
+    if (prepared.localRoot === null) {
+      log.warn('等待确认克隆位置', 'repo=' + (prepared.source.repoUsed ?? fullName))
+      return {
+        needsClone: true,
+        repoUsed: prepared.source.repoUsed ?? fullName,
+        headBranch: prepared.source.pull.headBranch,
+        suggestedName: String(prepared.source.repoUsed ?? fullName).split('/').pop(),
+        steps: log.steps,
+        logPath: log.logPath
+      }
+    }
+    const diff = await log.time('读取 PR 文件清单', fullName + ' #' + number,
+      () => remotesOf().pullDiff({ accountId, fullName, number }, { signal }))
+    const started = await log.time('新建审阅会话并发指令', '目录 ' + prepared.localRoot,
+      () => startSessionReview({
+        sessionController: sessionControllerService,
+        localRoot: prepared.localRoot,
+        branch: prepared.branch,
+        fullName,
+        pull: prepared.source.pull,
+        files: diff.files,
+        filesTruncated: diff.truncated,
+        // DSH 的 sessionController 需要 AbortSignal：把本次请求的 signal 传进去
+        signal
+      }))
+    log.info('已新建审阅会话', started.sessionId + '，目录 ' + prepared.localRoot)
+    return {
+      sessionId: started.sessionId,
+      rootPath: prepared.localRoot,
+      branch: prepared.branch,
+      steps: log.steps,
+      logPath: log.logPath
+    }
+  }
+
   async function remotePullCloneForReview(request, signal) {
     const accountId = requireString(request.accountId, 'accountId')
     const fullName = requireString(request.fullName, 'fullName')
@@ -1008,6 +1061,7 @@ function createDispatcher(ctx) {
     'remote/pull/ai-review': (request, signal) => remotePullAiReview(request, signal),
     'remote/pull/prepare-review': (request, signal) => remotePullPrepareReview(request, signal),
     'remote/pull/deep-review': (request, signal) => remotePullDeepReview(request, signal),
+    'remote/pull/session-review': (request, signal) => remotePullSessionReview(request, signal),
     'remote/pull/clone-for-review': (request, signal) => remotePullCloneForReview(request, signal),
     'remote/pull/comment': (request, signal) => remotePullComment(request, signal),
     'remote/pull/review': (request, signal) => remotePullReview(request, signal),
@@ -1097,6 +1151,15 @@ export function apply(ctx) {
     }, `${name}: credentials service`)
   })
 
+  ctx.inject(['sessionController'], (scope) => {
+    scope.effect(() => {
+      sessionControllerService = scope.sessionController
+      return () => {
+        sessionControllerService = null
+      }
+    }, `${name}: sessionController service`)
+  })
+
   ctx.inject(['connection'], (scope) => {
     scope.effect(() => acquireRoutes(scope), `${name}: fetch routes`)
     scope.logger?.info?.(`dsh-git-panel: 已注册 ${ENDPOINTS.length} 条 Fetch 路由（${RPC_CHANNEL}/${RPC_NAMESPACE}/*）`)
@@ -1111,6 +1174,8 @@ let routeDisposers = []
 let llmService = null
 /** 宿主注入的凭据服务；未挂载时为 null（账号相关端点报 no-credentials）。 */
 let credentialsService = null
+/** 宿主注入的会话控制器：会话级深度审阅用它建会话、发首条提示词。 */
+let sessionControllerService = null
 
 /** endpoint → 精确路由路径。 */
 export function routePathOf(endpoint) {

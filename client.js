@@ -81,7 +81,7 @@ window.__ModuleLoader__.load({
       const name = PLUGIN_ID
 
       /** 这些服务由宿主 bundle 提供，缺一个就不激活 —— 明确地「要么全有、要么不跑」。 */
-      const inject = ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight']
+      const inject = ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight', 'uiWorkspace']
 
       function apply(ctx) {
         try {
@@ -1690,7 +1690,8 @@ window.__ModuleLoader__.load({
         'pull.aiCloneNoPath': '请先填一个绝对路径',
         'pull.aiDeepRun': '深度审阅',
         'pull.aiDeepRerun': '重新深度审阅',
-        'pull.aiDeepHint': '把 PR 的分支拉到临时目录，连同完整文件内容一起审（更慢，但能看上下文）',
+        'pull.aiDeepHint': '把 PR 切到你本机工作区分支，并在新会话里用 Agent 工具审阅（更慢，但能看上下文、能追问、能跑测试）',
+        'pull.sessionReviewStarted': '已在新会话中开始深度审阅（{id}），可直接在那里追问或让它继续跑测试。',
         'pull.aiPreparing': '正在准备本地代码：查找仓库、切换分支（已在该提交上会跳过拉取）…',
         'pull.aiReviewing': '正在读取完整文件并审阅…',
         'pull.aiDeepInfo': '深度审阅：已读取 {count} 个完整文件',
@@ -2025,7 +2026,8 @@ window.__ModuleLoader__.load({
         'pull.aiCloneNoPath': 'Enter an absolute path first',
         'pull.aiDeepRun': 'Deep review',
         'pull.aiDeepRerun': 'Deep review again',
-        'pull.aiDeepHint': 'Fetch the PR branch into a temp folder and review with full file contents (slower, but sees context)',
+        'pull.aiDeepHint': 'Switch the PR branch in your local workspace and review it in a new Agent session (slower, but sees context, can follow up and run tests)',
+        'pull.sessionReviewStarted': 'Deep review started in a new session ({id}); follow up there or ask it to run tests.',
         'pull.aiPreparing': 'Preparing local code: locating the repo and switching branches (skips fetching if already at that commit)…',
         'pull.aiReviewing': 'Reading full files and reviewing…',
         'pull.aiDeepInfo': 'Deep review: read {count} full files',
@@ -2295,7 +2297,7 @@ window.__ModuleLoader__.load({
        * 刷新策略：挂载 / 切根 / 切模式 / 窗口重新可见+聚焦 / 手动 ⟳ / 可选 8s 轮询；
        * 每次请求带序号守护，切根时 abort 掉旧请求。
        */
-      const { h, useCallback, useEffect, useMemo, useRef, useState } = __m("./platform.js");
+      const { h, useCallback, useEffect, useMemo, useRef, useState, getPluginContext } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
       const { PopupMenu, MenuItem, MenuLabel, MenuSeparator } = __m("./ui/Menu.js");
       const { RepoList } = __m("./components/RepoList.js");
@@ -3379,6 +3381,26 @@ window.__ModuleLoader__.load({
           }
         }, [resolveProject, refreshStatus])
 
+        /** 会话级深度审阅：主工作区切分支后新建会话，把审阅指令发过去并自动打开。 */
+        const sessionReviewPull = useCallback(async (input) => {
+          try {
+            const started = await api.remotePullSessionReview(input)
+            if (started?.sessionId) {
+              await resolveProject()
+              await refreshStatus()
+              getPluginContext()?.uiWorkspace?.openSession?.(started.sessionId)
+            }
+            return { ok: true, ...started }
+          } catch (error) {
+            return {
+              ok: false,
+              error: api.describeError(error, tRef.current),
+              code: error?.code ?? null,
+              details: error?.details ?? null
+            }
+          }
+        }, [resolveProject, refreshStatus])
+
         /** 把 PR 克隆到用户选的目录（深度审阅前的准备步骤）。 */
         const cloneForReviewPull = useCallback(async (input) => {
           try {
@@ -3991,6 +4013,7 @@ window.__ModuleLoader__.load({
             onAiReview: aiReviewPull,
             onPrepareReview: prepareReviewPull,
             onDeepReview: deepReviewPull,
+            onSessionReview: sessionReviewPull,
             onCloneForReview: cloneForReviewPull,
             projectRoot: project.projectRoot,
             // 深度审阅会拿这些仓库逐个比对 origin，命中就复用它的对象库（快很多）
@@ -6711,6 +6734,10 @@ window.__ModuleLoader__.load({
         return call('remote/pull/prepare-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
       }
 
+      function remotePullSessionReview(payload, options) {
+        return call('remote/pull/session-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
+      }
+
       function remotePullDeepReview(payload, options) {
         // 阶段二：只读完整文件 + 调模型
         return call('remote/pull/deep-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
@@ -6827,7 +6854,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullDeepReview, remotePullCloneForReview, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -9249,7 +9276,27 @@ window.__ModuleLoader__.load({
               }
               target = { rootPath: prep.rootPath, branch: prep.branch, steps: prep.steps ?? [], logPath: prep.logPath ?? null }
             }
-            // 阶段二：读文件 + 调模型
+            // 阶段二：优先走会话级审阅（新开会话 + Agent 工具）；没有该能力时退回本地深度。
+            if (typeof source.onSessionReview === 'function') {
+              setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
+              const started = await source.onSessionReview({ ...base, rootPath: target.rootPath, branch: target.branch })
+              if (started !== null && started !== undefined && started.ok === true && typeof started.sessionId === 'string') {
+                setAi({ status: 'done', mode: 'session', result: started, error: null, steps: [], logPath: started.logPath ?? null, phase: null })
+                setCommentNotice(t('pull.sessionReviewStarted', { id: started.sessionId }))
+                return
+              }
+              setAi({
+                status: 'error',
+                mode: 'deep',
+                result: null,
+                error: started === null || started === undefined ? '启动会话审阅失败' : started.error,
+                code: started?.code ?? null,
+                steps: started?.details?.steps ?? target.steps ?? [],
+                logPath: started?.details?.logPath ?? target.logPath ?? null,
+                phase: null
+              })
+              return
+            }
             setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
             if (typeof source.onDeepReview !== 'function') return
             const reviewed = await source.onDeepReview({ ...base, rootPath: target.rootPath, branch: target.branch })
@@ -9504,7 +9551,11 @@ window.__ModuleLoader__.load({
                   : null,
                 renderSteps(ai.steps, ai.logPath))
               : null,
-            ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
+            ai.status !== 'done' ? null
+              : ai.mode === 'session'
+                ? h('div', { 'data-dgp-pull': 'ai-session' },
+                  h('p', { className: 'dgp-detail-notice' }, t('pull.sessionReviewStarted', { id: String(ai.result.sessionId ?? '') })))
+                : h('div', { 'data-dgp-pull': 'ai-result' },
               ai.mode === 'deep'
                 ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-deep-info' },
                   t('pull.aiDeepInfo', { count: ai.result.filesRead ?? 0 }),

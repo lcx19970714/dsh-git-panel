@@ -184,7 +184,27 @@ export function PullDetail(props) {
         }
         target = { rootPath: prep.rootPath, branch: prep.branch, steps: prep.steps ?? [], logPath: prep.logPath ?? null }
       }
-      // 阶段二：读文件 + 调模型
+      // 阶段二：优先走会话级审阅（新开会话 + Agent 工具）；没有该能力时退回本地深度。
+      if (typeof source.onSessionReview === 'function') {
+        setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
+        const started = await source.onSessionReview({ ...base, rootPath: target.rootPath, branch: target.branch })
+        if (started !== null && started !== undefined && started.ok === true && typeof started.sessionId === 'string') {
+          setAi({ status: 'done', mode: 'session', result: started, error: null, steps: [], logPath: started.logPath ?? null, phase: null })
+          setCommentNotice(t('pull.sessionReviewStarted', { id: started.sessionId }))
+          return
+        }
+        setAi({
+          status: 'error',
+          mode: 'deep',
+          result: null,
+          error: started === null || started === undefined ? '启动会话审阅失败' : started.error,
+          code: started?.code ?? null,
+          steps: started?.details?.steps ?? target.steps ?? [],
+          logPath: started?.details?.logPath ?? target.logPath ?? null,
+          phase: null
+        })
+        return
+      }
       setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
       if (typeof source.onDeepReview !== 'function') return
       const reviewed = await source.onDeepReview({ ...base, rootPath: target.rootPath, branch: target.branch })
@@ -439,7 +459,11 @@ export function PullDetail(props) {
             : null,
           renderSteps(ai.steps, ai.logPath))
         : null,
-      ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
+      ai.status !== 'done' ? null
+        : ai.mode === 'session'
+          ? h('div', { 'data-dgp-pull': 'ai-session' },
+            h('p', { className: 'dgp-detail-notice' }, t('pull.sessionReviewStarted', { id: String(ai.result.sessionId ?? '') })))
+          : h('div', { 'data-dgp-pull': 'ai-result' },
         ai.mode === 'deep'
           ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-deep-info' },
             t('pull.aiDeepInfo', { count: ai.result.filesRead ?? 0 }),

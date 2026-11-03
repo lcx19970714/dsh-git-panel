@@ -209,6 +209,55 @@ function test(name, fn) {
   tests.push({ name, fn })
 }
 
+test('会话级深度审阅：create/prompt 都必须带 AbortSignal（否则 DSH 内部 throwIfAborted 炸）', async () => {
+  const { startSessionReview } = await import('../host/session-review.js')
+  const calls = []
+  const controller = {
+    async create(params, signal) {
+      calls.push({ kind: 'create', params, signal })
+      return { sessionId: 'session-1', agentPreset: 'review' }
+    },
+    async prompt(params, signal) {
+      calls.push({ kind: 'prompt', params, signal })
+    }
+  }
+  const signal = new AbortController().signal
+  const started = await startSessionReview({
+    sessionController: controller,
+    localRoot: '/repo',
+    branch: 'feat',
+    fullName: 'alice/app',
+    pull: { title: 'T', author: 'alice', headBranch: 'feat', baseBranch: 'main', body: 'B' },
+    files: [{ filename: 'src/a.js', additions: 1, deletions: 0 }],
+    filesTruncated: false,
+    signal
+  })
+  assert.equal(started.sessionId, 'session-1')
+  assert.equal(calls.length, 2, '应调用 create 与 prompt')
+  for (const call of calls) {
+    assert.ok(call.signal instanceof AbortSignal, call.kind + ' 必须收到 AbortSignal')
+    assert.equal(call.signal, signal, call.kind + ' 应使用调用方的 signal')
+  }
+  const promptText = calls[1].params.content[0].text
+  assert.ok(promptText.includes('alice/app'), '提示词要带仓库名')
+  assert.ok(promptText.includes('src/a.js'), '提示词要带改动文件')
+  assert.equal(calls[0].params.cwd, '/repo', '会话 cwd 应是准备好的目录')
+
+  // 没传 signal 时也不能把 undefined 交给 DSH：内部要兜一个可用的 AbortSignal
+  const noSignal = []
+  await startSessionReview({
+    sessionController: {
+      async create(params, sig) { noSignal.push(sig); return { sessionId: 'session-2' } },
+      async prompt(params, sig) { noSignal.push(sig) }
+    },
+    localRoot: '/repo',
+    fullName: 'alice/app',
+    pull: { title: 'T' },
+    files: []
+  })
+  assert.ok(noSignal[0] instanceof AbortSignal, '调用方没给 signal 时也要传一个真实的 AbortSignal')
+})
+
 test('深度审阅的准备：已在 PR 提交上时只切分支，不再 fetch', async () => {
   const { prepareReviewBranch, headShaOf, reviewBranchName } = await import('../host/git.js')
   const dir = makeRepo(path.join(tempDir('dgp-already-'), 'repo'))

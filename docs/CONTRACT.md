@@ -29,7 +29,7 @@
 | `src/i18n.js` | `zh, en, NS` | 内联字典（`t` 由宿主 locale 注入，插件不自造） |
 | `src/styles.js` | `CSS, ensureStyles()` | 全部样式（注入 `<style>`） |
 | `src/api.js` | `resolveProject, readStatus, readDiff, readFile, writeFile, listDirectory, addRoot, removeRoot, describeError` | Host RPC 封装（超时/取消/错误归一） |
-| `src/store.js` | `MODE, usePref, useLatestGuard` | 显示偏好持久化 + 请求序号守护 |
+| `src/store.js` | `MODE, MODES, usePref, useLatestGuard, workspaceKeyOf, readRemoteAccount, saveRemoteAccount` | 显示偏好持久化 + 每个工作区记住的远端账号 + 请求序号守护 |
 | `src/util/paths.js` | `basename, dirname, segments, parentChain, naturalCompare, buildTree, compactChain, flattenTree, collectDirPaths, matchesFilter, formatCount` | 纯函数，必须可单测 |
 | `src/util/diff.js` | `buildUnifiedRows, buildSplitRows, highlightWordDiff, diffStats, budgetRows, pairChangedRuns, MAX_DIFF_ROWS` | **纯函数**，必须可单测 |
 | `src/ui/Icon.js` | `Icon` 组件 + `StatusLetter` | 内联 SVG 图标（不依赖 primitives） |

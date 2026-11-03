@@ -2,6 +2,15 @@
 
 DeepSeek Harness 的 Git 面板插件：在会话右侧栏里看变更、读 diff、编辑文件、暂存与提交，提交说明可以直接用 DSH 里已配置的模型生成。
 
+### 深度审阅报 Authentication failed / Unauthorized
+
+- **Gitee 的 fork PR**：Gitee 没有 `refs/pull`，深度审阅必须能从 fork 仓库拉代码。若当前账号读不到
+  该 fork（例如 fork 是私有的、或你只有 base 仓库权限），会明确提示 `fork-no-access`。
+  处理：换成对 fork 有权限的账号，或让作者把分支推到主仓库。
+- **同仓库 PR**：确认令牌包含仓库读写（Gitee 的 projects / GitHub 的 repo）权限。
+- 插件拉代码时会禁用本机凭据管理器，只用插件里配的令牌，所以 `git` 命令行里能克隆不代表这里一定行
+  （命令行可能用了凭据管理器里另一份凭据）。
+
 ## 安装
 
 **在线安装（推荐）**

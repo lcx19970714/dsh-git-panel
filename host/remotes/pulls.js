@@ -160,6 +160,20 @@ export function createPulls(deps) {
     const number = requirePullNumber(input.number)
     // fork PR 的 head 在另一个仓库：URL 要指向真正有那个分支的仓库
     const repoUsed = provider.reviewRepo(fullName, detail.pull)
+    const isFork = repoUsed !== fullName
+    // Gitee 没有 refs/pull，必须能读 fork 仓库才能拉代码：先预检，失败直接说清原因
+    if (isFork && provider.requiresForkAccess === true) {
+      const probe = provider.apiBase + provider.repoPath(repoUsed)
+      try {
+        await readObject(await request(fetchImpl, provider.authorize(probe, account.token), { headers: provider.headers(account.token) }, options.signal), 'fork 仓库')
+      } catch (error) {
+        throw new GitError('fork-no-access',
+          '这个 PR 来自 fork 仓库 ' + repoUsed + '，但账号 ' + account.login + ' 读不到它，'
+          + '因此无法拉取代码做深度审阅。可以用对 ' + repoUsed + ' 有权限的账号，'
+          + '或让作者把分支推到 ' + fullName + ' 再试。原始错误：'
+          + (error instanceof GitError ? error.message : String(error)))
+      }
+    }
     return {
       pull: detail.pull,
       fullName,
@@ -167,7 +181,10 @@ export function createPulls(deps) {
       url: provider.gitUrl(repoUsed),
       remoteRef: provider.reviewRef(number, detail.pull),
       user: provider.gitUser === null ? account.login : provider.gitUser,
-      token: account.token
+      token: account.token,
+      authHint: isFork
+        ? '深度审阅需要拉取 fork 仓库 ' + repoUsed + ' 的代码，请确认当前账号对它有读权限'
+        : null
     }
   }
 

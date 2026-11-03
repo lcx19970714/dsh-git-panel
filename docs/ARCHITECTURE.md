@@ -225,6 +225,11 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 - 不复用临时裸仓库/worktree：审的就是真实目录，方便用户自己调试、切分支；
 - 切换分支不动未提交改动：工作区脏时 git 自己拒绝，错误原样上抛；
 - 二进制、超过 2MB、已删除的文件不读完整内容，原因随 `fullFilesSkipped` 返回并显示。
+- 认证：带令牌的 git 命令一律 `-c credential.helper=`（禁用本机凭据管理器，避免旧凭据覆盖）
+  + `-c http.extraHeader=Authorization: Basic <base64(login:token)>`，令牌不写进任何配置；
+- fork PR 的权限：Gitee 没有 `refs/pull`，必须能读 fork 仓库才能拉代码，所以 `reviewSource` 会**先预检**
+  fork 仓库可读性，读不到直接报 `fork-no-access`（带仓库名与账号），而不是让用户猜 git 的 Unauthorized；
+  GitHub 用 base 的 `refs/pull/N/head`，不需要 fork 权限；
 
 **AI 审阅约定**：`remote/pull/ai-review` 由宿主取 `pulls/{n}/files` 的 patch，拼成
 PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 JSON（summary / verdict / findings[] / comment）。

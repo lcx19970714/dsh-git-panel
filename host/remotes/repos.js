@@ -164,8 +164,10 @@ export function createRepos(deps) {
     if (isHttp) {
       const basicUser = provider.gitUser === null ? account.login : provider.gitUser
       const auth = Buffer.from(basicUser + ':' + account.token, 'utf8').toString('base64')
-      // 只在本条命令里带鉴权头：不进 .git/config，进程结束后不留痕
-      args.push('-c', 'http.extraHeader=AUTHORIZATION: basic ' + auth)
+      // 只在本条命令里带鉴权头：不进 .git/config，进程结束后不留痕。
+      // credential.helper 留空：禁用本机凭据管理器，避免它用缓存的旧凭据覆盖我们的请求头。
+      args.push('-c', 'credential.helper=')
+      args.push('-c', 'http.extraHeader=Authorization: Basic ' + auth)
     }
     args.push('clone', '--progress', cloneUrl, targetPath)
     await runGit(projectRoot, args, { signal: options.signal, timeoutMs: 15 * 60 * 1000 })

@@ -122,7 +122,8 @@ const github = {
   commentPath: (number) => '/issues/' + number + '/comments',
   // 深度审阅：GitHub 有标准的 refs/pull/N/head，链接到 fork 也能取到
   gitUrl: (fullName) => 'https://github.com/' + fullName + '.git',
-  // GitHub 的 refs/pull/N/head 对 fork PR 同样可用，直接用 base 仓库
+  // GitHub 的 refs/pull/N/head 对 fork PR 同样可用，直接用 base 仓库，不需要 fork 权限
+  requiresForkAccess: false,
   reviewRepo: (fullName) => fullName,
   reviewRef: (number) => 'refs/pull/' + number + '/head',
   // 计数：issues 列表是游标分页（没有 rel=last），用 search API 的 total_count 才准；
@@ -175,6 +176,7 @@ const gitee = {
   // Gitee 没有公开的 pull refs，用 PR 的 head 分支拉取
   gitUrl: (fullName) => 'https://gitee.com/' + fullName + '.git',
   // Gitee 没有 pull refs：fork PR 的 head 分支在 fork 仓库里，必须用 head 仓库拉
+  requiresForkAccess: true,
   reviewRepo: (fullName, pull) => {
     const head = pull === null || pull === undefined ? '' : pull.headRepo
     return typeof head === 'string' && head !== '' ? head : fullName
@@ -217,7 +219,7 @@ export const PROVIDER_IDS = Object.freeze(['github', 'gitee'])
 const REQUIRED_PROVIDER_KEYS = [
   'id', 'label', 'web', 'apiBase', 'tokenUrl', 'headers', 'authorize',
   'userPath', 'reposPath', 'repoPath', 'pullPath', 'pullListPath', 'issueListPath',
-  'filesPath', 'commentPath', 'countsPath', 'gitUrl', 'reviewRepo', 'reviewRef',
+  'filesPath', 'commentPath', 'countsPath', 'gitUrl', 'reviewRepo', 'reviewRef', 'requiresForkAccess',
   'normalizeRepo', 'normalizeIssue', 'normalizeDetail'
 ]
 const REQUIRED_PULL_KEYS = [

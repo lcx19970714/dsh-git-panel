@@ -1131,6 +1131,22 @@ export function Panel(props) {
     }
   }, [resolveProject])
 
+  /** 关闭 / 重新打开 PR：成功后重读详情（状态、门禁、合并区都会变）。 */
+  const setPullState = useCallback(async (input) => {
+    try {
+      const result = await api.remotePullState(input)
+      await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+      await loadPullCounts(input.accountId, remoteReposRef.current)
+      return { ok: true, ...result }
+    } catch (error) {
+      return {
+        ok: false,
+        error: api.describeError(error, tRef.current),
+        code: error?.code ?? null
+      }
+    }
+  }, [loadPullDetail, loadPullCounts])
+
   /** 提交评论（内容已由用户在面板里确认过）。 */
   const commentPull = useCallback(async (input) => {
     try {
@@ -1737,6 +1753,7 @@ function buildUpdateNote(updateState, t) {
       // 深度审阅会拿这些仓库逐个比对 origin，命中就复用它的对象库（快很多）
       localRepoRoots: gitRoots.map((root) => root.path),
       onComment: commentPull,
+      onSetPullState: setPullState,
       onOpenSettings: openSettings,
       onMerge: mergePull,
       onChanged: () => loadPullDetail(openPull),

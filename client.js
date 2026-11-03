@@ -1229,6 +1229,7 @@ window.__ModuleLoader__.load({
       .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
       .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .dgp-ai-error > .dgp-detail-failure { margin: 0; }
+      .dgp-pull-confirm { display: inline-flex; gap: 6px; align-items: center; }
       /* PR 评论：已有对话 + 常驻输入框 */
       .dgp-comment-body {
         margin: 0;
@@ -1740,6 +1741,12 @@ window.__ModuleLoader__.load({
         'pull.severity.major': '重要',
         'pull.severity.minor': '次要',
         'pull.severity.nit': '细节',
+        'pull.commitsTitle': '提交',
+        'pull.closeRun': '关闭 PR',
+        'pull.closeConfirm': '确认关闭',
+        'pull.reopenRun': '重新打开',
+        'pull.closedNotice': 'PR 已关闭',
+        'pull.reopenedNotice': 'PR 已重新打开',
         'pull.commentsTitle': '评论',
         'pull.commentsEmpty': '还没有评论：在下面写一条给对方留言。',
         'pull.commentPlaceholder': '写给作者的话（支持 Markdown）：确认无误再点发表评论',
@@ -2081,6 +2088,12 @@ window.__ModuleLoader__.load({
         'pull.severity.major': 'major',
         'pull.severity.minor': 'minor',
         'pull.severity.nit': 'nit',
+        'pull.commitsTitle': 'Commits',
+        'pull.closeRun': 'Close PR',
+        'pull.closeConfirm': 'Confirm close',
+        'pull.reopenRun': 'Reopen',
+        'pull.closedNotice': 'PR closed',
+        'pull.reopenedNotice': 'PR reopened',
         'pull.commentsTitle': 'Comments',
         'pull.commentsEmpty': 'No comments yet — write one below.',
         'pull.commentPlaceholder': 'Message for the author (Markdown supported); post when ready',
@@ -3446,6 +3459,22 @@ window.__ModuleLoader__.load({
           }
         }, [resolveProject])
 
+        /** 关闭 / 重新打开 PR：成功后重读详情（状态、门禁、合并区都会变）。 */
+        const setPullState = useCallback(async (input) => {
+          try {
+            const result = await api.remotePullState(input)
+            await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
+            await loadPullCounts(input.accountId, remoteReposRef.current)
+            return { ok: true, ...result }
+          } catch (error) {
+            return {
+              ok: false,
+              error: api.describeError(error, tRef.current),
+              code: error?.code ?? null
+            }
+          }
+        }, [loadPullDetail, loadPullCounts])
+
         /** 提交评论（内容已由用户在面板里确认过）。 */
         const commentPull = useCallback(async (input) => {
           try {
@@ -4052,6 +4081,7 @@ window.__ModuleLoader__.load({
             // 深度审阅会拿这些仓库逐个比对 origin，命中就复用它的对象库（快很多）
             localRepoRoots: gitRoots.map((root) => root.path),
             onComment: commentPull,
+            onSetPullState: setPullState,
             onOpenSettings: openSettings,
             onMerge: mergePull,
             onChanged: () => loadPullDetail(openPull),
@@ -6781,6 +6811,11 @@ window.__ModuleLoader__.load({
         return call('remote/pull/clone-for-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 900_000 })
       }
 
+      /** 关闭 / 重新打开 PR（state: 'open' | 'closed'）。 */
+      function remotePullState(payload, options) {
+        return call('remote/pull/state', payload, options)
+      }
+
       /** 提交用户确认过的 PR 评论。 */
       function remotePullComment(payload, options) {
         return call('remote/pull/comment', payload, options)
@@ -6887,7 +6922,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -9160,6 +9195,9 @@ window.__ModuleLoader__.load({
         const [commentNotice, setCommentNotice] = useState(null)
         // 常驻评论框：人工审阅后也能随时给对方留言
         const [commentDraft, setCommentDraft] = useState('')
+        // 关闭 PR 是两步操作：先确认再发，避免误点
+        const [closeConfirm, setCloseConfirm] = useState(false)
+        const [stateBusy, setStateBusy] = useState(false)
 
         if (selection === null) return null
 
@@ -9408,6 +9446,26 @@ window.__ModuleLoader__.load({
           await runAi('deep', { rootPath: result.rootPath, branch: result.branch })
         }
 
+        /** 关闭 / 重新打开。关闭需要二次确认；重新打开直接执行（无破坏性）。 */
+        const changeState = async (nextState) => {
+          if (typeof source.onSetPullState !== 'function' || stateBusy) return
+          setStateBusy(true)
+          const result = await source.onSetPullState({
+            accountId: selection.accountId,
+            fullName: selection.fullName,
+            number: pull.number,
+            state: nextState
+          })
+          setStateBusy(false)
+          setCloseConfirm(false)
+          if (result !== null && result !== undefined && result.ok === true) {
+            if (typeof source.onChanged === 'function') source.onChanged()
+            setNotice(t(nextState === 'closed' ? 'pull.closedNotice' : 'pull.reopenedNotice'))
+            return
+          }
+          setError(result === null || result === undefined ? '操作失败' : result.error)
+        }
+
         const submitComment = async () => {
           if (typeof source.onComment !== 'function' || commentBusy) return
           setCommentBusy(true)
@@ -9419,8 +9477,13 @@ window.__ModuleLoader__.load({
             comment: commentDraft
           })
           setCommentBusy(false)
-          if (result !== null && result !== undefined && result.ok === true) setCommentNotice(result.message ?? t('pull.aiCommentDone'))
-          else setCommentNotice(result === null || result === undefined ? '评论失败' : result.error)
+          if (result !== null && result !== undefined && result.ok === true) {
+            // 发出去之后清空输入框：否则内容留在框里，用户会以为没发出去
+            setCommentDraft('')
+            setCommentNotice(result.message ?? t('pull.aiCommentDone'))
+            return
+          }
+          setCommentNotice(result === null || result === undefined ? '评论失败' : result.error)
         }
 
         const submitReview = (verdict) => run('review', () => source.onReview({
@@ -9473,7 +9536,42 @@ window.__ModuleLoader__.load({
               onClick: () => {
                 if (typeof source.onOpenUrl === 'function') source.onOpenUrl(pull.htmlUrl)
               }
-            }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 }))),
+            }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 })),
+            pull.state === 'open'
+              ? (closeConfirm
+                ? h('span', { className: 'dgp-pull-confirm', 'data-dgp-pull': 'close-confirm' },
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-variant': 'ghost',
+                    disabled: stateBusy,
+                    onClick: () => setCloseConfirm(false)
+                  }, t('action.cancel')),
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-dgp-pull': 'close-run',
+                    disabled: stateBusy,
+                    onClick: () => changeState('closed')
+                  }, t('pull.closeConfirm')))
+                : h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-dgp-pull': 'close-pull',
+                  disabled: stateBusy,
+                  onClick: () => setCloseConfirm(true)
+                }, t('pull.closeRun')))
+              : h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-dgp-pull': 'reopen-pull',
+                disabled: stateBusy,
+                onClick: () => changeState('open')
+              }, t('pull.reopenRun'))),
 
           /* 门禁状态：审查与测试并排一行，状态一眼可见 */
           h('div', { className: 'dgp-gate', 'data-dgp-pull': 'gate' },
@@ -9676,6 +9774,28 @@ window.__ModuleLoader__.load({
                   }, t('pull.aiFillComment'))),
                 h('pre', { className: 'dgp-ai-draft', 'data-dgp-pull': 'ai-comment' }, draft)),
               renderSteps(ai.steps, ai.logPath))),
+
+          /* ------------------------------ 提交 ------------------------------ */
+          (data.commits ?? []).length === 0 && (data.commitsUnavailable === null || data.commitsUnavailable === undefined)
+            ? null
+            : h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'commits' },
+              h('div', { className: 'dgp-detail-head' },
+                h('span', { className: 'dgp-detail-title' }, t('pull.commitsTitle')),
+                h('span', { className: 'dgp-detail-count' }, String((data.commits ?? []).length))),
+              data.commitsUnavailable === null || data.commitsUnavailable === undefined
+                ? null
+                : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'commits-error' }, data.commitsUnavailable),
+              h('ul', { className: 'dgp-detail-list' },
+                (data.commits ?? []).map((commit) => h('li', {
+                  key: commit.sha,
+                  className: 'dgp-detail-item',
+                  'data-dgp-commit-row': commit.sha
+                },
+                h('span', { className: 'dgp-detail-link dgp-oneline', title: commit.message }, commit.message.split('\n')[0]),
+                h('span', { className: 'dgp-detail-meta' },
+                  h('span', { className: 'dgp-detail-author' }, commit.sha.slice(0, 7)),
+                  commit.author === '' ? null : h('span', null, commit.author),
+                  commit.date === '' ? null : h('span', null, formatDateTime(Date.parse(commit.date)))))))),
 
           /* ------------------------------ 评论 ------------------------------ */
           h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'comments' },

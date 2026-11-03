@@ -35,6 +35,9 @@ export function PullDetail(props) {
   const [commentNotice, setCommentNotice] = useState(null)
   // 常驻评论框：人工审阅后也能随时给对方留言
   const [commentDraft, setCommentDraft] = useState('')
+  // 关闭 PR 是两步操作：先确认再发，避免误点
+  const [closeConfirm, setCloseConfirm] = useState(false)
+  const [stateBusy, setStateBusy] = useState(false)
 
   if (selection === null) return null
 
@@ -283,6 +286,26 @@ export function PullDetail(props) {
     await runAi('deep', { rootPath: result.rootPath, branch: result.branch })
   }
 
+  /** 关闭 / 重新打开。关闭需要二次确认；重新打开直接执行（无破坏性）。 */
+  const changeState = async (nextState) => {
+    if (typeof source.onSetPullState !== 'function' || stateBusy) return
+    setStateBusy(true)
+    const result = await source.onSetPullState({
+      accountId: selection.accountId,
+      fullName: selection.fullName,
+      number: pull.number,
+      state: nextState
+    })
+    setStateBusy(false)
+    setCloseConfirm(false)
+    if (result !== null && result !== undefined && result.ok === true) {
+      if (typeof source.onChanged === 'function') source.onChanged()
+      setNotice(t(nextState === 'closed' ? 'pull.closedNotice' : 'pull.reopenedNotice'))
+      return
+    }
+    setError(result === null || result === undefined ? '操作失败' : result.error)
+  }
+
   const submitComment = async () => {
     if (typeof source.onComment !== 'function' || commentBusy) return
     setCommentBusy(true)
@@ -294,8 +317,13 @@ export function PullDetail(props) {
       comment: commentDraft
     })
     setCommentBusy(false)
-    if (result !== null && result !== undefined && result.ok === true) setCommentNotice(result.message ?? t('pull.aiCommentDone'))
-    else setCommentNotice(result === null || result === undefined ? '评论失败' : result.error)
+    if (result !== null && result !== undefined && result.ok === true) {
+      // 发出去之后清空输入框：否则内容留在框里，用户会以为没发出去
+      setCommentDraft('')
+      setCommentNotice(result.message ?? t('pull.aiCommentDone'))
+      return
+    }
+    setCommentNotice(result === null || result === undefined ? '评论失败' : result.error)
   }
 
   const submitReview = (verdict) => run('review', () => source.onReview({
@@ -348,7 +376,42 @@ export function PullDetail(props) {
         onClick: () => {
           if (typeof source.onOpenUrl === 'function') source.onOpenUrl(pull.htmlUrl)
         }
-      }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 }))),
+      }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 })),
+      pull.state === 'open'
+        ? (closeConfirm
+          ? h('span', { className: 'dgp-pull-confirm', 'data-dgp-pull': 'close-confirm' },
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'ghost',
+              disabled: stateBusy,
+              onClick: () => setCloseConfirm(false)
+            }, t('action.cancel')),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-dgp-pull': 'close-run',
+              disabled: stateBusy,
+              onClick: () => changeState('closed')
+            }, t('pull.closeConfirm')))
+          : h('button', {
+            type: 'button',
+            className: 'dgp-btn',
+            'data-size': 'sm',
+            'data-dgp-pull': 'close-pull',
+            disabled: stateBusy,
+            onClick: () => setCloseConfirm(true)
+          }, t('pull.closeRun')))
+        : h('button', {
+          type: 'button',
+          className: 'dgp-btn',
+          'data-size': 'sm',
+          'data-dgp-pull': 'reopen-pull',
+          disabled: stateBusy,
+          onClick: () => changeState('open')
+        }, t('pull.reopenRun'))),
 
     /* 门禁状态：审查与测试并排一行，状态一眼可见 */
     h('div', { className: 'dgp-gate', 'data-dgp-pull': 'gate' },
@@ -551,6 +614,28 @@ export function PullDetail(props) {
             }, t('pull.aiFillComment'))),
           h('pre', { className: 'dgp-ai-draft', 'data-dgp-pull': 'ai-comment' }, draft)),
         renderSteps(ai.steps, ai.logPath))),
+
+    /* ------------------------------ 提交 ------------------------------ */
+    (data.commits ?? []).length === 0 && (data.commitsUnavailable === null || data.commitsUnavailable === undefined)
+      ? null
+      : h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'commits' },
+        h('div', { className: 'dgp-detail-head' },
+          h('span', { className: 'dgp-detail-title' }, t('pull.commitsTitle')),
+          h('span', { className: 'dgp-detail-count' }, String((data.commits ?? []).length))),
+        data.commitsUnavailable === null || data.commitsUnavailable === undefined
+          ? null
+          : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'commits-error' }, data.commitsUnavailable),
+        h('ul', { className: 'dgp-detail-list' },
+          (data.commits ?? []).map((commit) => h('li', {
+            key: commit.sha,
+            className: 'dgp-detail-item',
+            'data-dgp-commit-row': commit.sha
+          },
+          h('span', { className: 'dgp-detail-link dgp-oneline', title: commit.message }, commit.message.split('\n')[0]),
+          h('span', { className: 'dgp-detail-meta' },
+            h('span', { className: 'dgp-detail-author' }, commit.sha.slice(0, 7)),
+            commit.author === '' ? null : h('span', null, commit.author),
+            commit.date === '' ? null : h('span', null, formatDateTime(Date.parse(commit.date)))))))),
 
     /* ------------------------------ 评论 ------------------------------ */
     h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'comments' },

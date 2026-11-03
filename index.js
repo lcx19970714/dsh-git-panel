@@ -132,6 +132,7 @@ export const ENDPOINTS = Object.freeze([
   'remote/pull/session-review',
   'remote/pull/clone-for-review',
   'remote/pull/comment',
+  'remote/pull/state',
   'remote/pull/test',
   'remote/pull/pass',
   'remote/pull/merge',
@@ -830,6 +831,16 @@ function createDispatcher(ctx) {
     }
   }
 
+  /** 关闭 / 重新打开 PR（状态机只有 open / closed）。 */
+  async function remotePullState(request, signal) {
+    return remotesOf().setPullState({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullName: requireString(request.fullName, 'fullName'),
+      number: request.number,
+      state: request.state
+    }, { signal })
+  }
+
   /** 提交评论：内容由用户在面板里确认/编辑，这里只负责发出去。 */
   async function remotePullComment(request, signal) {
     return remotesOf().commentPull({
@@ -1072,6 +1083,7 @@ function createDispatcher(ctx) {
     'remote/pull/session-review': (request, signal) => remotePullSessionReview(request, signal),
     'remote/pull/clone-for-review': (request, signal) => remotePullCloneForReview(request, signal),
     'remote/pull/comment': (request, signal) => remotePullComment(request, signal),
+    'remote/pull/state': (request, signal) => remotePullState(request, signal),
     'remote/pull/review': (request, signal) => remotePullReview(request, signal),
     'remote/pull/pass': (request, signal) => remotePullPass(request, signal),
     'remote/pull/test': (request, signal) => remotePullTest(request, signal),

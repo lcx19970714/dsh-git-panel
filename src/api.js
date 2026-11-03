@@ -270,6 +270,21 @@ export function commitMessage(payload, options) {
   return call('commit/message', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 70_000 })
 }
 
+/** 创建 PR 前的准备信息（仓库 / 账号 / 源分支 / 目标分支候选 / 是否已推送）。 */
+export function prPrepare(payload, options) {
+  return call('pr/prepare', payload, options)
+}
+
+/** 用模型生成 PR 标题与描述。 */
+export function prGenerate(payload, options) {
+  return call('pr/generate', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 120_000 })
+}
+
+/** 创建 PR。 */
+export function prCreate(payload, options) {
+  return call('pr/create', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 120_000 })
+}
+
 /** 模型目录（来自 profile 的 llm-pi-ai 配置）。 */
 export function listModels(payload, options) {
   return call('models/list', payload, options)

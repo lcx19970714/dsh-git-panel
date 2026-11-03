@@ -136,5 +136,16 @@ export function CommitBox(props) {
         onClick: () => {
           if (typeof source.onCommit === 'function') source.onCommit()
         }
-      }, translate(busy ? 'commit.submitting' : 'commit.submit'))))
+      }, translate(busy ? 'commit.submitting' : 'commit.submit')),
+      typeof source.onCreatePull === 'function'
+        ? h('button', {
+          type: 'button',
+          className: 'dgp-btn dgp-commit-pr',
+          'data-variant': 'ghost',
+          'data-size': 'sm',
+          'data-dgp-commit': 'create-pr',
+          disabled: busy,
+          onClick: () => source.onCreatePull()
+        }, translate('pr.open'))
+        : null))
 }

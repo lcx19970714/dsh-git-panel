@@ -33,7 +33,9 @@ const DEFAULTS = {
   /** 变更列表显示方式：list = 一行一个文件（文件名 + 弱化路径），tree = 按文件夹展开。 */
   changesView: 'list',
   /** 未跟踪文件：merge = 并进「未暂存」（VS Code 行为），separate = 单列「未跟踪」组。 */
-  untrackedMode: 'merge'
+  untrackedMode: 'merge',
+  /** 创建 PR 时上次选的目标分支：{ '<provider>:<owner/repo>': 'dev' } */
+  pullTargets: {}
 }
 
 /** 未跟踪文件的两种呈现方式（设置页与分组逻辑共用）。 */
@@ -61,12 +63,29 @@ function sanitize(input) {
   if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
   if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
   if (UNTRACKED_MODES.includes(input.untrackedMode)) out.untrackedMode = input.untrackedMode
+  if (input.pullTargets !== null && typeof input.pullTargets === 'object' && !Array.isArray(input.pullTargets)) {
+    const targets = {}
+    for (const [key, value] of Object.entries(input.pullTargets)) {
+      if (typeof key === 'string' && key !== '' && typeof value === 'string' && value !== '') targets[key] = value
+    }
+    out.pullTargets = targets
+  }
   if (input.collapsedGroups && typeof input.collapsedGroups === 'object') {
     const groups = {}
     for (const key of GROUPS) if (input.collapsedGroups[key] === true) groups[key] = true
     out.collapsedGroups = groups
   }
   return out
+}
+
+/** 读全部偏好（含默认值兜底由 loadPrefs 内部处理）。 */
+export function readPrefs() {
+  return loadPrefs()
+}
+
+/** 写一个偏好键（与已有值合并）。 */
+export function writePref(key, value) {
+  savePrefs({ [key]: value })
 }
 
 function loadPrefs() {

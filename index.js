@@ -56,8 +56,14 @@ import {
   cloneForReview,
   findLocalRepoFor,
   originMatches,
-  headShaOf
+  headShaOf,
+  remoteInfoFor,
+  listRemoteBranches,
+  pushedState,
+  branchCommits,
+  branchDiffText
 } from './host/git.js'
+import { generatePullText } from './host/pr-text.js'
 import { createReviewLog } from './host/review-log.js'
 import { createRemotes } from './host/remotes/index.js'
 import {
@@ -139,6 +145,9 @@ export const ENDPOINTS = Object.freeze([
   'remote/clone',
   'commit',
   'commit/message',
+  'pr/prepare',
+  'pr/generate',
+  'pr/create',
   'models/list',
   'settings/get',
   'settings/set',
@@ -971,6 +980,127 @@ function createDispatcher(ctx) {
     return { ...generated, source: diff.source }
   }
 
+  /* 创建 PR ---------------------------------------------------------- */
+
+  /** 目标分支排序：dev / main / master 优先，其余按自然序。 */
+  function sortBaseCandidates(branches, head) {
+    const preferred = ['dev', 'develop', 'main', 'master']
+    return branches
+      .filter((branch) => branch !== head)
+      .map((branch) => ({ branch, rank: preferred.includes(branch) ? preferred.indexOf(branch) : preferred.length }))
+      .sort((left, right) => (left.rank - right.rank) || naturalCompare(left.branch, right.branch))
+      .map((item) => item.branch)
+  }
+
+  /** 准备创建 PR：仓库/账号/源分支/目标分支候选/是否已推送。 */
+  async function prPrepare(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    const repoRoot = normalizeSlashes(repo.repoRoot)
+    const info = await remoteInfoFor(repoRoot, { signal })
+    if (info === null) {
+      throw new GitError('no-remote-repo', '当前仓库的 origin 不是 GitHub/Gitee 地址，无法创建 PR')
+    }
+    const head = await readHead(repoRoot)
+    if (head.branch === null || head.detached === true) {
+      throw new GitError('detached-head', '当前不在任何分支上（detached HEAD）：先切到一个分支再创建 PR')
+    }
+    const accounts = (await remotesOf().listAccounts()).accounts.filter((account) => account.provider === info.provider)
+    if (accounts.length === 0) {
+      throw new GitError('no-account', '还没有配置 ' + info.provider + ' 账号：先在设置里添加令牌')
+    }
+    const remoteBranches = await listRemoteBranches(repoRoot, 'origin', { signal })
+    const bases = sortBaseCandidates(remoteBranches, head.branch)
+    if (bases.length === 0) {
+      throw new GitError('no-base-branch', '远端没有任何可作目标的分支：先 git fetch')
+    }
+    const push = await pushedState(repoRoot, head.branch, 'origin', { signal })
+    return {
+      repo: { provider: info.provider, fullName: info.fullName },
+      head: head.branch,
+      bases,
+      accounts,
+      pushed: push.pushed,
+      ahead: head.ahead,
+      behind: head.behind
+    }
+  }
+
+  /** 生成 PR 标题与描述（用提交说明的模型）。 */
+  async function prGenerate(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const base = requireString(request.base, 'base')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    const repoRoot = normalizeSlashes(repo.repoRoot)
+    const head = await readHead(repoRoot)
+    if (head.branch === null || head.detached === true) throw new GitError('detached-head', '当前不在任何分支上')
+    if (base === head.branch) throw new GitError('bad-request', '源分支与目标分支不能相同')
+    const remoteBranches = await listRemoteBranches(repoRoot, 'origin', { signal })
+    if (!remoteBranches.includes(base)) {
+      throw new GitError('base-not-found', '远端没有分支 ' + base + '：先刷新（git fetch）再试')
+    }
+    const settings = await readSettings()
+    if (settings.commitModel === null) {
+      throw new GitError('no-commit-model', '还没有配置生成用的模型（设置里选「提交说明模型」）')
+    }
+    const commits = await branchCommits(repoRoot, 'origin/' + base, { signal, limit: 50 })
+    if (commits.length === 0) {
+      throw new GitError('nothing-to-compare', '当前分支相对 origin/' + base + ' 没有任何提交：先提交并推送再创建 PR')
+    }
+    const diffText = await branchDiffText(repoRoot, 'origin/' + base, { signal, maxOutput: 2 * 1024 * 1024 })
+    const stat = await runGit(repoRoot, ['diff', '--stat', 'origin/' + base + '...HEAD'], { signal })
+    const text = await generatePullText({
+      llm: llmService,
+      pair: settings.commitModel,
+      input: {
+        base,
+        head: head.branch,
+        commits: commits.slice().reverse(),
+        diffText,
+        stat: stat.stdout.toString('utf8').trim()
+      },
+      signal
+    })
+    return { ...text, commits: commits.length }
+  }
+
+  /** 真正创建 PR：先校验已推送，再调平台。 */
+  async function prCreate(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const accountId = requireString(request.accountId, 'accountId')
+    const fullName = requireString(request.fullName, 'fullName')
+    const base = requireString(request.base, 'base')
+    const title = requireString(request.title, 'title')
+    const body = typeof request.body === 'string' ? request.body : ''
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    const repoRoot = normalizeSlashes(repo.repoRoot)
+    const info = await remoteInfoFor(repoRoot, { signal })
+    if (info === null || info.fullName !== fullName) {
+      throw new GitError('repo-mismatch', '当前仓库的 origin 不是 ' + fullName + '：无法在这里创建它的 PR')
+    }
+    const head = await readHead(repoRoot)
+    if (head.branch === null || head.detached === true) throw new GitError('detached-head', '当前不在任何分支上')
+    const push = await pushedState(repoRoot, head.branch, 'origin', { signal })
+    if (!push.pushed) {
+      throw new GitError('not-pushed',
+        '分支 ' + head.branch + ' 还没有完全推送到 origin'
+        + (push.remoteSha === '' ? '（远端没有这个分支）' : '（远端比本地旧）')
+        + '：先 git push 再创建 PR')
+    }
+    const created = await remotesOf().createPull({
+      accountId,
+      fullName,
+      head: head.branch,
+      base,
+      title,
+      body
+    }, { signal })
+    return { ...created, head: head.branch, base }
+  }
+
   /* models / settings ------------------------------------------------- */
   /** 列出 DSH 当前可用的模型（来自 llm 服务，不读任何配置文件）。 */
   async function modelsList() {
@@ -1095,6 +1225,9 @@ function createDispatcher(ctx) {
     'branch/create': (request, signal) => branchCreate(request, signal),
     'commit': (request, signal) => commit(request, signal),
     'commit/message': (request, signal) => commitMessage(request, signal),
+    'pr/prepare': (request, signal) => prPrepare(request, signal),
+    'pr/generate': (request, signal) => prGenerate(request, signal),
+    'pr/create': (request, signal) => prCreate(request, signal),
     'models/list': () => modelsList(),
     'settings/get': () => settingsGet(),
     'settings/set': (request, signal) => settingsSet(request),

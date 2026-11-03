@@ -2987,6 +2987,87 @@ test('用例 1U：PR 可以关闭（两步确认）与重新打开，并能看�
   })
 })
 
+test('用例 1V：变更页签创建 PR：选目标分支、生成标题描述、创建后记住该分支', async () => {
+  const prepared = []
+  const generated = []
+  const created = []
+  await withPanel({
+    storage: createFakeStorage(),
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'pr/prepare': (payload) => {
+        prepared.push(payload)
+        return sayOk({
+          repo: { provider: 'github', fullName: 'alice/app' },
+          head: 'feat/x',
+          bases: ['dev', 'main'],
+          accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+          pushed: true,
+          ahead: 2,
+          behind: 0
+        })
+      },
+      'pr/generate': (payload) => {
+        generated.push(payload)
+        return sayOk({ title: 'feat: 新增按钮', body: '## 变更摘要\n- 加了按钮', commits: 2 })
+      },
+      'pr/create': (payload) => {
+        created.push(payload)
+        return sayOk({ number: 12, url: 'https://github.com/alice/app/pull/12', state: 'open', head: 'feat/x', base: payload.base })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    // 变更页签：提交框旁边有「创建 PR」
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'create-pr'))
+    await panel.flush()
+    eq(prepared.length, 1, '打开表单前应先问宿主准备信息')
+    eq(prepared[0].rootPath, PROJECT)
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'form') !== null, '应出现创建 PR 表单')
+
+    // 目标分支默认 dev（排序优先），可以改成 main
+    const base = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'base')
+    eq(base.props.value, 'dev', '默认目标分支 dev')
+    base.props.onChange({ target: { value: 'main' } })
+    await panel.flush()
+
+    // 生成：宿主用提交说明模型产出标题与描述
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'generate'))
+    await panel.flush()
+    eq(generated.length, 1, '应请求生成')
+    eq(generated[0].base, 'main', '按当前目标分支生成')
+    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'title'), 'value'), 'feat: 新增按钮')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'body').props.value.includes('变了按钮') ||
+      panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'body').props.value.includes('加了按钮'), '描述被填入')
+
+    // 自己改标题后创建
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'title').props.onChange({ target: { value: 'feat: 我自己改的标题' } })
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'create'))
+    await panel.flush()
+    eq(created.length, 1, '应创建一次')
+    eq(created[0], {
+      rootPath: PROJECT,
+      accountId: 'github:alice',
+      fullName: 'alice/app',
+      base: 'main',
+      title: 'feat: 我自己改的标题',
+      body: '## 变更摘要\n- 加了按钮'
+    })
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'open-created') !== null, '成功后给打开 PR 的入口')
+
+    // 完成关闭后再次打开：上次的目标分支 main 要记住
+    click(panel.one((node) => isHost(node) && textOf(node) === '完成'))
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'create-pr'))
+    await panel.flush()
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'base').props.value, 'main',
+      '下次默认记住上次选择的目标分支')
+  })
+})
+
 test('用例 1R：没配 AI 审阅模型时，报错旁边有「去设置模型」入口', async () => {
   await withPanel({
     routes: {

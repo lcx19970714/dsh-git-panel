@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 30 个 */
+/* 模块: 31 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -1230,6 +1230,13 @@ window.__ModuleLoader__.load({
       .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .dgp-ai-error > .dgp-detail-failure { margin: 0; }
       .dgp-pull-confirm { display: inline-flex; gap: 6px; align-items: center; }
+      /* 创建 PR 表单（右侧面板） */
+      .dgp-pr-form { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; overflow-y: auto; }
+      .dgp-pr-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .dgp-pr-row > .dgp-settings-label { min-width: 72px; }
+      .dgp-pr-row > .dgp-select { min-width: 160px; }
+      .dgp-pr-body { width: 100%; resize: vertical; font-family: var(--ds-font-family-code); font-size: 12px; line-height: 1.6; }
+      .dgp-commit-pr { flex: none; }
       /* PR 评论：已有对话 + 常驻输入框 */
       .dgp-comment-body {
         margin: 0;
@@ -1844,6 +1851,27 @@ window.__ModuleLoader__.load({
         'group.unstageAll': '取消全部暂存',
 
         'commit.placeholder': '提交说明',
+        'pr.open': '创建 PR',
+        'pr.title': '创建 PR',
+        'pr.loading': '正在读取仓库与分支信息…',
+        'pr.repo': '仓库',
+        'pr.account': '账号',
+        'pr.head': '源分支',
+        'pr.base': '目标分支',
+        'pr.baseHint': '记住上次选择，下次默认用它',
+        'pr.notPushed': '当前分支还没有完全推送到 origin：先在变更里推送，再创建 PR。',
+        'pr.subject': '标题与描述',
+        'pr.generate': '生成标题与描述',
+        'pr.generating': '正在生成…',
+        'pr.generated': '已根据 {count} 个提交生成，可继续修改',
+        'pr.titlePlaceholder': 'PR 标题',
+        'pr.bodyPlaceholder': 'PR 描述（Markdown）',
+        'pr.create': '创建 PR',
+        'pr.creating': '正在创建…',
+        'pr.cancel': '取消',
+        'pr.done': '完成',
+        'pr.openCreated': '打开 PR',
+        'pr.createdTitle': 'PR #{number} 已创建',
         'commit.submit': '提交',
         'commit.submitting': '正在提交…',
         'commit.generate': '生成提交说明',
@@ -2191,6 +2219,27 @@ window.__ModuleLoader__.load({
         'group.unstageAll': 'Unstage all',
 
         'commit.placeholder': 'Commit message',
+        'pr.open': 'Create PR',
+        'pr.title': 'Create pull request',
+        'pr.loading': 'Reading repository and branches…',
+        'pr.repo': 'Repository',
+        'pr.account': 'Account',
+        'pr.head': 'From branch',
+        'pr.base': 'Into branch',
+        'pr.baseHint': 'Remembers your last choice',
+        'pr.notPushed': 'This branch is not fully pushed to origin: push first, then create the PR.',
+        'pr.subject': 'Title & description',
+        'pr.generate': 'Generate title & description',
+        'pr.generating': 'Generating…',
+        'pr.generated': 'Generated from {count} commits — edit as you like',
+        'pr.titlePlaceholder': 'Pull request title',
+        'pr.bodyPlaceholder': 'Pull request description (Markdown)',
+        'pr.create': 'Create PR',
+        'pr.creating': 'Creating…',
+        'pr.cancel': 'Cancel',
+        'pr.done': 'Done',
+        'pr.openCreated': 'Open PR',
+        'pr.createdTitle': 'PR #{number} created',
         'commit.submit': 'Commit',
         'commit.submitting': 'Committing…',
         'commit.generate': 'Generate commit message',
@@ -2352,11 +2401,12 @@ window.__ModuleLoader__.load({
       const { FileEditor } = __m("./components/FileEditor.js");
       const { EmptyState, LoadingState, InlineNote } = __m("./components/States.js");
       const { CommitBox } = __m("./components/CommitBox.js");
+      const { CreatePullForm } = __m("./components/CreatePullForm.js");
       const { SettingsView } = __m("./components/SettingsView.js");
       const { RemotePane } = __m("./components/RemotePane.js");
       const { RemoteDetail } = __m("./components/RemoteDetail.js");
       const { PullDetail } = __m("./components/PullDetail.js");
-      const { MODE, readRemoteAccount, saveRemoteAccount, usePref, useLatestGuard } = __m("./store.js");
+      const { MODE, readPrefs, writePref, readRemoteAccount, saveRemoteAccount, usePref, useLatestGuard } = __m("./store.js");
       const api = __m("./api.js");
       const { openExternalUrl } = __m("./util/openUrl.js");
       const { reconcileSelection } = __m("./util/changes.js");
@@ -2523,6 +2573,12 @@ window.__ModuleLoader__.load({
         const [generateElapsed, setGenerateElapsed] = useState(0)
         const [commitNote, setCommitNote] = useState(null)
         const [showSettings, setShowSettings] = useState(false)
+        /**
+         * 创建 PR 表单（右侧面板）：
+         * { loading, error, repo, head, bases, accounts, accountId, base, title, body, bodyHeight,
+         *   pushed, generating, creating, created, notice }
+         */
+        const [pullForm, setPullForm] = useState(null)
         const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
 
         const [moreOpen, setMoreOpen] = useState(false)
@@ -3059,6 +3115,96 @@ window.__ModuleLoader__.load({
         const refOfPair = (pair) => (pair === null || pair === undefined ? null : pair.provider + '/' + pair.model)
 
         /** 打开设置页：同时拉模型目录和当前设置。 */
+        /** 目标分支记忆键：按 provider + 仓库全名区分。 */
+        const pullTargetKey = (repo) => repo.provider + ':' + repo.fullName
+
+        /** 打开创建 PR 表单：先向宿主要仓库/账号/分支信息。 */
+        const openCreatePull = useCallback(async () => {
+          if (activeRoot === null || activeRoot.isGit !== true) return
+          setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', pushed: false, generating: false, creating: false, created: null, notice: null })
+          try {
+            const prepared = await api.prPrepare({ rootPath: activeRoot.path })
+            const remembered = readPrefs().pullTargets?.[pullTargetKey(prepared.repo)] ?? ''
+            const base = prepared.bases.includes(remembered) ? remembered : prepared.bases[0]
+            setPullForm({
+              loading: false,
+              error: null,
+              repo: prepared.repo,
+              head: prepared.head,
+              bases: prepared.bases,
+              accounts: prepared.accounts,
+              accountId: prepared.accounts[0]?.id ?? '',
+              base,
+              title: '',
+              body: '',
+              bodyHeight: '160px',
+              pushed: prepared.pushed === true,
+              generating: false,
+              creating: false,
+              created: null,
+              notice: null
+            })
+          } catch (error) {
+            setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', pushed: false, generating: false, creating: false, created: null, notice: null })
+          }
+        }, [activeRoot])
+
+        const closeCreatePull = useCallback(() => setPullForm(null), [])
+
+        const changePullField = useCallback((field, value) => {
+          setPullForm((previous) => {
+            if (previous === null || previous.created !== null) return previous
+            if (field === 'body') {
+              const lines = String(value).split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)), 0)
+              return { ...previous, body: value, bodyHeight: Math.min(Math.max(lines, 6), 30) * 19 + 24 + 'px' }
+            }
+            return { ...previous, [field]: value, notice: null }
+          })
+        }, [])
+
+        /** 用模型生成标题与描述（失败就地显示原因）。 */
+        const generatePullText = useCallback(async () => {
+          if (pullForm === null || activeRoot === null) return
+          setPullForm({ ...pullForm, generating: true, error: null, notice: null })
+          try {
+            const generated = await api.prGenerate({ rootPath: activeRoot.path, base: pullForm.base })
+            setPullForm((previous) => (previous === null ? previous : {
+              ...previous,
+              generating: false,
+              title: generated.title,
+              body: generated.body,
+              notice: tRef.current('pr.generated', { count: generated.commits })
+            }))
+          } catch (error) {
+            setPullForm((previous) => (previous === null ? previous : {
+              ...previous, generating: false, error: api.describeError(error, tRef.current)
+            }))
+          }
+        }, [pullForm, activeRoot])
+
+        /** 创建 PR：成功后记住目标分支，供下次默认。 */
+        const createPull = useCallback(async () => {
+          if (pullForm === null || activeRoot === null) return
+          setPullForm({ ...pullForm, creating: true, error: null, notice: null })
+          try {
+            const created = await api.prCreate({
+              rootPath: activeRoot.path,
+              accountId: pullForm.accountId,
+              fullName: pullForm.repo.fullName,
+              base: pullForm.base,
+              title: pullForm.title,
+              body: pullForm.body
+            })
+            writePref('pullTargets', { ...(readPrefs().pullTargets ?? {}), [pullTargetKey(pullForm.repo)]: pullForm.base })
+            await refreshStatus()
+            setPullForm((previous) => (previous === null ? previous : { ...previous, creating: false, created }))
+          } catch (error) {
+            setPullForm((previous) => (previous === null ? previous : {
+              ...previous, creating: false, error: api.describeError(error, tRef.current)
+            }))
+          }
+        }, [pullForm, activeRoot, refreshStatus])
+
         const openSettings = useCallback(async () => {
           setShowSettings(true)
           setSettingsState({ loading: true, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
@@ -4026,6 +4172,9 @@ window.__ModuleLoader__.load({
                 onChange: changeCommitMessage,
                 onCommit: commitStaged,
                 onGenerate: generateMessage,
+                onCreatePull: mode === MODE.changes && activeRoot !== null && activeRoot.isGit === true
+                  ? openCreatePull
+                  : undefined,
                 t
               }),
               h(ChangesList, {
@@ -4061,7 +4210,20 @@ window.__ModuleLoader__.load({
         }
 
         let rightPane
-        if (mode === MODE.remote && openPull !== null) {
+        if (mode === MODE.changes && pullForm !== null) {
+          rightPane = h(CreatePullForm, {
+            form: pullForm,
+            onCancel: closeCreatePull,
+            onChangeBase: (value) => changePullField('base', value),
+            onChangeAccount: (value) => changePullField('accountId', value),
+            onChangeTitle: (value) => changePullField('title', value),
+            onChangeBody: (value) => changePullField('body', value),
+            onGenerate: generatePullText,
+            onCreate: createPull,
+            onOpenUrl: openExternal,
+            t
+          })
+        } else if (mode === MODE.remote && openPull !== null) {
           rightPane = h(PullDetail, {
             // 每个 PR 一份独立的本地状态（AI 结果、评论草稿），切 PR 时重置
             key: openPull.fullName + '#' + String(openPull.number),
@@ -6876,6 +7038,21 @@ window.__ModuleLoader__.load({
         return call('commit/message', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 70_000 })
       }
 
+      /** 创建 PR 前的准备信息（仓库 / 账号 / 源分支 / 目标分支候选 / 是否已推送）。 */
+      function prPrepare(payload, options) {
+        return call('pr/prepare', payload, options)
+      }
+
+      /** 用模型生成 PR 标题与描述。 */
+      function prGenerate(payload, options) {
+        return call('pr/generate', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 120_000 })
+      }
+
+      /** 创建 PR。 */
+      function prCreate(payload, options) {
+        return call('pr/create', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 120_000 })
+      }
+
       /** 模型目录（来自 profile 的 llm-pi-ai 配置）。 */
       function listModels(payload, options) {
         return call('models/list', payload, options)
@@ -6922,7 +7099,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, prPrepare, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -8238,10 +8415,165 @@ window.__ModuleLoader__.load({
               onClick: () => {
                 if (typeof source.onCommit === 'function') source.onCommit()
               }
-            }, translate(busy ? 'commit.submitting' : 'commit.submit'))))
+            }, translate(busy ? 'commit.submitting' : 'commit.submit')),
+            typeof source.onCreatePull === 'function'
+              ? h('button', {
+                type: 'button',
+                className: 'dgp-btn dgp-commit-pr',
+                'data-variant': 'ghost',
+                'data-size': 'sm',
+                'data-dgp-commit': 'create-pr',
+                disabled: busy,
+                onClick: () => source.onCreatePull()
+              }, translate('pr.open'))
+              : null))
       }
 
       Object.assign(exports, { COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT, commitInputHeight, CommitBox });
+
+    });
+    __define("./components/CreatePullForm.js", (exports, module) => {
+      /**
+       * src/components/CreatePullForm.js —— 变更 Tab 的「创建 PR」表单（渲染在右侧面板）
+       *
+       * 交互顺序按用户真实操作：
+       *   仓库与源分支（只读）→ 目标分支（记住上次）→ 生成标题与描述 → 自己改 → 创建 PR
+       * 未推送时给出明确阻断（先 git push），不假装能创建。
+       */
+      const { h } = __m("./platform.js");
+      const { Icon } = __m("./ui/Icon.js");
+
+      function CreatePullForm(props) {
+        const source = props
+        const t = source.t
+        const form = source.form
+        if (form === null || form === undefined) return null
+
+        const header = h('div', { className: 'dgp-detail-top' },
+          h('div', { className: 'dgp-detail-name-row' },
+            h('span', { className: 'dgp-detail-name dgp-oneline' },
+              t('pr.title') + ' · ' + (form.repo === null ? '' : form.repo.fullName))),
+          h('button', {
+            type: 'button',
+            className: 'dgp-btn',
+            'data-size': 'sm',
+            'data-dgp-pr': 'cancel',
+            onClick: () => source.onCancel()
+          }, t('pr.cancel')))
+
+        if (form.loading === true) {
+          return h('div', { className: 'dgp-detail dgp-pr-form', 'data-dgp-pr': 'form' },
+            header,
+            h('p', { className: 'dgp-detail-meta' }, t('pr.loading')))
+        }
+        if (form.error !== null) {
+          return h('div', { className: 'dgp-detail dgp-pr-form', 'data-dgp-pr': 'form' },
+            header,
+            h('p', { className: 'dgp-detail-failure', 'data-dgp-pr': 'error' }, form.error))
+        }
+
+        /* 创建成功后：只显示结果与打开入口 */
+        if (form.created !== null) {
+          return h('div', { className: 'dgp-detail dgp-pr-form', 'data-dgp-pr': 'form' },
+            header,
+            h('div', { className: 'dgp-detail-section' },
+              h('p', { className: 'dgp-detail-title' }, t('pr.createdTitle', { number: form.created.number })),
+              h('p', { className: 'dgp-detail-meta' }, form.head + ' → ' + form.base),
+              h('div', { className: 'dgp-pull-actions' },
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-variant': 'primary',
+                  'data-dgp-pr': 'open-created',
+                  onClick: () => source.onOpenUrl(form.created.url)
+                }, t('pr.openCreated'), h(Icon, { name: 'external', size: 12 })),
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-dgp-pr': 'done',
+                  onClick: () => source.onCancel()
+                }, t('pr.done')))))
+        }
+
+        const baseOptions = Array.isArray(form.bases) ? form.bases : []
+        const accountOptions = Array.isArray(form.accounts) ? form.accounts : []
+
+        return h('div', { className: 'dgp-detail dgp-pr-form', 'data-dgp-pr': 'form' },
+          header,
+          h('div', { className: 'dgp-pr-row' },
+            h('span', { className: 'dgp-settings-label' }, t('pr.repo')),
+            h('span', { className: 'dgp-detail-meta' }, form.repo.fullName + '（' + form.repo.provider + '）')),
+          h('div', { className: 'dgp-pr-row' },
+            h('span', { className: 'dgp-settings-label' }, t('pr.head')),
+            h('span', { className: 'dgp-detail-meta' }, form.head)),
+          accountOptions.length > 1
+            ? h('div', { className: 'dgp-pr-row' },
+              h('span', { className: 'dgp-settings-label' }, t('pr.account')),
+              h('select', {
+                className: 'dgp-select',
+                'data-dgp-pr': 'account',
+                value: form.accountId,
+                onChange: (event) => source.onChangeAccount(event.target.value)
+              }, accountOptions.map((account) => h('option', { key: account.id, value: account.id },
+                account.label + '（' + account.id + '）'))))
+            : null,
+          h('div', { className: 'dgp-pr-row' },
+            h('span', { className: 'dgp-settings-label' }, t('pr.base')),
+            h('select', {
+              className: 'dgp-select',
+              'data-dgp-pr': 'base',
+              value: form.base,
+              onChange: (event) => source.onChangeBase(event.target.value)
+            }, baseOptions.map((branch) => h('option', { key: branch, value: branch }, branch))),
+            h('span', { className: 'dgp-settings-hint' }, t('pr.baseHint'))),
+
+          form.pushed !== true
+            ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pr': 'not-pushed' }, t('pr.notPushed'))
+            : null,
+
+          h('div', { className: 'dgp-pr-row' },
+            h('span', { className: 'dgp-settings-label' }, t('pr.subject')),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-dgp-pr': 'generate',
+              disabled: form.generating === true || form.creating === true,
+              onClick: () => source.onGenerate()
+            }, t(form.generating === true ? 'pr.generating' : 'pr.generate'))),
+          h('input', {
+            className: 'dgp-input',
+            'data-dgp-pr': 'title',
+            placeholder: t('pr.titlePlaceholder'),
+            value: form.title,
+            spellCheck: false,
+            onChange: (event) => source.onChangeTitle(event.target.value)
+          }),
+          h('textarea', {
+            className: 'dgp-input dgp-pr-body',
+            'data-dgp-pr': 'body',
+            placeholder: t('pr.bodyPlaceholder'),
+            value: form.body,
+            spellCheck: false,
+            style: { height: form.bodyHeight },
+            onChange: (event) => source.onChangeBody(event.target.value)
+          }),
+          h('div', { className: 'dgp-pull-actions' },
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'primary',
+              'data-dgp-pr': 'create',
+              disabled: form.creating === true || form.pushed !== true || form.title.trim() === '' || form.base === '',
+              onClick: () => source.onCreate()
+            }, t(form.creating === true ? 'pr.creating' : 'pr.create')),
+            form.notice === null ? null : h('span', { className: 'dgp-detail-notice', 'data-dgp-pr': 'notice' }, form.notice)))
+      }
+
+      Object.assign(exports, { CreatePullForm });
 
     });
     __define("./components/SettingsView.js", (exports, module) => {
@@ -9975,7 +10307,9 @@ window.__ModuleLoader__.load({
         /** 变更列表显示方式：list = 一行一个文件（文件名 + 弱化路径），tree = 按文件夹展开。 */
         changesView: 'list',
         /** 未跟踪文件：merge = 并进「未暂存」（VS Code 行为），separate = 单列「未跟踪」组。 */
-        untrackedMode: 'merge'
+        untrackedMode: 'merge',
+        /** 创建 PR 时上次选的目标分支：{ '<provider>:<owner/repo>': 'dev' } */
+        pullTargets: {}
       }
 
       /** 未跟踪文件的两种呈现方式（设置页与分组逻辑共用）。 */
@@ -10003,12 +10337,29 @@ window.__ModuleLoader__.load({
         if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
         if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
         if (UNTRACKED_MODES.includes(input.untrackedMode)) out.untrackedMode = input.untrackedMode
+        if (input.pullTargets !== null && typeof input.pullTargets === 'object' && !Array.isArray(input.pullTargets)) {
+          const targets = {}
+          for (const [key, value] of Object.entries(input.pullTargets)) {
+            if (typeof key === 'string' && key !== '' && typeof value === 'string' && value !== '') targets[key] = value
+          }
+          out.pullTargets = targets
+        }
         if (input.collapsedGroups && typeof input.collapsedGroups === 'object') {
           const groups = {}
           for (const key of GROUPS) if (input.collapsedGroups[key] === true) groups[key] = true
           out.collapsedGroups = groups
         }
         return out
+      }
+
+      /** 读全部偏好（含默认值兜底由 loadPrefs 内部处理）。 */
+      function readPrefs() {
+        return loadPrefs()
+      }
+
+      /** 写一个偏好键（与已有值合并）。 */
+      function writePref(key, value) {
+        savePrefs({ [key]: value })
       }
 
       function loadPrefs() {
@@ -10134,7 +10485,7 @@ window.__ModuleLoader__.load({
         return useMemo(() => ({ begin, isLatest }), [begin, isLatest])
       }
 
-      Object.assign(exports, { MODE, MODES, UNTRACKED_MODES, usePref, readRemoteAccount, saveRemoteAccount, useLatestGuard });
+      Object.assign(exports, { MODE, MODES, UNTRACKED_MODES, readPrefs, writePref, usePref, readRemoteAccount, saveRemoteAccount, useLatestGuard });
 
     });
     __define("./util/remote.js", (exports, module) => {

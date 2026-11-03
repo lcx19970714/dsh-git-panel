@@ -179,7 +179,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 44 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 47 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -269,6 +269,16 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 关闭 / 重新打开走 `remote/pull/state`（`PATCH /pulls/{n}` + `state`），两家路径与字段一致；
 关闭在界面里是两步确认，重新打开直接执行。
 
+**创建 PR 约定**：入口在「变更」页签（提交框右侧「创建 PR」），表单渲染在右侧面板。
+
+- 宿主先 `pr/prepare`：从 `remote.origin.url` 认出 provider 与 `owner/repo`、列出远端分支作为目标候选、
+  检查当前分支是否已推送；不满足条件直接报明确错误，不在界面上假装可创建；
+- 目标分支默认按 `dev → develop → main → master → 自然序` 排序；**客户端按仓库（provider:owner/repo）
+  记住上次选择**（`pullTargets` 偏好），下次自动带出；
+- 标题与描述用「提交说明模型」（设置里同一个模型）生成：输入是 base..HEAD 的提交标题 + diff 统计 +
+  diff 片段（40k 截断），输出严格 JSON `{title, body}`，不合法就报 bad-model-output；
+- 用户可改，点「创建 PR」才真正发出去；成功后显示 PR 编号与「打开 PR」，并记住这次的目标分支。
+
 **PR 评论约定**：PR 详情（`remote/pull`）会一并读评论列表：
 GitHub 走 `GET /issues/{n}/comments`、Gitee 走 `GET /pulls/{n}/comments`（与发表评论同路径）。
 读失败不拖垮详情，但会带上 `commentsUnavailable` 原因，界面明确显示。
@@ -320,6 +330,9 @@ PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 J
 | `remote/pull/merge` | `{accountId, fullName, number, method, deleteBranch?}` | `{merged, method, branchDeleted, headBranch}`；不可合并/已合并/非打开状态在宿主侧拦下 |
 | `remote/clone` | `{accountId, fullName, cloneUrl, projectRoot, targetName?}` | `{path, name, fullName}`；鉴权只走 `-c http.extraHeader`，不写进 `.git/config` |
 | `commit` | `{rootPath, message}` | `{head, subject, includedUnstaged}`；有暂存只提交暂存，没有则先 `git add -A` 再提交 |
+| `pr/prepare` | `{rootPath}` | `{repo:{provider,fullName}, head, bases, accounts, pushed, ahead, behind}`；origin 指向 GitHub/Gitee、当前在分支上、有对应账号，否则直接报错（no-remote-repo / no-account / detached-head / no-base-branch） |
+| `pr/generate` | `{rootPath, base}` | `{title, body, commits}`；`git log origin/base..HEAD` + `git diff origin/base...HEAD` 交给提交说明模型，严格 JSON |
+| `pr/create` | `{rootPath, accountId, fullName, base, title, body}` | `{number, url, state, head, base}`；先校验 origin 与 fullName 一致、分支已推送（not-pushed），再 `POST /pulls` |
 | `commit/message` | `{rootPath}` | `{message, model, source}`；有暂存看暂存，否则看未暂存 |
 | `models/list` | `{}` | `{models[], failed[]}`；模型来自 DSH 的 `llm` 服务，不读配置文件、不碰密钥 |
 | `settings/get` / `settings/set` | `{commitModel?}` | `{commitModel: {provider, model} \| null}`；生成提交说明所用的模型 |

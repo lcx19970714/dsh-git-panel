@@ -35,7 +35,9 @@ const DEFAULTS = {
   /** 未跟踪文件：merge = 并进「未暂存」（VS Code 行为），separate = 单列「未跟踪」组。 */
   untrackedMode: 'merge',
   /** 创建 PR 时上次选的目标分支：{ '<provider>:<owner/repo>': 'dev' } */
-  pullTargets: {}
+  pullTargets: {},
+  /** 已读评论水位：{ '<accountId>#<number>': 已读条数 } */
+  pullSeen: {}
 }
 
 /** 未跟踪文件的两种呈现方式（设置页与分组逻辑共用）。 */
@@ -63,6 +65,13 @@ function sanitize(input) {
   if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
   if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
   if (UNTRACKED_MODES.includes(input.untrackedMode)) out.untrackedMode = input.untrackedMode
+  if (input.pullSeen !== null && typeof input.pullSeen === 'object' && !Array.isArray(input.pullSeen)) {
+    const seen = {}
+    for (const [key, value] of Object.entries(input.pullSeen)) {
+      if (typeof key === 'string' && key !== '' && Number.isInteger(value) && value >= 0) seen[key] = value
+    }
+    out.pullSeen = seen
+  }
   if (input.pullTargets !== null && typeof input.pullTargets === 'object' && !Array.isArray(input.pullTargets)) {
     const targets = {}
     for (const [key, value] of Object.entries(input.pullTargets)) {

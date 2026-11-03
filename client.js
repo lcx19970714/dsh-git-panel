@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 31 个 */
+/* 模块: 32 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -1230,6 +1230,27 @@ window.__ModuleLoader__.load({
       .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .dgp-ai-error > .dgp-detail-failure { margin: 0; }
       .dgp-pull-confirm { display: inline-flex; gap: 6px; align-items: center; }
+      /* 变更页签：当前分支的 PR 状态卡 */
+      .dgp-pr-card {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px;
+        border: 1px solid var(--dsw-alias-border-secondary);
+        border-radius: var(--dsw-radius-sm);
+        background: var(--dsw-alias-bg-module-platform);
+      }
+      .dgp-pr-card-head { display: flex; align-items: baseline; gap: 6px; justify-content: space-between; }
+      .dgp-pr-card-title { font-size: 12px; font-weight: 500; color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dgp-pr-card-status { flex: none; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+      .dgp-pr-card-status[data-status="changes"] { color: var(--dsw-alias-state-warn-label); }
+      .dgp-pr-card-status[data-status="approved"] { color: var(--dsw-alias-state-success-primary); }
+      .dgp-pr-card-status[data-status="merged"] { color: var(--dsw-alias-state-success-primary); }
+      .dgp-pr-card-meta { display: flex; gap: 8px; font-size: 11px; color: var(--dsw-alias-label-tertiary); flex-wrap: wrap; }
+      .dgp-pr-card-unread { color: var(--dsw-alias-state-warn-label); }
+      .dgp-pr-card-latest { font-size: 11px; color: var(--dsw-alias-label-secondary); }
+      .dgp-pr-card-actions { display: flex; justify-content: flex-end; }
+      .dgp-comment-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
       /* 创建 PR 表单（右侧面板） */
       .dgp-pr-form { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; overflow-y: auto; }
       .dgp-pr-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -1851,6 +1872,23 @@ window.__ModuleLoader__.load({
         'group.unstageAll': '取消全部暂存',
 
         'commit.placeholder': '提交说明',
+        'prCard.loading': '正在读取 PR 状态…',
+        'prCard.retry': '刷新',
+        'prCard.no-pull': '当前分支还没有 PR',
+        'prCard.no-account': '还没有配置对应平台的账号',
+        'prCard.no-remote-repo': 'origin 不是 GitHub/Gitee 仓库',
+        'prCard.detached-head': '当前不在任何分支上',
+        'prCard.unread': '{count} 条新反馈',
+        'prCard.latest': '最近评论（{author}）：',
+        'prCard.open': '查看 PR',
+        'prCard.status.waiting': '等待评审',
+        'prCard.status.changes': '需要修改',
+        'prCard.status.approved': '可以合并',
+        'prCard.status.merged': '已合并',
+        'prCard.status.closed': '已关闭',
+        'pull.commentAi': '让 AI 处理',
+        'pull.commentAiBusy': '准备会话…',
+        'pull.commentAiStarted': '已新建会话 #{id}：先判断这条意见是否成立，再决定改不改；不会自动提交或推送。',
         'pr.open': '创建 PR',
         'pr.title': '创建 PR',
         'pr.loading': '正在读取仓库与分支信息…',
@@ -2219,6 +2257,23 @@ window.__ModuleLoader__.load({
         'group.unstageAll': 'Unstage all',
 
         'commit.placeholder': 'Commit message',
+        'prCard.loading': 'Reading PR status…',
+        'prCard.retry': 'Refresh',
+        'prCard.no-pull': 'No PR for this branch yet',
+        'prCard.no-account': 'No account for this platform yet',
+        'prCard.no-remote-repo': 'origin is not a GitHub/Gitee repository',
+        'prCard.detached-head': 'Not on any branch',
+        'prCard.unread': '{count} new comments',
+        'prCard.latest': 'Latest ({author}): ',
+        'prCard.open': 'View PR',
+        'prCard.status.waiting': 'Awaiting review',
+        'prCard.status.changes': 'Changes requested',
+        'prCard.status.approved': 'Ready to merge',
+        'prCard.status.merged': 'Merged',
+        'prCard.status.closed': 'Closed',
+        'pull.commentAi': 'Let AI handle',
+        'pull.commentAiBusy': 'Preparing session…',
+        'pull.commentAiStarted': 'Session #{id} created: it first judges whether the comment holds, then decides what to change; it never commits or pushes.',
         'pr.open': 'Create PR',
         'pr.title': 'Create pull request',
         'pr.loading': 'Reading repository and branches…',
@@ -2402,6 +2457,7 @@ window.__ModuleLoader__.load({
       const { EmptyState, LoadingState, InlineNote } = __m("./components/States.js");
       const { CommitBox } = __m("./components/CommitBox.js");
       const { CreatePullForm } = __m("./components/CreatePullForm.js");
+      const { PullStatusCard } = __m("./components/PullStatusCard.js");
       const { SettingsView } = __m("./components/SettingsView.js");
       const { RemotePane } = __m("./components/RemotePane.js");
       const { RemoteDetail } = __m("./components/RemoteDetail.js");
@@ -2579,6 +2635,10 @@ window.__ModuleLoader__.load({
          *   pushed, generating, creating, created, notice }
          */
         const [pullForm, setPullForm] = useState(null)
+        /** 当前分支的 PR 状态卡：{ loading, error, data } */
+        const [linkedPull, setLinkedPull] = useState(null)
+        // 状态卡的刷新函数：createPull 等更早定义的回调用它，避免依赖顺序（TDZ）
+        const refreshLinkedRef = useRef(null)
         const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
 
         const [moreOpen, setMoreOpen] = useState(false)
@@ -3196,6 +3256,7 @@ window.__ModuleLoader__.load({
               body: pullForm.body
             })
             writePref('pullTargets', { ...(readPrefs().pullTargets ?? {}), [pullTargetKey(pullForm.repo)]: pullForm.base })
+            await refreshLinkedRef.current?.()
             await refreshStatus()
             setPullForm((previous) => (previous === null ? previous : { ...previous, creating: false, created }))
           } catch (error) {
@@ -3473,6 +3534,12 @@ window.__ModuleLoader__.load({
               number: selection.number
             })
             setPullDetail({ loading: false, error: null, data })
+            // 详情里能看到评论 = 用户已读：记水位供状态卡算未读
+            const count = Array.isArray(data.comments) ? data.comments.length : 0
+            writePref('pullSeen', {
+              ...(readPrefs().pullSeen ?? {}),
+              [selection.accountId + '#' + selection.number]: count
+            })
           } catch (error) {
             setPullDetail({ loading: false, error: api.describeError(error, tRef.current), data: null })
           }
@@ -3500,6 +3567,41 @@ window.__ModuleLoader__.load({
           setRemoteNotice(null)
           setOpenPull(selection)
         }, [])
+
+        /** 读当前分支的 PR 状态（变更页签顶部卡片）。 */
+        const loadLinkedPull = useCallback(async () => {
+          if (activeRoot === null || activeRoot.isGit !== true) {
+            setLinkedPull(null)
+            return
+          }
+          setLinkedPull({ loading: true, error: null, data: null })
+          try {
+            const data = await api.prLinked({ rootPath: activeRoot.path })
+            setLinkedPull({ loading: false, error: null, data })
+          } catch (error) {
+            setLinkedPull({ loading: false, error: api.describeError(error, tRef.current), data: null })
+          }
+        }, [activeRoot])
+
+        refreshLinkedRef.current = loadLinkedPull
+
+        // 切到变更页签或分支变化时刷新；不轮询（面板没有后台任务）
+        useEffect(() => {
+          if (mode !== MODE.changes || activeRoot === null || activeRoot.isGit !== true) return
+          loadLinkedPull()
+        }, [mode, status === null ? '' : status.branch, loadLinkedPull, activeRoot])
+
+        /** 从卡片打开 PR：切到远端页签并载入详情，同时记已读。 */
+        const openLinkedPull = useCallback(async () => {
+          if (linkedPull === null || linkedPull.data === null || linkedPull.data.linked !== true) return
+          const data = linkedPull.data
+          const selection = { accountId: data.accountId, fullName: data.fullName, number: data.number }
+          setMode(MODE.remote)
+          setRemoteSelection(selection)
+          openPullWith(selection)
+          await loadPullDetail(selection)
+        }, [linkedPull, setMode, loadPullDetail, openPullWith])
+
 
         /** 审查：统一把失败包成 { ok:false, error }，界面就地显示。 */
         const reviewPull = useCallback(async (input) => {
@@ -4161,6 +4263,18 @@ window.__ModuleLoader__.load({
                 onCreateBranch: createBranch,
                 t
               }),
+              mode === MODE.changes && linkedPull !== null
+                ? h(PullStatusCard, {
+                  card: linkedPull,
+                  unread: linkedPull.data !== null && linkedPull.data.linked === true
+                    ? Math.max(0, (Array.isArray(linkedPull.data.comments) ? linkedPull.data.comments.length : 0)
+                      - (readPrefs().pullSeen?.[linkedPull.data.accountId + '#' + linkedPull.data.number] ?? 0))
+                    : 0,
+                  onOpen: openLinkedPull,
+                  onRefresh: loadLinkedPull,
+                  t
+                })
+                : null,
               h(CommitBox, {
                 message: commitMessage,
                 stagedCount,
@@ -4238,6 +4352,7 @@ window.__ModuleLoader__.load({
             onPrepareReview: prepareReviewPull,
             onDeepReview: deepReviewPull,
             onSessionReview: sessionReviewPull,
+            onCommentSession: sessionReviewPull,
             onCloneForReview: cloneForReviewPull,
             projectRoot: project.projectRoot,
             // 深度审阅会拿这些仓库逐个比对 origin，命中就复用它的对象库（快很多）
@@ -7043,6 +7158,11 @@ window.__ModuleLoader__.load({
         return call('pr/prepare', payload, options)
       }
 
+      /** 当前分支关联的 PR 摘要（没有关联 PR 时 linked:false + reason）。 */
+      function prLinked(payload, options) {
+        return call('pr/linked', payload, options)
+      }
+
       /** 用模型生成 PR 标题与描述。 */
       function prGenerate(payload, options) {
         return call('pr/generate', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 120_000 })
@@ -7099,7 +7219,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, prPrepare, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, prPrepare, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -8576,6 +8696,98 @@ window.__ModuleLoader__.load({
       Object.assign(exports, { CreatePullForm });
 
     });
+    __define("./components/PullStatusCard.js", (exports, module) => {
+      /**
+       * src/components/PullStatusCard.js —— 变更页签顶部：当前分支的 PR 状态
+       *
+       * 只展示「平台事实 + 本地事实」，不编造：
+       *  - 没有关联 PR / 没有账号 / origin 不是平台仓库：直说原因
+       *  - 有 PR：状态（评审中 / 需要修改 / 可以合并 / 已合并 / 已关闭）、未读反馈数、最近评论预览
+       */
+      const { h } = __m("./platform.js");
+      const { Icon } = __m("./ui/Icon.js");
+
+      function statusOf(pull, gate) {
+        if (pull.merged === true) return 'merged'
+        if (pull.state === 'closed') return 'closed'
+        if (gate?.review?.state === 'changes-requested') return 'changes'
+        if (gate?.review?.state === 'approved') return 'approved'
+        if (pull.mergeable === true) return 'approved'
+        return 'waiting'
+      }
+
+      function PullStatusCard(props) {
+        const source = props
+        const t = source.t
+        const card = source.card
+
+        if (card === null || card === undefined) return null
+        if (card.loading === true) {
+          return h('div', { className: 'dgp-pr-card', 'data-dgp-pr-card': 'loading' },
+            h('span', { className: 'dgp-detail-meta' }, t('prCard.loading')))
+        }
+        if (card.error !== null) {
+          return h('div', { className: 'dgp-pr-card', 'data-dgp-pr-card': 'error' },
+            h('p', { className: 'dgp-detail-failure' }, card.error),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-dgp-pr-card': 'retry',
+              onClick: () => source.onRefresh()
+            }, t('prCard.retry')))
+        }
+
+        const data = card.data
+        if (data === null || data.linked !== true) {
+          const reason = data === null ? 'no-pull' : data.reason
+          return h('div', { className: 'dgp-pr-card', 'data-dgp-pr-card': 'empty', 'data-reason': String(reason) },
+            h('span', { className: 'dgp-detail-meta' }, t('prCard.' + reason)),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'ghost',
+              'data-dgp-pr-card': 'retry',
+              onClick: () => source.onRefresh()
+            }, t('prCard.retry')))
+        }
+
+        const pull = data.pull
+        const status = statusOf(pull, data.gate)
+        const latest = Array.isArray(data.comments) && data.comments.length > 0
+          ? data.comments[data.comments.length - 1]
+          : null
+        const unread = Number.isInteger(source.unread) && source.unread > 0 ? source.unread : 0
+
+        return h('div', { className: 'dgp-pr-card', 'data-dgp-pr-card': status },
+          h('div', { className: 'dgp-pr-card-head' },
+            h('span', { className: 'dgp-pr-card-title' }, '#' + String(data.number) + ' ' + pull.title),
+            h('span', { className: 'dgp-pr-card-status', 'data-status': status }, t('prCard.status.' + status))),
+          h('div', { className: 'dgp-pr-card-meta' },
+            h('span', { className: 'dgp-oneline' }, data.fullName),
+            h('span', null, pull.baseBranch + ' ← ' + pull.headBranch),
+            unread > 0
+              ? h('span', { className: 'dgp-pr-card-unread', 'data-dgp-pr-card': 'unread' }, t('prCard.unread', { count: unread }))
+              : null),
+          latest === null
+            ? null
+            : h('p', { className: 'dgp-pr-card-latest dgp-oneline', title: latest.body },
+              t('prCard.latest', { author: latest.author }) + ' ' + latest.body.split('\n')[0]),
+          h('div', { className: 'dgp-pr-card-actions' },
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'primary',
+              'data-dgp-pr-card': 'open',
+              onClick: () => source.onOpen()
+            }, t('prCard.open'), h(Icon, { name: 'external', size: 12 }))))
+      }
+
+      Object.assign(exports, { PullStatusCard });
+
+    });
     __define("./components/SettingsView.js", (exports, module) => {
       /**
        * src/components/SettingsView.js —— 插件设置页
@@ -9527,6 +9739,8 @@ window.__ModuleLoader__.load({
         const [commentNotice, setCommentNotice] = useState(null)
         // 常驻评论框：人工审阅后也能随时给对方留言
         const [commentDraft, setCommentDraft] = useState('')
+        // 评论转会话：{ busyId, error, notice }
+        const [commentAi, setCommentAi] = useState({ busyId: null, error: null, notice: null })
         // 关闭 PR 是两步操作：先确认再发，避免误点
         const [closeConfirm, setCloseConfirm] = useState(false)
         const [stateBusy, setStateBusy] = useState(false)
@@ -9753,6 +9967,46 @@ window.__ModuleLoader__.load({
         }
 
         /** 确认克隆位置：workspace = 项目工作区；custom = 用户填的绝对路径。 */
+        /**
+         * 把一条评论交给会话处理：宿主准备目录 → 新建会话（先判断再改，不自动 push）。
+         * 本地没有仓库时复用克隆确认框，克隆完继续处理同一条评论。
+         */
+        const runCommentAi = async (comment) => {
+          if (typeof source.onCommentSession !== 'function' || commentAi.busyId !== null) return
+          setCommentAi({ busyId: comment.id ?? 0, error: null, notice: null })
+          const result = await source.onCommentSession({
+            accountId: selection.accountId,
+            fullName: selection.fullName,
+            number: pull.number,
+            rootPaths: Array.isArray(source.localRepoRoots) ? source.localRepoRoots : [],
+            comment: {
+              id: comment.id,
+              author: comment.author,
+              body: comment.body,
+              createdAt: comment.createdAt
+            }
+          })
+          if (result !== null && result !== undefined && result.ok === true && result.needsClone === true) {
+            setCommentAi({ busyId: null, error: null, notice: null })
+            setClonePrompt({
+              repoUsed: result.repoUsed,
+              suggestedName: result.suggestedName,
+              headBranch: result.headBranch,
+              customPath: '',
+              busy: false,
+              error: null,
+              intent: 'comment',
+              comment
+            })
+            return
+          }
+          if (result !== null && result !== undefined && result.ok === true) {
+            setCommentAi({ busyId: null, error: null, notice: t('pull.commentAiStarted', { id: result.sessionId }) })
+            return
+          }
+          setCommentAi({ busyId: null, error: result === null || result === undefined ? '处理失败' : result.error, notice: null })
+        }
+
         const startClone = async (target) => {
           if (typeof source.onCloneForReview !== 'function' || clonePrompt === null) return
           const targetDir = target === 'workspace'
@@ -9773,6 +10027,25 @@ window.__ModuleLoader__.load({
             setClonePrompt((previous) => (previous === null
               ? previous
               : { ...previous, busy: false, error: result === null || result === undefined ? '克隆失败' : result.error }))
+            return
+          }
+          if (clonePrompt.intent === 'comment' && clonePrompt.comment !== undefined) {
+            // 克隆完继续处理那条评论（用刚准备好的目录）
+            const comment = clonePrompt.comment
+            setClonePrompt(null)
+            const handled = await source.onCommentSession({
+              accountId: selection.accountId,
+              fullName: selection.fullName,
+              number: pull.number,
+              rootPath: result.rootPath,
+              branch: result.branch,
+              comment: { id: comment.id, author: comment.author, body: comment.body, createdAt: comment.createdAt }
+            })
+            if (handled !== null && handled !== undefined && handled.ok === true) {
+              setCommentAi({ busyId: null, error: null, notice: t('pull.commentAiStarted', { id: handled.sessionId }) })
+            } else {
+              setCommentAi({ busyId: null, error: handled === null || handled === undefined ? '处理失败' : handled.error, notice: null })
+            }
             return
           }
           await runAi('deep', { rootPath: result.rootPath, branch: result.branch })
@@ -10146,10 +10419,28 @@ window.__ModuleLoader__.load({
                   className: 'dgp-detail-item',
                   'data-dgp-comment': String(comment.id ?? index)
                 },
-                h('span', { className: 'dgp-detail-meta' },
-                  h('span', { className: 'dgp-detail-author' }, comment.author),
-                  comment.createdAt === '' ? null : h('span', null, formatDateTime(Date.parse(comment.createdAt)))),
+                h('div', { className: 'dgp-comment-head' },
+                  h('span', { className: 'dgp-detail-meta' },
+                    h('span', { className: 'dgp-detail-author' }, comment.author),
+                    comment.createdAt === '' ? null : h('span', null, formatDateTime(Date.parse(comment.createdAt)))),
+                  typeof source.onCommentSession === 'function'
+                    ? h('button', {
+                      type: 'button',
+                      className: 'dgp-btn',
+                      'data-size': 'sm',
+                      'data-variant': 'ghost',
+                      'data-dgp-pull': 'comment-ai',
+                      disabled: commentAi.busyId !== null,
+                      onClick: () => runCommentAi(comment)
+                    }, t(commentAi.busyId === (comment.id ?? 0) ? 'pull.commentAiBusy' : 'pull.commentAi'))
+                    : null),
                 h('pre', { className: 'dgp-comment-body' }, comment.body)))),
+            commentAi.notice === null
+              ? null
+              : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-ai-notice' }, commentAi.notice),
+            commentAi.error === null
+              ? null
+              : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'comment-ai-error' }, commentAi.error),
             h('div', { className: 'dgp-comment-compose' },
               h('textarea', {
                 className: 'dgp-input dgp-ai-textarea',
@@ -10309,7 +10600,9 @@ window.__ModuleLoader__.load({
         /** 未跟踪文件：merge = 并进「未暂存」（VS Code 行为），separate = 单列「未跟踪」组。 */
         untrackedMode: 'merge',
         /** 创建 PR 时上次选的目标分支：{ '<provider>:<owner/repo>': 'dev' } */
-        pullTargets: {}
+        pullTargets: {},
+        /** 已读评论水位：{ '<accountId>#<number>': 已读条数 } */
+        pullSeen: {}
       }
 
       /** 未跟踪文件的两种呈现方式（设置页与分组逻辑共用）。 */
@@ -10337,6 +10630,13 @@ window.__ModuleLoader__.load({
         if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
         if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
         if (UNTRACKED_MODES.includes(input.untrackedMode)) out.untrackedMode = input.untrackedMode
+        if (input.pullSeen !== null && typeof input.pullSeen === 'object' && !Array.isArray(input.pullSeen)) {
+          const seen = {}
+          for (const [key, value] of Object.entries(input.pullSeen)) {
+            if (typeof key === 'string' && key !== '' && Number.isInteger(value) && value >= 0) seen[key] = value
+          }
+          out.pullSeen = seen
+        }
         if (input.pullTargets !== null && typeof input.pullTargets === 'object' && !Array.isArray(input.pullTargets)) {
           const targets = {}
           for (const [key, value] of Object.entries(input.pullTargets)) {

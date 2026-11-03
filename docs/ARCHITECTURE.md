@@ -179,7 +179,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 47 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 48 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -269,6 +269,18 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 关闭 / 重新打开走 `remote/pull/state`（`PATCH /pulls/{n}` + `state`），两家路径与字段一致；
 关闭在界面里是两步确认，重新打开直接执行。
 
+**PR 状态与反馈约定**：变更页签顶部显示「当前分支的 PR」卡片（`pr/linked`）：
+状态由 `pull.merged / pull.state / gate.review.state / pull.mergeable` 推导，只用平台给的事实，
+不推断「谁 approve 了」（Gitee 不提供评审明细，卡片只显示平台合并门禁）。
+未读反馈用本地水位 `pullSeen['<accountId>#<number>'] = 已读条数`，在打开 PR 详情时写入；
+未读 = 评论总数 − 水位，下限 0。
+
+**评论转会话（AI 处理反馈）**：PR 详情每条评论有「让 AI 处理」，调 `remote/pull/session-review`
+并带 `comment {id, author, body, createdAt}`；宿主用 `buildCommentSessionPrompt` 生成指令：
+先在仓库里判断评论是否成立（不成立就说明理由、不改），成立才改，只改该评论涉及范围，
+跑相关测试，**不 commit / 不 push**；说不清指哪里就列进「需要向评论人确认」。
+会话仍按当前工作区创建；本地没有仓库时复用深度审阅的克隆确认框，克隆完继续处理同一条评论。
+
 **创建 PR 约定**：入口在「变更」页签（提交框右侧「创建 PR」），表单渲染在右侧面板。
 
 - 宿主先 `pr/prepare`：从 `remote.origin.url` 认出 provider 与 `owner/repo`、列出远端分支作为目标候选、
@@ -330,6 +342,7 @@ PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 J
 | `remote/pull/merge` | `{accountId, fullName, number, method, deleteBranch?}` | `{merged, method, branchDeleted, headBranch}`；不可合并/已合并/非打开状态在宿主侧拦下 |
 | `remote/clone` | `{accountId, fullName, cloneUrl, projectRoot, targetName?}` | `{path, name, fullName}`；鉴权只走 `-c http.extraHeader`，不写进 `.git/config` |
 | `commit` | `{rootPath, message}` | `{head, subject, includedUnstaged}`；有暂存只提交暂存，没有则先 `git add -A` 再提交 |
+| `pr/linked` | `{rootPath, accountId?}` | `{linked:true, provider, fullName, branch, accountId, number, pull, gate, comments}` 或 `{linked:false, reason}`；reason ∈ no-remote-repo / detached-head / no-account / no-pull。没有 PR 不是错误 |
 | `pr/prepare` | `{rootPath}` | `{repo:{provider,fullName}, head, bases, accounts, pushed, ahead, behind}`；origin 指向 GitHub/Gitee、当前在分支上、有对应账号，否则直接报错（no-remote-repo / no-account / detached-head / no-base-branch） |
 | `pr/generate` | `{rootPath, base}` | `{title, body, commits}`；`git log origin/base..HEAD` + `git diff origin/base...HEAD` 交给提交说明模型，严格 JSON |
 | `pr/create` | `{rootPath, accountId, fullName, base, title, body}` | `{number, url, state, head, base}`；先校验 origin 与 fullName 一致、分支已推送（not-pushed），再 `POST /pulls` |

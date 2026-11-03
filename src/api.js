@@ -275,6 +275,11 @@ export function prPrepare(payload, options) {
   return call('pr/prepare', payload, options)
 }
 
+/** 当前分支关联的 PR 摘要（没有关联 PR 时 linked:false + reason）。 */
+export function prLinked(payload, options) {
+  return call('pr/linked', payload, options)
+}
+
 /** 用模型生成 PR 标题与描述。 */
 export function prGenerate(payload, options) {
   return call('pr/generate', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 120_000 })

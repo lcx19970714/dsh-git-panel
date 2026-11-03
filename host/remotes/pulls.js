@@ -302,6 +302,27 @@ export function createPulls(deps) {
   }
 
   /**
+   * 当前分支对应哪个 PR（找不到返回 null）。
+   *
+   * GitHub 一次精确查询；Gitee 拉作者最近一页 PR 后按 head 本地匹配。
+   */
+  async function findPullForBranch(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const branch = typeof input.branch === 'string' ? input.branch : ''
+    if (branch === '') throw new GitError('bad-request', '缺少分支名')
+    const url = provider.apiBase + provider.repoPath(fullName) + provider.pullLookup.path
+      + provider.pullLookup.params({ login: account.login, branch })
+    const listed = await readArray(await request(fetchImpl, provider.authorize(url, account.token), {
+      headers: provider.headers(account.token)
+    }, options.signal), 'PR 列表')
+    for (const item of listed) {
+      if (provider.pullLookup.match(item, branch)) return provider.pull.normalizePull(item)
+    }
+    return null
+  }
+
+  /**
    * 创建 PR：POST /repos/{o}/{r}/pulls，body { title, head, base, body }。
    * GitHub 与 Gitee 的路径与字段一致；head 是源分支名（同仓库）。
    */
@@ -436,5 +457,5 @@ export function createPulls(deps) {
     }
   }
 
-  return { pullDetail, pullDiff, reviewSource, assertRepoAccess, reviewPull, testPull, passPull, commentPull, setPullState, createPull, mergePull }
+  return { pullDetail, pullDiff, reviewSource, assertRepoAccess, reviewPull, testPull, passPull, commentPull, setPullState, createPull, findPullForBranch, mergePull }
 }

@@ -28,7 +28,7 @@ import { SettingsView } from './SettingsView.js'
 import { RemotePane } from './RemotePane.js'
 import { RemoteDetail } from './RemoteDetail.js'
 import { PullDetail } from './PullDetail.js'
-import { MODE, readRemoteAccount, saveRemoteAccount, usePref, useLatestGuard, workspaceKeyOf } from '../store.js'
+import { MODE, readRemoteAccount, saveRemoteAccount, usePref, useLatestGuard } from '../store.js'
 import * as api from '../api.js'
 import { openExternalUrl } from '../util/openUrl.js'
 import { reconcileSelection } from '../util/changes.js'
@@ -83,13 +83,6 @@ export function Panel(props) {
   const [accounts, setAccounts] = useState([])
   const [accountsLoaded, setAccountsLoaded] = useState(false)
   const [remoteAccountId, setRemoteAccountId] = useState(null)
-  /**
-   * 远端账号的「按工作区记忆」两个 ref：
-   *  · userPicked —— 用户亲手点过 chip 后，就以他的选择为准，项目根解析得晚也不回退到记忆值；
-   *  · restoredFor —— 已经为哪个工作区解析过记忆值（账号列表重新加载时不反复覆盖选择）。
-   */
-  const remoteUserPickedRef = useRef(false)
-  const remoteRestoredForRef = useRef(null)
   const [remoteRepos, setRemoteRepos] = useState([])
   const [remoteHasMore, setRemoteHasMore] = useState(false)
   const [remoteLoading, setRemoteLoading] = useState(false)
@@ -345,24 +338,21 @@ export function Panel(props) {
   }, [autoRefresh, mode, refreshStatus])
 
   /**
-   * 「储存库」行上的分支名是 project/resolve 的快照，但 HEAD 可能在面板之外被切走
-   * （PR 深度审阅会真的把本地仓库切到 PR 分支；也可能是在终端 / VS Code 里切的）。
-   * 这时 status 读到的是新分支、根上还是旧值，分支菜单（每次都重读 branches/list）
-   * 会和行尾按钮对不上 —— 所以拿 status.branch 和根上的分支对一次，不一致就补一次
-   * resolveProject，让行尾按钮跟上真实分支。
-   * 同一个 status.branch 只重试一次：宿主真的返回旧值时不至于每轮刷新都重新解析。
+   * 「储存库」行上的分支名是 project/resolve 的快照，而 status 是活动仓库的实时状态。
+   * 两者不一致 = HEAD 在面板之外被切走了（PR 深度审阅会真的切、终端 / VS Code 也会切）；
+   * 这时分支菜单（每次重读 branches/list）勾的是新分支、行尾还是旧值，两处对不上。
+   *
+   * 所以每次 status 更新后对一次：不一致就补一次 resolveProject 让快照跟上。
+   * 只依赖 status（解析结果不会反过来改 status），因此不会形成解析循环；
+   * 宿主真返回旧值时，最多是下一轮 status 再解析一次，不会变成请求风暴。
    */
-  const branchDriftRetryRef = useRef(undefined)
   useEffect(() => {
-    if (status === null || activeRoot === null || activeRoot.isGit !== true) return
-    if (status.branch === activeRoot.branch) {
-      branchDriftRetryRef.current = undefined
-      return
-    }
-    if (branchDriftRetryRef.current === status.branch) return
-    branchDriftRetryRef.current = status.branch
+    if (status === null) return
+    const root = activeRootRef.current
+    if (root === null || root.isGit !== true) return
+    if (status.branch === root.branch) return
     resolveProject()
-  }, [status, activeRoot, resolveProject])
+  }, [status, resolveProject])
 
   /* ============================== 取 diff ============================== */
   useEffect(() => {
@@ -938,17 +928,6 @@ export function Panel(props) {
       setAccounts(value.accounts)
       setProviders(value.providers)
       setAccountsLoaded(true)
-      /*
-       * 选中账号的优先级：当前选中的（仍存在） → 本工作区上次选中的 → 第一个。
-       * 账号列表是全局的，但「用哪个」按工作区记（store.js 的 readRemoteAccount），
-       * 所以切去别的工作区再回来、或者重新打开面板，都不会退回第一个账号。
-       */
-      setRemoteAccountId((previous) => {
-        if (typeof previous === 'string' && value.accounts.some((account) => account.id === previous)) return previous
-        const remembered = readRemoteAccount(projectRef.current.projectRoot)
-        if (remembered !== null && value.accounts.some((account) => account.id === remembered)) return remembered
-        return value.accounts.length > 0 ? value.accounts[0].id : null
-      })
     } catch (error) {
       setAccountsLoaded(true)
       setRemoteError(api.describeError(error, tRef.current))
@@ -1153,11 +1132,9 @@ export function Panel(props) {
     }
   }, [loadPullDetail, loadRemoteDetail])
 
-  /** 选中账号：立刻记到当前工作区（切到别的工作区再回来仍是它）。 */
+  /** 选中账号：记到当前工作区（切到别的工作区再回来仍是它）。账号 chip 只在面板内容渲染后才会出现，那时 projectRoot 一定有值。 */
   const selectRemoteAccount = useCallback((accountId) => {
-    remoteUserPickedRef.current = true
     setRemoteAccountId(accountId)
-    // 项目根还没解析出来时这里写空；解析出来后由恢复记忆的 effect 补写
     saveRemoteAccount(projectRef.current.projectRoot, accountId)
   }, [])
 
@@ -1200,44 +1177,23 @@ export function Panel(props) {
   }, [mode, remoteAccountId, loadRepos])
 
   /**
-   * 会话切换时面板实例可能被复用（sessionId 变了、工作区也就变了）：
-   * 清掉「已解析」标记，让下面的记忆恢复按新工作区重新走一遍。
+   * 选中账号是 (工作区, 账号列表) 的派生：工作区已知、账号到手后，
+   * 优先保留当前选中的（仍存在），其次用本工作区上次记下的，最后落第一个账号。
+   *
+   * 账号列表是全局的，但「用哪个」按工作区记（store.js 的 readRemoteAccount），
+   * 所以切去别的工作区再回来、或者重新打开面板，都不会退回第一个账号。
+   * 记忆只在用户点选时写（见 selectRemoteAccount），这里只读。
    */
   useEffect(() => {
-    remoteUserPickedRef.current = false
-    remoteRestoredForRef.current = null
-  }, [sessionId])
-
-  /**
-   * 每个工作区记住自己的远端账号。
-   *
-   * 只在**两个明确时机**写记忆，避免「自动选中的第一个账号」把用户的选择覆盖掉：
-   *  1. 用户亲手点了账号 chip（selectRemoteAccount 里写；项目根未知时由这里补写）；
-   *  2. 项目根解析得比账号列表晚时（先读到账号、后知道是哪个工作区），
-   *     这里补一次记忆恢复 —— 否则会停在「第一个账号」上。
-   *
-   * 记忆只解析一次（restoredFor），所以账号列表重新加载（新增/删除账号）不会
-   * 把用户刚点好的选择改回去。
-   */
-  useEffect(() => {
-    if (accounts.length === 0) return
-    const workspace = project.projectRoot
-    const key = workspaceKeyOf(workspace)
-    if (key === null) return
-    if (remoteUserPickedRef.current === true) {
-      // 用户在知道工作区之前就点过账号：等知道了再补写，选择本身不覆盖
-      if (remoteAccountId !== null && accounts.some((account) => account.id === remoteAccountId)) {
-        saveRemoteAccount(workspace, remoteAccountId)
-      }
-      return
-    }
-    if (remoteRestoredForRef.current === key) return
-    remoteRestoredForRef.current = key
-    const remembered = readRemoteAccount(workspace)
-    if (remembered !== null && accounts.some((account) => account.id === remembered) && remembered !== remoteAccountId) {
-      setRemoteAccountId(remembered)
-    }
-  }, [accounts, remoteAccountId, project])
+    if (project.projectRoot === null || accounts.length === 0) return
+    setRemoteAccountId((previous) => {
+      // 账号 id 一定是非空字符串，所以这里不用先判断 previous/remembered 是不是 null
+      if (accounts.some((account) => account.id === previous)) return previous
+      const remembered = readRemoteAccount(project.projectRoot)
+      if (accounts.some((account) => account.id === remembered)) return remembered
+      return accounts[0].id
+    })
+  }, [project.projectRoot, accounts])
 
   /** 克隆期间每 200ms 刷新已等待秒数。 */
   useEffect(() => {

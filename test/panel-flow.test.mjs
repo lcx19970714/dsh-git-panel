@@ -1192,8 +1192,8 @@ function twoAccounts() {
   })
 }
 
-/** 工作区记忆的存储 key（store.js 里的 WORKSPACE_STORAGE_KEY）。 */
-const WORKSPACE_STORAGE = 'dsh-git-panel:workspaces:v1'
+/** 工作区记忆的存储 key（store.js 里的 REMOTE_ACCOUNTS_KEY）。 */
+const REMOTE_ACCOUNTS = 'dsh-git-panel:remote-accounts:v1'
 
 /**
  * 手动刷新现在的入口是「⋯」菜单里的「立即刷新」（工具条上的刷新按钮已去掉，
@@ -1659,7 +1659,7 @@ test('用例 1D：没有账号时远端页签给空态，可直接去设置', as
 
 /* ---------------------- 远端账号按工作区记忆（store + Panel） ---------------------- */
 
-test('store：工作区标识规范化、远端账号只存 id、坏数据不炸', async () => {
+test('store：远端账号按工作区只存 id、坏数据不炸', async () => {
   const storage = createFakeStorage()
   await withPanel({
     storage,
@@ -1670,31 +1670,17 @@ test('store：工作区标识规范化、远端账号只存 id、坏数据不炸
   }, async (panel) => {
     const store = panel.loadModule('./store.js')
 
-    eq(store.workspaceKeyOf('C:\\Work\\Proj\\'), 'c:/work/proj', '反斜杠 / 尾斜杠 / 盘符大小写都规范化')
-    eq(store.workspaceKeyOf('c:/WORK/project'), 'c:/work/project', '同一目录的不同写法得到同一个键')
-    eq(store.workspaceKeyOf('  '), null, '空字符串没有工作区标识')
-    eq(store.workspaceKeyOf(null), null, 'null 没有工作区标识')
-
     eq(store.readRemoteAccount(PROJECT), null, '一开始没有记忆')
     store.saveRemoteAccount(PROJECT, 'gitee:bob')
-    eq(store.readRemoteAccount('C:/WORK/PROJECT'), 'gitee:bob', '大小写不同也能读回来')
-    eq(JSON.parse(storage.raw(WORKSPACE_STORAGE)), {
-      version: 1,
-      workspaces: { 'c:/work/project': { remoteAccount: 'gitee:bob' } }
-    }, '只记账号 id（provider:login），不落任何令牌')
-
-    // 幂等：同样的值再存一次不改变内容
-    const before = storage.raw(WORKSPACE_STORAGE)
-    store.saveRemoteAccount(PROJECT, 'gitee:bob')
-    eq(storage.raw(WORKSPACE_STORAGE), before, '值没变就不写盘')
+    eq(store.readRemoteAccount(PROJECT), 'gitee:bob', '记下后能读回来')
+    eq(store.readRemoteAccount('C:/work/other'), null, '工作区之间互不影响')
+    eq(JSON.parse(storage.raw(REMOTE_ACCOUNTS)), { 'C:/work/project': 'gitee:bob' },
+      '键就是宿主下发的 projectRoot，值只有账号 id（provider:login）')
 
     // 坏数据：JSON 坏了 / 值类型不对 → 当作没有记忆，绝不抛异常把面板打挂
-    storage.setItem(WORKSPACE_STORAGE, '{oops')
+    storage.setItem(REMOTE_ACCOUNTS, '{oops')
     eq(store.readRemoteAccount(PROJECT), null, 'JSON 坏了按没有记忆处理')
-    storage.setItem(WORKSPACE_STORAGE, JSON.stringify({
-      version: 1,
-      workspaces: { 'c:/work/project': { remoteAccount: 42 } }
-    }))
+    storage.setItem(REMOTE_ACCOUNTS, JSON.stringify({ 'C:/work/project': 42 }))
     eq(store.readRemoteAccount(PROJECT), null, '值不是非空字符串也按没有记忆处理')
   })
 })
@@ -1722,8 +1708,8 @@ test('用例 1E：远端页签按工作区记住选中的账号（重开 / 切�
     await panel.flush()
     eq(activeAccounts(panel), ['gitee:bob'], '点选后选中态切到第二个账号')
 
-    const saved = JSON.parse(storage.raw(WORKSPACE_STORAGE))
-    eq(saved.workspaces['c:/work/project'], { remoteAccount: 'gitee:bob' }, '按项目根记下这个选择')
+    const saved = JSON.parse(storage.raw(REMOTE_ACCOUNTS))
+    eq(saved, { 'C:/work/project': 'gitee:bob' }, '按 projectRoot 记下这个选择')
   })
 
   // 重新打开同一工作区：恢复上次选中的账号，而不是第一个
@@ -1739,8 +1725,7 @@ test('用例 1E：远端页签按工作区记住选中的账号（重开 / 切�
     click(accountChips(panel)[0])
     await panel.flush()
     eq(activeAccounts(panel), ['github:alice'], 'B 明确选中第一个账号')
-    eq(JSON.parse(storage.raw(WORKSPACE_STORAGE)).workspaces['c:/work/other'],
-      { remoteAccount: 'github:alice' }, 'B 记住的是自己的选择')
+    eq(JSON.parse(storage.raw(REMOTE_ACCOUNTS))['C:/work/other'], 'github:alice', 'B 记住的是自己的选择')
   })
 
   // 两个工作区各自恢复自己的选择（A=bob / B=alice，互不影响）
@@ -1756,10 +1741,7 @@ test('用例 1E：远端页签按工作区记住选中的账号（重开 / 切�
 
 test('用例 1F：记住的账号被删掉时回退到第一个，不崩', async () => {
   const storage = createFakeStorage({
-    [WORKSPACE_STORAGE]: JSON.stringify({
-      version: 1,
-      workspaces: { 'c:/work/project': { remoteAccount: 'gitee:gone' } }
-    })
+    [REMOTE_ACCOUNTS]: JSON.stringify({ 'C:/work/project': 'gitee:gone' })
   })
   await withPanel({
     storage,

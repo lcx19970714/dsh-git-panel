@@ -111,45 +111,25 @@ export function usePref(key) {
 /* ==================== 每个工作区记住的远端账号 ==================== */
 
 /**
- * 「远端」页签的账号是**按工作区**记的，不是全局偏好。
+ * 「远端」页签选中的账号按工作区记：`{ "<projectRoot>": "<accountId>" }`。
  *
- * 为什么必须按工作区：代码托管账号列表是全局的（DSH 凭据服务里一份），
- * 但每个项目日常用的账号往往不同（工作号 / 私人号 / 内网 Gitee）。
- * 如果只存在组件状态里，切到别的工作区再回来、或者重新打开面板，都会退回
- * 账号列表的第一个 —— 用户每切一次就要重选一次。
+ * 为什么按工作区：账号列表是全局的（DSH 凭据服务里一份），但每个项目日常用的账号
+ * 往往不同（工作号 / 私人号 / 内网 Gitee）。只存组件状态的话，切到别的工作区再回来、
+ * 或者重新打开面板，都会退回账号列表的第一个 —— 每切一次就要重选一次。
  *
- * 落盘形状（独立 key，不和显示偏好共用，任一份格式变化不牵连另一份）：
- *   { "version": 1, "workspaces": { "<规范化项目根>": { "remoteAccount": "github:alice" } } }
+ * 工作区身份直接用宿主下发的 projectRoot：它已经是 `path.resolve` + 正斜杠的绝对路径，
+ * 同一工作区每次解析都是同一个值。客户端不再自己折叠大小写 / 斜杠 —— 那是宿主的事，
+ * 在这边猜反而会出现「同一目录两个键」。
  *
- * 只存账号 id（`provider:login`），不存任何令牌；读的时候逐条结构校验，
- * 手改坏的数据只会让对应工作区回到默认（第一个账号），绝不抛异常。
+ * 只存账号 id（`provider:login`），不存任何令牌。localStorage 可能被手改 / 写坏，
+ * 读的时候只保留「非空字符串 → 非空字符串」的条目；坏数据当作没记过，不抛异常。
  */
-const WORKSPACE_STORAGE_KEY = 'dsh-git-panel:workspaces:v1'
-const WORKSPACE_VERSION = 1
+const REMOTE_ACCOUNTS_KEY = 'dsh-git-panel:remote-accounts:v1'
 
-/**
- * 工作区标识 = 规范化后的项目根。
- *
- * 正斜杠、去尾斜杠；盘符路径与 UNC 路径（Windows）不区分大小写，统一小写，
- * 避免同一个目录因为 `C:/Work` 与 `c:/work` 被记成两个工作区。
- * 宿主下发的 projectRoot 已经是正斜杠绝对路径，这里只负责兜住不同来源的写法。
- *
- * @param {string|null|undefined} projectRoot
- * @returns {string|null} 无法得到稳定标识时返回 null（调用方按「没有记忆」处理）
- */
-export function workspaceKeyOf(projectRoot) {
-  if (typeof projectRoot !== 'string') return null
-  let key = projectRoot.trim().replace(/\\/g, '/').replace(/\/+$/, '')
-  if (key === '') return null
-  if (/^[a-zA-Z]:\//.test(key) || key.startsWith('//')) key = key.toLowerCase()
-  return key
-}
-
-/** 读整份工作区记忆；任何异常/坏形状都收敛成空对象。 */
-function readWorkspaceState() {
+function readRemoteAccounts() {
   let raw = null
   try {
-    raw = localStorage.getItem(WORKSPACE_STORAGE_KEY)
+    raw = localStorage.getItem(REMOTE_ACCOUNTS_KEY)
   } catch {
     return {}
   }
@@ -161,55 +141,37 @@ function readWorkspaceState() {
     return {}
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-  // 版本不认识就当没有：未来格式由未来的代码迁移，宁可回默认也别按旧结构硬读
-  if (parsed.version !== WORKSPACE_VERSION) return {}
-  const map = parsed.workspaces
-  if (map === null || typeof map !== 'object' || Array.isArray(map)) return {}
   const out = {}
-  for (const [key, value] of Object.entries(map)) {
-    if (typeof key !== 'string' || key === '') continue
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) continue
-    if (typeof value.remoteAccount !== 'string' || value.remoteAccount === '') continue
-    out[key] = { remoteAccount: value.remoteAccount }
+  for (const [workspace, accountId] of Object.entries(parsed)) {
+    if (typeof accountId !== 'string' || accountId === '') continue
+    out[workspace] = accountId
   }
   return out
 }
 
-/** 写整份工作区记忆；存不下（隐私模式/配额满）时静默 —— 记不住不影响当前会话。 */
-function writeWorkspaceState(map) {
-  try {
-    localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({ version: WORKSPACE_VERSION, workspaces: map }))
-  } catch {
-    /* ignore */
-  }
-}
-
 /**
  * 某个工作区上次在「远端」页签选中的账号 id。
- * @param {string|null|undefined} projectRoot
- * @returns {string|null} 没有记录 / 记录不可用时返回 null
+ * @param {string} projectRoot 宿主下发的项目根
+ * @returns {string|null} 没记过时返回 null
  */
 export function readRemoteAccount(projectRoot) {
-  const key = workspaceKeyOf(projectRoot)
-  if (key === null) return null
-  const entry = readWorkspaceState()[key]
-  return entry === undefined ? null : entry.remoteAccount
+  const accountId = readRemoteAccounts()[projectRoot]
+  return accountId === undefined ? null : accountId
 }
 
 /**
  * 记住某个工作区在「远端」页签选中的账号。
- * 幂等：值没变就不写盘（避免每次渲染都碰 localStorage）。
- * @param {string|null|undefined} projectRoot
- * @param {string|null|undefined} accountId 账号 id（`provider:login`）；空值表示不记
+ * @param {string} projectRoot 宿主下发的项目根
+ * @param {string} accountId 账号 id（`provider:login`）
  */
 export function saveRemoteAccount(projectRoot, accountId) {
-  const key = workspaceKeyOf(projectRoot)
-  if (key === null || typeof accountId !== 'string' || accountId === '') return
-  const map = readWorkspaceState()
-  const previous = map[key]
-  if (previous !== undefined && previous.remoteAccount === accountId) return
-  map[key] = { remoteAccount: accountId }
-  writeWorkspaceState(map)
+  const accounts = readRemoteAccounts()
+  accounts[projectRoot] = accountId
+  try {
+    localStorage.setItem(REMOTE_ACCOUNTS_KEY, JSON.stringify(accounts))
+  } catch {
+    /* 隐私模式/配额满：记不住不影响当前会话 */
+  }
 }
 
 /**

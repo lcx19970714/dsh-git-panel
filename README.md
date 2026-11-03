@@ -4,6 +4,9 @@ DeepSeek Harness 的 Git 面板插件：在会话右侧栏里看变更、读 dif
 
 ### 深度审阅报 Authentication failed / Unauthorized
 
+- 深度审阅审的是**真实本地目录**，所以会把你本地的仓库切到 PR 对应的分支（同仓库 PR 直接切 PR 分支，
+  fork PR 切到 `dsh-review/pr-<n>`）。审完面板的「储存库」与变更列表会跟着刷新到那个分支；
+  想回到原来的分支，用「储存库」行尾的分支菜单切回去即可。
 - **Gitee 的 fork PR**：Gitee 没有 `refs/pull`，深度审阅必须能从 fork 仓库拉代码。若当前账号读不到
   该 fork（例如 fork 是私有的、或你只有 base 仓库权限），会明确提示 `fork-no-access`。
   处理：换成对 fork 有权限的账号，或让作者把分支推到主仓库。

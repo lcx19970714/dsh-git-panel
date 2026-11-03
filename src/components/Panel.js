@@ -344,6 +344,26 @@ export function Panel(props) {
     return () => clearInterval(timer)
   }, [autoRefresh, mode, refreshStatus])
 
+  /**
+   * 「储存库」行上的分支名是 project/resolve 的快照，但 HEAD 可能在面板之外被切走
+   * （PR 深度审阅会真的把本地仓库切到 PR 分支；也可能是在终端 / VS Code 里切的）。
+   * 这时 status 读到的是新分支、根上还是旧值，分支菜单（每次都重读 branches/list）
+   * 会和行尾按钮对不上 —— 所以拿 status.branch 和根上的分支对一次，不一致就补一次
+   * resolveProject，让行尾按钮跟上真实分支。
+   * 同一个 status.branch 只重试一次：宿主真的返回旧值时不至于每轮刷新都重新解析。
+   */
+  const branchDriftRetryRef = useRef(undefined)
+  useEffect(() => {
+    if (status === null || activeRoot === null || activeRoot.isGit !== true) return
+    if (status.branch === activeRoot.branch) {
+      branchDriftRetryRef.current = undefined
+      return
+    }
+    if (branchDriftRetryRef.current === status.branch) return
+    branchDriftRetryRef.current = status.branch
+    resolveProject()
+  }, [status, activeRoot, resolveProject])
+
   /* ============================== 取 diff ============================== */
   useEffect(() => {
     if (mode !== MODE.changes) return undefined
@@ -1049,15 +1069,25 @@ export function Panel(props) {
     }
   }, [])
 
-  /** 深度审阅：宿主拉 PR head 到临时 worktree，读完整文件后再判。 */
+  /**
+   * 深度审阅：宿主会把本地仓库切到 PR 的分支（prepareReviewBranch：fetch + switch），
+   * 读完整文件后再判。
+   *
+   * 切分支发生在面板之外，所以成功后要重新解析根 + 重读 status：
+   * 否则「储存库」行上的分支名还是旧的，而分支菜单里新分支已经打了勾 —— 两处对不上。
+   */
   const deepReviewPull = useCallback(async (input) => {
     try {
       const review = await api.remotePullDeepReview(input)
+      if (review.deep === true) {
+        await resolveProject()
+        await refreshStatus()
+      }
       return { ok: true, ...review }
     } catch (error) {
       return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
     }
-  }, [])
+  }, [resolveProject, refreshStatus])
 
   /** 把 PR 克隆到用户选的目录（深度审阅前的准备步骤）。 */
   const cloneForReviewPull = useCallback(async (input) => {

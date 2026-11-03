@@ -1809,21 +1809,24 @@ test('用例 1A：文件模式没有仓库选择器，固定浏览项目根', as
 test('用例 1B：点仓库行的分支名可以切换分支', async () => {
   const switches = []
   let resolveCalls = 0
+  // 宿主在切分支后重新解析根时会返回新的 branch —— 行尾按钮必须跟着变
+  let resolvedBranch = 'main'
   await withPanel({
     routes: {
       'project/resolve': () => {
         resolveCalls += 1
-        return resolveOk([ROOT], PROJECT)
+        return resolveOk([{ ...ROOT, branch: resolvedBranch }], PROJECT)
       },
       status: () => sayOk(statusThree()),
       'branches/list': () => sayOk({
         branches: [
-          { name: 'main', local: true, current: true, remote: 'origin', upstream: 'origin/main', ahead: 1, behind: 0 },
-          { name: 'feature', local: true, current: false, remote: null, upstream: null, ahead: 0, behind: 0 }
+          { name: 'main', local: true, current: resolvedBranch === 'main', remote: 'origin', upstream: 'origin/main', ahead: 1, behind: 0 },
+          { name: 'feature', local: true, current: resolvedBranch === 'feature', remote: null, upstream: null, ahead: 0, behind: 0 }
         ]
       }),
       'branch/switch': (payload) => {
         switches.push(payload)
+        resolvedBranch = payload.name
         return sayOk({ branch: payload.name, head: 'aaa1111' })
       }
     }
@@ -1833,6 +1836,12 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-repo') !== undefined))
     await panel.flush()
     eq(panel.all((node) => isHost(node) && hasClass(node, 'dgp-menu')).length, 0, '点仓库名不应打开分支菜单')
+
+    const rowBranch = () => {
+      const node = panel.one((item) => isHost(item) && attr(item, 'data-dgp-branch') !== undefined)
+      return node === null ? null : textOf(node)
+    }
+    eq(rowBranch(), 'main', '行尾按钮显示当前分支')
 
     const branchButton = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined)
     click(branchButton)
@@ -1855,6 +1864,7 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
     eq(switches[0], { rootPath: PROJECT, name: 'feature' }, '切换载荷')
     eq(panel.all((node) => isHost(node) && hasClass(node, 'dgp-menu-item')).length, 0, '切完菜单应关闭')
     assert(resolveCalls > before, '切完要重新解析根，分支名才会更新')
+    eq(rowBranch(), 'feature', '行尾按钮必须跟着显示切过去的分支')
   })
 })
 
@@ -2766,6 +2776,116 @@ test('用例 1S：深度审阅先找本地仓库，没有就弹框确认克隆�
     const info = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-deep-info')
     assert(info !== null, '深度审阅结果要显示读取信息')
     assert(textOf(info).includes('复用了本地仓库'), '要说明用的是哪个本地目录：' + textOf(info))
+  })
+})
+
+/* ---------------- 分支名在「面板之外被切走」时的刷新（储存库行 vs 分支菜单） ---------------- */
+
+/** 储存库行尾那个分支按钮的文字（当前分支名）。 */
+function rowBranchText(panel) {
+  const node = panel.one((item) => isHost(item) && attr(item, 'data-dgp-branch') !== undefined)
+  return node === null ? null : textOf(node)
+}
+
+test('用例 1Q：面板外切了分支（status 先看到新分支）时，储存库行的分支名要跟着刷新', async () => {
+  let repoBranch = 'main'
+  let resolveCalls = 0
+  await withPanel({
+    routes: {
+      'project/resolve': () => {
+        resolveCalls += 1
+        return resolveOk([{ ...ROOT, branch: repoBranch }], PROJECT)
+      },
+      status: () => sayOk({ ...statusThree(), branch: repoBranch })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    eq(rowBranchText(panel), 'main', '一开始是 main')
+
+    // 面板之外（终端 / VS Code / 深度审阅）切到了 dev：status 先读到 dev，根上还是 main
+    repoBranch = 'dev'
+    await refreshViaMenu(panel)
+    eq(rowBranchText(panel), 'dev', 'status 和根上的分支对不上时要补一次解析，行尾按钮跟着变')
+    assert(resolveCalls >= 2, '应该重新解析过根：' + resolveCalls)
+  })
+})
+
+test('用例 1T：PR 深度审阅切了本地分支后，储存库行的分支名要跟上', async () => {
+  let repoBranch = 'main'
+  let resolveCalls = 0
+  const deepCalls = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => {
+        resolveCalls += 1
+        return resolveOk([{ ...ROOT, branch: repoBranch }], PROJECT)
+      },
+      status: () => sayOk({ ...statusThree(), branch: repoBranch }),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'main',
+          htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git',
+          provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: {
+          fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
+          issuesUrl: 'x', pullsUrl: 'x'
+        },
+        issues: { total: 0, items: [] },
+        pulls: { total: 1, items: [{ number: 7, title: 'PR seven', url: 'x', author: 'alice', comments: 0, createdAt: '', updatedAt: '' }] },
+        failures: []
+      }),
+      'remote/pull': () => sayOk({
+        pull: {
+          number: 7, title: 'PR seven', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 1, deletions: 0, changedFiles: 1,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
+        },
+        reviews: [],
+        gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: null },
+        capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
+      }),
+      'remote/pull/deep-review': (payload) => {
+        deepCalls.push(payload)
+        // 宿主真的把本地仓库切到了 PR 的分支（prepareReviewBranch）
+        repoBranch = 'feat'
+        return sayOk({
+          summary: '深度审阅结论', verdict: 'comment',
+          findings: [],
+          comment: '',
+          model: 'p1/m1', truncated: false, filesIncluded: 1,
+          deep: true, objectSource: 'local', localRootUsed: PROJECT, branch: 'feat',
+          filesRead: 1, fullFilesSkipped: []
+        })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    eq(rowBranchText(panel), 'main', '审阅前是 main')
+
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-deep-run'))
+    await panel.flush()
+    eq(deepCalls.length, 1, '应调用一次深度审阅')
+
+    // 回到变更页签：储存库行上的分支名必须是审阅切过去的那一个
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[0])
+    await panel.flush()
+    eq(rowBranchText(panel), 'feat', '深度审阅切了分支后，储存库行尾按钮要跟着变')
+    assert(resolveCalls >= 2, '深度审阅成功后应重新解析根：' + resolveCalls)
   })
 })
 

@@ -224,6 +224,11 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
   3. 都没有 → 返回 `{needsClone:true, repoUsed, headBranch, suggestedName, url}`，界面弹框让用户选
      「克隆到项目工作区」或「指定目录」，`remote/pull/clone-for-review` 克隆后再审。
 - 不复用临时裸仓库/worktree：审的就是真实目录，方便用户自己调试、切分支；
+- 深度审阅**真的会切本地仓库的分支**（fork PR 切到 `dsh-review/pr-<n>`），所以客户端在成功后必须
+  重新 `project/resolve` + 重读 `status`：否则「储存库」行尾的分支名还是打开面板时的旧快照，
+  而分支菜单每次打开都重读 `branches/list`，两处会显示不同的分支（菜单勾新分支、行尾还是旧分支）；
+- 同一类兜底：`status` 里读到的 `branch` 和「储存库」根上的 `branch` 不一致时补一次
+  `project/resolve`（覆盖在终端 / VS Code 里切分支的情况；同一个分支值只重试一次，避免来回请求）；
 - 切换分支不动未提交改动：工作区脏时 git 自己拒绝，错误原样上抛；
 - 二进制、超过 2MB、已删除的文件不读完整内容，原因随 `fullFilesSkipped` 返回并显示。
 - **同仓库 PR 不需要插件令牌**：本地克隆的 origin 就是 PR 所在仓库（或本地克隆的正是 fork）时，

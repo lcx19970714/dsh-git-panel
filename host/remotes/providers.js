@@ -82,6 +82,8 @@ function pullMeta(item, provider) {
     author: typeof item.user?.login === 'string' ? item.user.login : '',
     baseBranch: typeof item.base?.ref === 'string' ? item.base.ref : '',
     headBranch: typeof item.head?.ref === 'string' ? item.head.ref : '',
+    // fork PR 的 head 在另一个仓库里：深度审阅要按这个仓库拉代码
+    headRepo: typeof item.head?.repo?.full_name === 'string' ? item.head.repo.full_name : '',
     additions: Number.isFinite(item.additions) ? item.additions : 0,
     deletions: Number.isFinite(item.deletions) ? item.deletions : 0,
     changedFiles: Number.isFinite(item.changed_files) ? item.changed_files : 0,
@@ -120,6 +122,8 @@ const github = {
   commentPath: (number) => '/issues/' + number + '/comments',
   // 深度审阅：GitHub 有标准的 refs/pull/N/head，链接到 fork 也能取到
   gitUrl: (fullName) => 'https://github.com/' + fullName + '.git',
+  // GitHub 的 refs/pull/N/head 对 fork PR 同样可用，直接用 base 仓库
+  reviewRepo: (fullName) => fullName,
   reviewRef: (number) => 'refs/pull/' + number + '/head',
   // 计数：issues 列表是游标分页（没有 rel=last），用 search API 的 total_count 才准；
   // search 的 type:issue 天然排除 PR，不需要再减。
@@ -170,6 +174,11 @@ const gitee = {
   commentPath: (number) => '/pulls/' + number + '/comments',
   // Gitee 没有公开的 pull refs，用 PR 的 head 分支拉取
   gitUrl: (fullName) => 'https://gitee.com/' + fullName + '.git',
+  // Gitee 没有 pull refs：fork PR 的 head 分支在 fork 仓库里，必须用 head 仓库拉
+  reviewRepo: (fullName, pull) => {
+    const head = pull === null || pull === undefined ? '' : pull.headRepo
+    return typeof head === 'string' && head !== '' ? head : fullName
+  },
   reviewRef: (number, pull) => {
     const branch = pull === null || pull === undefined ? '' : pull.headBranch
     if (typeof branch !== 'string' || branch === '') {
@@ -208,7 +217,7 @@ export const PROVIDER_IDS = Object.freeze(['github', 'gitee'])
 const REQUIRED_PROVIDER_KEYS = [
   'id', 'label', 'web', 'apiBase', 'tokenUrl', 'headers', 'authorize',
   'userPath', 'reposPath', 'repoPath', 'pullPath', 'pullListPath', 'issueListPath',
-  'filesPath', 'commentPath', 'countsPath', 'gitUrl', 'reviewRef',
+  'filesPath', 'commentPath', 'countsPath', 'gitUrl', 'reviewRepo', 'reviewRef',
   'normalizeRepo', 'normalizeIssue', 'normalizeDetail'
 ]
 const REQUIRED_PULL_KEYS = [

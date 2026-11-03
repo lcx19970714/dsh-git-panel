@@ -23,6 +23,7 @@ async function withGlobal(name, value, fn) {
 const { openExternalUrl } = await import('../src/util/openUrl.js')
 const { copyText } = await import('../src/util/clipboard.js')
 const { formatDateTime } = await import('../src/util/time.js')
+const { zh, en } = await import('../src/i18n.js')
 
 let passed = 0
 async function check(name, fn) {
@@ -87,6 +88,18 @@ await check('formatDateTime：今天只显示时分，今年带月日，跨年�
   assert.equal(formatDateTime(new Date(2026, 0, 3, 8, 7, 0).getTime(), now), '01-03 08:07', '今年：月日 + 时分')
   assert.equal(formatDateTime(new Date(2025, 11, 31, 23, 59, 0).getTime(), now), '2025-12-31 23:59', '跨年：带年份')
   assert.equal(formatDateTime(Number.NaN, now), '—', '非法时间戳给占位符')
+})
+
+const placeholdersOf = (value) => (String(value).match(/\{[a-zA-Z0-9_]+\}/g) ?? []).sort().join(',')
+
+await check('i18n：中英文 key 集合与占位符必须一致', async () => {
+  const zhKeys = Object.keys(zh).sort()
+  const enKeys = Object.keys(en).sort()
+  assert.deepEqual(zhKeys, enKeys, '中英文 key 集合不一致（缺：' +
+    zhKeys.filter((key) => !(key in en)).join(',') + '；多：' +
+    enKeys.filter((key) => !(key in zh)).join(',') + '）')
+  const mismatched = zhKeys.filter((key) => placeholdersOf(zh[key]) !== placeholdersOf(en[key]))
+  assert.deepEqual(mismatched, [], '这些 key 的占位符中英不一致：' + mismatched.join(', '))
 })
 
 console.log('')

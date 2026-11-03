@@ -553,7 +553,10 @@ function createDispatcher(ctx) {
     const number = request.number
     const detail = await remotesOf().pullDetail({ accountId, fullName, number }, { signal })
     const diff = await remotesOf().pullDiff({ accountId, fullName, number }, { signal })
-    return generateReview(llmService, settings.reviewModel, { pull: detail.pull, files: diff.files }, { signal })
+    return generateReview(llmService, settings.reviewModel, { pull: detail.pull, files: diff.files }, {
+      signal,
+      filesTruncated: diff.truncated
+    })
   }
 
   /**
@@ -583,6 +586,7 @@ function createDispatcher(ctx) {
       source,
       pull: source.pull,
       files: diff.files,
+      filesTruncated: diff.truncated,
       localRoots,
       signal
     })

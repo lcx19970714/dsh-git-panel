@@ -3384,7 +3384,8 @@ window.__ModuleLoader__.load({
         /** 会话级深度审阅：主工作区切分支后新建会话，把审阅指令发过去并自动打开。 */
         const sessionReviewPull = useCallback(async (input) => {
           try {
-            const started = await api.remotePullSessionReview(input)
+            // 带上当前 DSH 会话 id：宿主据此找到它所属的工作区，把审阅会话建进去
+            const started = await api.remotePullSessionReview({ ...input, sessionId })
             if (started?.sessionId) {
               await resolveProject()
               await refreshStatus()

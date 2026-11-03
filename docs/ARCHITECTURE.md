@@ -253,6 +253,17 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
   fork 仓库可读性，读不到直接报 `fork-no-access`（带仓库名与账号），而不是让用户猜 git 的 Unauthorized；
   GitHub 用 base 的 `refs/pull/N/head`，不需要 fork 权限；
 
+**会话级深度审阅约定**：`remote/pull/session-review` 准备目录（切分支/克隆）后，新建一个真实 DSH 会话，
+把审阅指令作为首条消息发过去。会话归属按下面的顺序决定：
+
+- 客户端带上当前 DSH `sessionId`；宿主注入 `workspaceController`，从 `workspaceController.follow()` 的
+  baseline 帧里按 `sessionIds` 找到它所属的工作区，用 `session/create { workspaceId }` 建会话
+  —— 这样会话出现在**当前工作区**里（有分组、有工作区路径），不是未分组的裸会话；
+- 找不到工作区（或宿主没提供 workspaceController / 没传 sessionId）才退回 `session/create { cwd }`，
+  并在日志里明确写「没有找到当前工作区」，不静默降级；
+- `sessionController.create / prompt` 是「(参数, signal)」两个实参，必须传 AbortSignal；
+- 提示词里带**代码目录绝对路径**：工作区路径与 PR 代码目录可能不是同一个。
+
 **AI 审阅约定**：`remote/pull/ai-review` 由宿主取 `pulls/{n}/files` 的 patch，拼成
 PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 JSON（summary / verdict / findings[] / comment）。
 

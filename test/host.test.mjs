@@ -209,6 +209,64 @@ function test(name, fn) {
   tests.push({ name, fn })
 }
 
+test('会话级深度审阅：建到当前会话所属的工作区，不建成未分组的裸会话', async () => {
+  const { findWorkspaceForSession, startSessionReview } = await import('../host/session-review.js')
+
+  // 假 workspaceController：baseline 帧里带两个工作区，其中一个包含当前会话
+  let returned = false
+  const frames = [
+    {
+      type: 'baseline',
+      value: {
+        items: [
+          { workspaceId: 'ws-other', path: 'C:/other', title: 'other', sessionIds: ['session-x'] },
+          { workspaceId: 'ws-current', path: 'H:/limob-crm-front-end', title: 'limob', sessionIds: ['session-1', 'session-2'] }
+        ]
+      }
+    }
+  ]
+  const workspaceController = {
+    follow() {
+      return {
+        async *[Symbol.asyncIterator]() {
+          for (const frame of frames) yield frame
+        },
+        async return() {
+          returned = true
+        }
+      }
+    }
+  }
+
+  const workspace = await findWorkspaceForSession(workspaceController, 'session-1', new AbortController().signal)
+  assert.equal(workspace?.workspaceId, 'ws-current', '应找到包含当前会话的工作区')
+  assert.equal(workspace?.path, 'H:/limob-crm-front-end')
+  assert.equal(returned, true, '拿到 baseline 后必须释放 follow 流')
+
+  // 找不到会话时返回 null
+  assert.equal(await findWorkspaceForSession(workspaceController, 'session-none', new AbortController().signal), null)
+
+  // 有 workspaceId 时 create 用 workspaceId，不再传 cwd
+  const calls = []
+  const started = await startSessionReview({
+    sessionController: {
+      async create(params, signal) { calls.push({ kind: 'create', params, signal }); return { sessionId: 'session-new' } },
+      async prompt(params, signal) { calls.push({ kind: 'prompt', params, signal }) }
+    },
+    localRoot: 'H:/limob-crm-front-end',
+    workspaceId: 'ws-current',
+    branch: 'feat',
+    fullName: 'main233/limob-crm-front-end',
+    pull: { title: 'T', headBranch: 'feat', baseBranch: 'master' },
+    files: [],
+    signal: new AbortController().signal
+  })
+  assert.equal(started.sessionId, 'session-new')
+  assert.equal(calls[0].params.workspaceId, 'ws-current', '应加入工作区')
+  assert.equal(calls[0].params.cwd, undefined, '有工作区时不要再传 cwd')
+  assert.ok(calls[1].params.content[0].text.includes('H:/limob-crm-front-end'), '提示词要带代码目录')
+})
+
 test('会话级深度审阅：create/prompt 都必须带 AbortSignal（否则 DSH 内部 throwIfAborted 炸）', async () => {
   const { startSessionReview } = await import('../host/session-review.js')
   const calls = []

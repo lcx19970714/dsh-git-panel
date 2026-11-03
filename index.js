@@ -70,7 +70,7 @@ import {
 } from './host/models.js'
 import { generateReview } from './host/review.js'
 import { deepReview } from './host/deep-review.js'
-import { startSessionReview } from './host/session-review.js'
+import { findWorkspaceForSession, startSessionReview } from './host/session-review.js'
 import { resolveRoots, addExtraRoot, removeExtraRoot, hideRoot, unhideRoot } from './host/roots.js'
 
 export const name = 'dsh-git-panel'
@@ -759,7 +759,14 @@ function createDispatcher(ctx) {
     }
     const diff = await log.time('读取 PR 文件清单', fullName + ' #' + number,
       () => remotesOf().pullDiff({ accountId, fullName, number }, { signal }))
-    const started = await log.time('新建审阅会话并发指令', '目录 ' + prepared.localRoot,
+    // 当前 DSH 会话属于哪个工作区：有就建到该工作区里（界面分组显示），没有才退回 cwd
+    const workspace = await log.time('查找当前工作区',
+      typeof request.sessionId === 'string' ? '会话 ' + request.sessionId : '未提供 sessionId',
+      () => findWorkspaceForSession(workspaceControllerService, request.sessionId, signal))
+    if (workspace === null) log.warn('没有找到当前工作区', '将用目录方式建会话（界面里会是未分组）')
+    else log.info('工作区', workspace.title + '（' + workspace.path + '）→ ' + workspace.workspaceId)
+    const started = await log.time('新建审阅会话并发指令',
+      workspace === null ? '目录 ' + prepared.localRoot : '工作区 ' + workspace.title,
       () => startSessionReview({
         sessionController: sessionControllerService,
         localRoot: prepared.localRoot,
@@ -768,6 +775,7 @@ function createDispatcher(ctx) {
         pull: prepared.source.pull,
         files: diff.files,
         filesTruncated: diff.truncated,
+        workspaceId: workspace === null ? null : workspace.workspaceId,
         // DSH 的 sessionController 需要 AbortSignal：把本次请求的 signal 传进去
         signal
       }))
@@ -1151,6 +1159,15 @@ export function apply(ctx) {
     }, `${name}: credentials service`)
   })
 
+  ctx.inject(['workspaceController'], (scope) => {
+    scope.effect(() => {
+      workspaceControllerService = scope.workspaceController
+      return () => {
+        workspaceControllerService = null
+      }
+    }, `${name}: workspace controller service`)
+  })
+
   ctx.inject(['sessionController'], (scope) => {
     scope.effect(() => {
       sessionControllerService = scope.sessionController
@@ -1176,6 +1193,8 @@ let llmService = null
 let credentialsService = null
 /** 宿主注入的会话控制器：会话级深度审阅用它建会话、发首条提示词。 */
 let sessionControllerService = null
+/** 宿主注入的工作区控制器：用来把审阅会话建到当前工作区里（而不是未分组）。 */
+let workspaceControllerService = null
 
 /** endpoint → 精确路由路径。 */
 export function routePathOf(endpoint) {

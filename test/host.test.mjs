@@ -209,6 +209,35 @@ function test(name, fn) {
   tests.push({ name, fn })
 }
 
+test('深度审阅的准备：同仓库 PR 直接用本机 origin 切分支（不需要插件令牌）', async () => {
+  const { prepareReviewBranch } = await import('../host/git.js')
+  const { execFileSync } = await import('node:child_process')
+
+  const platform = path.join(tempDir('dgp-same-platform-'), 'alice', 'app.git')
+  execFileSync('git', ['init', '--bare', '-q', platform], { stdio: 'pipe' })
+  const work = path.join(tempDir('dgp-same-work-'), 'work')
+  execFileSync('git', ['init', '-q', work], { stdio: 'pipe' })
+  const g = (...args) => execFileSync('git', args, { cwd: work, stdio: 'pipe' })
+  g('config', 'user.email', 'a@b.c')
+  g('config', 'user.name', 'a')
+  writeFileSync(path.join(work, 'a.js'), 'export const a = 1\n')
+  g('add', '-A')
+  g('commit', '-qm', 'one')
+  g('push', '-q', platform, 'HEAD:refs/heads/main')
+  // PR 的分支：推到 origin 的普通分支上
+  g('branch', 'feat/pr-branch')
+  g('push', '-q', platform, 'feat/pr-branch:refs/heads/feat/pr-branch')
+
+  const local = path.join(tempDir('dgp-same-local-'), 'clone')
+  execFileSync('git', ['clone', '-q', platform, local], { stdio: 'pipe' })
+
+  const prepared = await prepareReviewBranch(local, {
+    sameRepo: true, headBranch: 'feat/pr-branch', number: 9
+  })
+  assert.equal(prepared.branch, 'feat/pr-branch', '应切到 PR 的分支')
+  assert.ok(existsSync(path.join(local, 'a.js')))
+})
+
 test('深度审阅的准备：找本地仓库 → 切分支；没有则克隆到指定目录', async () => {
   const { prepareReviewBranch, cloneForReview, findLocalRepoFor, reviewBranchName } = await import('../host/git.js')
   const { execFileSync } = await import('node:child_process')
@@ -225,6 +254,7 @@ test('深度审阅的准备：找本地仓库 → 切分支；没有则克隆到
   g('add', '-A')
   g('commit', '-qm', 'one')
   g('push', '-q', platform, 'HEAD:refs/pull/1/head')
+  g('push', '-q', platform, 'HEAD:refs/heads/pr-branch')
 
   // 本地克隆：origin 指向「平台」→ findLocalRepoFor 应命中
   const local = path.join(tempDir('dgp-dr-local-'), 'clone')

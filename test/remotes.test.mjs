@@ -665,7 +665,7 @@ await test('Gitee 的 fork PR：读不到 fork 仓库时直接说清原因（不
   await remotes.addAccount({ provider: 'gitee', token: 't' })
 
   await assert.rejects(
-    () => remotes.reviewSource({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 6 }),
+    () => remotes.assertRepoAccess({ accountId: 'gitee:bob', fullName: 'dave/tool' }),
     (error) => error.code === 'fork-no-access'
       && error.message.includes('dave/tool')
       && error.message.includes('bob')

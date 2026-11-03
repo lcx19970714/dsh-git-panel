@@ -1283,12 +1283,28 @@ export function reviewBranchName(number) {
 /**
  * 把某个本地仓库切到 PR 对应的分支。
  *
+ * 两种路径：
+ *  - sameRepo（本地克隆就是 PR 所在仓库）：`git fetch origin <headBranch>` + `git switch <headBranch>`。
+ *    用用户本机的 git 凭据（SSH / 凭据管理器）——它们本来就能用，插件不掺和 token。
+ *  - fork PR 且本地是 base 克隆：用带令牌的 URL 把分支拉成独立分支 dsh-review/pr-<n>。
+ *
  * 不覆盖同名分支、不动未提交改动：工作区脏时 git 自己拒绝，错误原样上抛。
  */
 export async function prepareReviewBranch(repoRoot, input, options = {}) {
   const { signal } = options
   const number = input.number
   if (!Number.isInteger(number) || number <= 0) throw new GitError('bad-request', 'PR 编号不合法')
+
+  if (input.sameRepo === true) {
+    const headBranch = typeof input.headBranch === 'string' ? input.headBranch : ''
+    if (headBranch === '') throw new GitError('bad-request', 'PR 没有 head 分支名，无法切换')
+    // 用本机 origin：该仓库用户本来就能推拉，不需要插件带令牌
+    await runGit(repoRoot, ['fetch', '--no-tags', 'origin', headBranch], { signal, timeoutMs: 5 * 60 * 1000 })
+    await runGit(repoRoot, ['switch', headBranch], { signal })
+    const head = await readHead(repoRoot)
+    return { branch: head.branch, head: head.head }
+  }
+
   const branch = reviewBranchName(number)
   try {
     await runGit(repoRoot, [
@@ -1326,14 +1342,12 @@ export async function cloneForReview(targetDir, input, options = {}) {
       ...reviewAuthArgs(input.user, input.token),
       'clone', '--progress', input.url, '.'
     ], { signal, timeoutMs: 15 * 60 * 1000 })
-    await runGit(target, [
-      ...reviewAuthArgs(input.user, input.token),
-      'fetch', 'origin', '+' + input.remoteRef + ':refs/heads/' + branch
-    ], { signal, timeoutMs: 5 * 60 * 1000 })
+    // 克隆下来的仓库 origin 就是 PR 所在仓库：直接用 origin 的分支，不必再拼 refs/pull
+    await runGit(target, ['fetch', '--no-tags', 'origin', '--prune'], { signal, timeoutMs: 5 * 60 * 1000 })
+    await runGit(target, ['switch', branch], { signal })
   } catch (error) {
     throw mapGitAuthError(error, { user: input.user, url: input.url, hint: input.authHint })
   }
-  await runGit(target, ['switch', branch], { signal })
   const head = await readHead(target)
   return { path: target, branch: head.branch, head: head.head }
 }
@@ -1351,6 +1365,15 @@ export async function findLocalRepoFor(rootPaths, repoFullName) {
     if (url.includes('/' + wanted)) return { rootPath: normalizeSlashes(repo.repoRoot) }
   }
   return null
+}
+
+/** origin 匹配的是哪个远端仓库（base / head / 都不是）。 */
+export async function originMatches(repoRoot, fullNames) {
+  const remote = await runGit(repoRoot, ['config', '--get', 'remote.origin.url'], { allowFailure: true })
+  if (remote.code !== 0) return []
+  const url = remote.stdout.toString('utf8').trim().toLowerCase().replace(/\\/g, '/').replace(/\.git$/, '')
+  return (Array.isArray(fullNames) ? fullNames : [])
+    .filter((name) => typeof name === 'string' && name !== '' && url.includes('/' + name.toLowerCase()))
 }
 
 /**

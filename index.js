@@ -54,7 +54,8 @@ import {
   writeTextFile,
   prepareReviewBranch,
   cloneForReview,
-  findLocalRepoFor
+  findLocalRepoFor,
+  originMatches
 } from './host/git.js'
 import { createRemotes } from './host/remotes/index.js'
 import {
@@ -579,18 +580,31 @@ function createDispatcher(ctx) {
       return { source, localRoot: normalizeSlashes(repo.repoRoot), branch: typeof branch === 'string' ? branch : null }
     }
 
-    // 2) 变更里已有的仓库：按 origin 找，找到就切到 PR 分支
-    const local = await findLocalRepoFor(
-      Array.isArray(rootPaths) ? rootPaths.map((item) => String(item)) : [],
-      source.repoUsed ?? fullName
-    )
+    // 2) 变更里已有的仓库：按 origin 找。同仓库 PR 直接用你本机的 origin 切分支，
+    //    只有本地克隆是 base、而 PR 来自 fork 时才需要插件令牌
+    const paths = Array.isArray(rootPaths) ? rootPaths.map((item) => String(item)) : []
+    const headRepo = typeof source.pull.headRepo === 'string' && source.pull.headRepo !== ''
+      ? source.pull.headRepo
+      : fullName
+    const local = await findLocalRepoFor(paths, fullName)
+      ?? await findLocalRepoFor(paths, source.repoUsed ?? fullName)
     if (local === null) return { source, localRoot: null, branch: null }
+
+    const matched = await originMatches(local.rootPath, [fullName, source.repoUsed ?? fullName])
+    const sameRepo = headRepo === fullName || matched.includes(headRepo)
+    if (!sameRepo) {
+      // 只能靠令牌去 fork 拉：先确认账号读得到 fork 仓库
+      await remotesOf().assertRepoAccess({ accountId, fullName: source.repoUsed ?? fullName }, { signal })
+    }
     const prepared = await prepareReviewBranch(local.rootPath, {
+      sameRepo,
+      headBranch: source.pull.headBranch,
       url: source.url,
       remoteRef: source.remoteRef,
       number,
       user: source.user,
-      token: source.token
+      token: source.token,
+      authHint: source.authHint
     }, { signal })
     return { source, localRoot: local.rootPath, branch: prepared.branch }
   }
@@ -638,6 +652,10 @@ function createDispatcher(ctx) {
     const number = request.number
     const targetDir = requireAbsolute(request.targetDir, 'targetDir')
     const source = await remotesOf().reviewSource({ accountId, fullName, number }, { signal })
+    // 克隆用的是插件令牌：fork PR 要先确认账号读得到那个仓库
+    if (source.repoUsed !== fullName) {
+      await remotesOf().assertRepoAccess({ accountId, fullName: source.repoUsed }, { signal })
+    }
     const cloned = await cloneForReview(targetDir, {
       url: source.url,
       remoteRef: source.remoteRef,

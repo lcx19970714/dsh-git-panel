@@ -73,6 +73,22 @@ export function RepoList(props) {
       })
   }
 
+  /**
+   * 拉取当前分支最新代码（真正的 pull）。
+   * 与「获取远程更新」不同：那只是 fetch（更新远端跟踪引用），不会改工作区文件。
+   */
+  const pullCurrent = (menu) => {
+    if (typeof source.onPullBranch !== 'function') return
+    setBranchMenu({ ...menu, pulling: true, error: null })
+    Promise.resolve(source.onPullBranch(menu.root))
+      .then(() => setBranchMenu(null))
+      .catch((error) => {
+        setBranchMenu((previous) => (previous === null
+          ? previous
+          : { ...previous, pulling: false, error: error && error.message ? error.message : String(error) }))
+      })
+  }
+
   /** 拉取远程更新（git fetch）后重读分支列表：别人新推的分支这时才会出现。 */
   const fetchRemote = (menu) => {
     if (typeof source.onFetchBranches !== 'function') return
@@ -145,6 +161,13 @@ export function RepoList(props) {
         disabled: menuBusy,
         dataKey: 'fetch-branches',
         onClick: () => fetchRemote(branchMenu)
+      }),
+      h(MenuItem, {
+        icon: 'refresh',
+        label: branchMenu.pulling === true ? translate('branch.pulling') : translate('branch.pull'),
+        disabled: menuBusy,
+        dataKey: 'pull-branch',
+        onClick: () => pullCurrent(branchMenu)
       }),
       h('div', { className: 'dgp-menu-sep', role: 'separator' }),
       branchMenu.loading ? h(MenuLabel, null, translate('branch.loading')) : null,

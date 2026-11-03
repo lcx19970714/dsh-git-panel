@@ -275,6 +275,11 @@ export function prPrepare(payload, options) {
   return call('pr/prepare', payload, options)
 }
 
+/** 拉取当前分支最新代码（fetch + 只允许快进）。 */
+export function pullBranch(payload, options) {
+  return call('branch/pull', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
+}
+
 /** 当前安装的插件版本（本地读，不联网）。 */
 export function pluginInfo(payload, options) {
   return call('plugin/info', payload, options)

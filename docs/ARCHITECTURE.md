@@ -179,7 +179,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 50 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 51 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -276,6 +276,11 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 - 查询失败 → 渲染错误卡 + 重试（失败必须让人看见，不能静默当成「没有 PR」）；
 - `linked:true` → 卡片带「刷新状态」与「查看 PR」；刷新时保留上一份数据，避免先消失再出现。
 
+**fetch 与 pull 的区别（分支菜单）**：`⋯` 菜单里的「获取远程更新」只做 `git fetch`：
+更新远端跟踪引用、刷新分支列表与 ahead/behind，**不改工作区文件、不动本地分支**——它回答"远端有没有新提交"，
+不给你代码。要拿到代码用「拉取当前分支最新代码」（`branch/pull`）：`fetch` + `merge --ff-only @{u}`，
+只允许快进；分叉、无上游、工作区改动会冲突时直接报错，插件不自动产生合并提交、也不自动 stash。
+
 **版本号按钮的语义（两件事不混）**：工具条右侧的版本号 chip 是**插件自身版本**（`v<package.json version>`），
 点击检查插件是否有新版本（`plugin/update` → GitHub 最新 release）：已是最新给 info、有新版本给 warn 且可点开
 release 页、失败给 error 并说清原因。
@@ -356,6 +361,7 @@ PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 J
 | `remote/pull/merge` | `{accountId, fullName, number, method, deleteBranch?}` | `{merged, method, branchDeleted, headBranch}`；不可合并/已合并/非打开状态在宿主侧拦下 |
 | `remote/clone` | `{accountId, fullName, cloneUrl, projectRoot, targetName?}` | `{path, name, fullName}`；鉴权只走 `-c http.extraHeader`，不写进 `.git/config` |
 | `commit` | `{rootPath, message}` | `{head, subject, includedUnstaged}`；有暂存只提交暂存，没有则先 `git add -A` 再提交 |
+| `branch/pull` | `{rootPath}` | `{branch, upstream, head, previousHead, ahead, behind}`；`git fetch origin` + `git merge --ff-only @{u}`；游离 HEAD→detached-head、无上游→no-upstream、分叉或工作区冲突→not-fast-forward（不自动 merge/stash） |
 | `plugin/info` | `{}` | `{name, version, repositoryUrl, fullName}`；本地读 package.json，不联网 |
 | `plugin/update` | `{}` | `{currentVersion, latestVersion, url, publishedAt, newer}`；查 GitHub 最新 release 并严格比较版本，失败抛 `update-check-failed`（不把失败当成「已是最新」） |
 | `pr/linked` | `{rootPath, accountId?}` | `{linked:true, provider, fullName, branch, accountId, number, pull, gate, comments}` 或 `{linked:false, reason}`；reason ∈ no-remote-repo / detached-head / no-account / no-pull。没有 PR 不是错误 |

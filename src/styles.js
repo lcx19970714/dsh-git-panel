@@ -316,6 +316,22 @@ export const CSS = `
 /* ===================== 4. 左列：分组与行 ===================== */
 .dgp-level { margin: 0; padding: 0; list-style: none; }
 .dgp-item { margin: 0; padding: 0; }
+/* 仓库行：高亮框在整个行上（仓库名 + 分支按钮），分支按钮贴在框内右侧 */
+.dgp-repo-wrap {
+  border-radius: var(--dsw-radius-xs);
+  padding-right: 2px;
+}
+.dgp-repo-wrap:hover,
+.dgp-repo-wrap[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
+/* 行按钮自己不再画背景：否则高亮到分支按钮前面就断了，看起来像框外的黑块 */
+.dgp-repo-wrap > .dgp-row:hover,
+.dgp-repo-wrap > .dgp-row[data-active="true"] { background: transparent; }
+.dgp-repo-wrap > .dgp-repo-branch {
+  flex: 0 0 auto;
+  max-width: 48%;
+  margin: 0 4px 0 auto;
+}
+.dgp-repo-wrap[data-hidden="true"] { opacity: .6; }
 .dgp-row-wrap {
   display: flex;
   align-items: center;

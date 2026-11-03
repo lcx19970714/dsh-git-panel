@@ -510,9 +510,13 @@ test('RepoList：列出全部仓库、当前仓库高亮、外部仓库可移除
   rows[0].props.onClick({ preventDefault() {}, stopPropagation() {} })
   eq(picked, ['r1'], '点仓库名只选中该仓库')
 
-  // 隐藏入口：primary 是项目本身，不给隐藏按钮
-  const hideButtons = collect(tree, (node) => node.$$host === true && node.props['data-dgp-repo-hide'] !== undefined)
-  eq(hideButtons.map((node) => node.props['data-dgp-repo-hide']), ['r2', 'r3'], '非项目根的仓库才能隐藏')
+  // 隐藏 / 移除不再是行内按钮：都收进分支菜单，行内只有「仓库名 + 分支」
+  eq(collect(tree, (node) => node.$$host === true && node.props['data-dgp-repo-hide'] !== undefined).length, 0,
+    '行内不应再有隐藏按钮')
+  eq(collect(tree, (node) => node.$$host === true && node.props['data-dgp-repo-remove'] !== undefined).length, 0,
+    '行内不应再有移除按钮')
+  eq(collect(tree, (node) => node.$$host === true && classOf(node).includes('dgp-repo-wrap')).length, 3,
+    '每个仓库行一个包裹（高亮框），分支按钮在框内')
 
   // 已隐藏的根默认不占行，只在标题行留一个「显示已隐藏」开关
   const withHidden = renderComponent(RepoList, {
@@ -526,12 +530,6 @@ test('RepoList：列出全部仓库、当前仓库高亮、外部仓库可移除
   eq(hiddenToggle[0].props['data-dgp-repolist-hidden'], 'false', '默认是收起状态')
   eq(collect(tree, (node) => node.$$host === true && node.props['data-dgp-repolist-hidden'] !== undefined).length, 0,
     '没有隐藏仓库时不出现开关')
-
-  const removeButtons = collect(tree, (node) => node.$$host === true && node.props['data-dgp-repo-remove'] !== undefined)
-  eq(removeButtons.length, 1, '只有外部仓库带移除按钮')
-  eq(removeButtons[0].props['data-dgp-repo-remove'], 'r3')
-  removeButtons[0].props.onClick({ preventDefault() {}, stopPropagation() {} })
-  eq(removed, ['r3'], '移除回调')
 
   const collapsed = renderComponent(RepoList, { ...base, open: false })
   eq(collect(collapsed, (node) => node.$$host === true && node.props['data-dgp-repo'] !== undefined).length, 0, '折叠后不渲染仓库行')

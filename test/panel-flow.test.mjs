@@ -3404,12 +3404,16 @@ test('用例 1v2：可以在储存库里隐藏仓库，再展开「已隐藏」�
   }, async (panel) => {
     await panel.flush()
 
-    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-repo-hide') === ROOT.id).length, 0,
-      '项目本身没有隐藏按钮')
-    const hideButton = panel.one((node) => isHost(node) && attr(node, 'data-dgp-repo-hide') === ROOT_OTHER.id)
-    assert(hideButton !== null, '其它仓库行应有隐藏按钮')
+    // 行内不再有动作按钮
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-repo-hide') !== undefined).length, 0,
+      '行内不应再有隐藏按钮')
 
-    click(hideButton)
+    // 从分支菜单里隐藏：先打开该仓库的分支菜单
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') === ROOT_OTHER.id))
+    await panel.flush()
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-menu-key') === 'repo-hide').length, 1,
+      '分支菜单里应有「隐藏此仓库」')
+    click(panel.one((node) => isHost(node) && attr(node, 'data-menu-key') === 'repo-hide'))
     await panel.flush()
     eq(hiddenCalls.length, 1, '应调用一次 roots/hide')
     eq(hiddenCalls[0], { projectRoot: PROJECT, path: ROOT_OTHER.path }, '隐藏载荷')
@@ -3425,7 +3429,12 @@ test('用例 1v2：可以在储存库里隐藏仓库，再展开「已隐藏」�
     assert(hiddenRow !== null, '展开后能再次看到该行')
     eq(attr(hiddenRow, 'data-hidden'), 'true', '已隐藏的行带标记')
 
-    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-repo-unhide') === ROOT_OTHER.id))
+    // 已隐藏的行：分支按钮仍可点开，菜单里是「取消隐藏」
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') === ROOT_OTHER.id))
+    await panel.flush()
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-menu-key') === 'repo-unhide').length, 1,
+      '已隐藏仓库的菜单里应有「取消隐藏」')
+    click(panel.one((node) => isHost(node) && attr(node, 'data-menu-key') === 'repo-unhide'))
     await panel.flush()
     eq(unhiddenCalls.length, 1, '应调用一次 roots/unhide')
     eq(unhiddenCalls[0], { projectRoot: PROJECT, path: ROOT_OTHER.path }, '取消隐藏载荷')

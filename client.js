@@ -498,6 +498,22 @@ window.__ModuleLoader__.load({
       /* ===================== 4. 左列：分组与行 ===================== */
       .dgp-level { margin: 0; padding: 0; list-style: none; }
       .dgp-item { margin: 0; padding: 0; }
+      /* 仓库行：高亮框在整个行上（仓库名 + 分支按钮），分支按钮贴在框内右侧 */
+      .dgp-repo-wrap {
+        border-radius: var(--dsw-radius-xs);
+        padding-right: 2px;
+      }
+      .dgp-repo-wrap:hover,
+      .dgp-repo-wrap[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
+      /* 行按钮自己不再画背景：否则高亮到分支按钮前面就断了，看起来像框外的黑块 */
+      .dgp-repo-wrap > .dgp-row:hover,
+      .dgp-repo-wrap > .dgp-row[data-active="true"] { background: transparent; }
+      .dgp-repo-wrap > .dgp-repo-branch {
+        flex: 0 0 auto;
+        max-width: 48%;
+        margin: 0 4px 0 auto;
+      }
+      .dgp-repo-wrap[data-hidden="true"] { opacity: .6; }
       .dgp-row-wrap {
         display: flex;
         align-items: center;
@@ -1725,6 +1741,7 @@ window.__ModuleLoader__.load({
         'branch.pull': '拉取当前分支最新代码',
         'branch.pulling': '正在拉取…',
         'branch.pulled': '已拉取到 {head}',
+        'branch.hintHidden': '该仓库已隐藏（分支 {branch}）：点开可取消隐藏',
         'branch.fetch': '获取远程更新',
         'branch.fetching': '正在获取远程更新…',
         'branch.upstreamGone': '上游已删除',
@@ -2114,6 +2131,7 @@ window.__ModuleLoader__.load({
         'branch.pull': 'Pull latest for current branch',
         'branch.pulling': 'Pulling…',
         'branch.pulled': 'Pulled to {head}',
+        'branch.hintHidden': 'Hidden repository (branch {branch}): open to unhide',
         'branch.fetch': 'Fetch remote updates',
         'branch.fetching': 'Fetching…',
         'branch.upstreamGone': 'upstream gone',
@@ -5010,6 +5028,26 @@ window.__ModuleLoader__.load({
         const closeForm = () => setFormOpen(false)
         const closeBranches = () => setBranchMenu(null)
 
+        /** 隐藏 / 取消隐藏 / 移除：都从分支菜单触发，执行后关掉菜单。 */
+        const runRootAction = (handler, root) => {
+          if (typeof source[handler] !== 'function') return
+          closeBranches()
+          Promise.resolve(source[handler](root)).catch((error) => {
+            setBranchMenu({
+              root,
+              rect: null,
+              list: [],
+              loading: false,
+              switching: null,
+              creating: false,
+              fetching: false,
+              pulling: false,
+              name: '',
+              error: error && error.message ? error.message : String(error)
+            })
+          })
+        }
+
         const loadBranches = (root, rect) => {
           setBranchMenu({ root, rect, list: [], loading: true, switching: null, creating: false, fetching: false, name: '', error: null })
           Promise.resolve(source.onLoadBranches(root))
@@ -5195,7 +5233,39 @@ window.__ModuleLoader__.load({
               : h(MenuLabel, null, translate('branch.creating', { name: createName })),
             branchMenu.error === null
               ? null
-              : h(MenuLabel, null, translate('branch.failed', { message: branchMenu.error })))
+              : h(MenuLabel, null, translate('branch.failed', { message: branchMenu.error })),
+            branchMenu.root.kind === 'primary'
+              ? null
+              : h('div', { className: 'dgp-menu-sep', role: 'separator' }),
+            branchMenu.root.kind === 'primary'
+              ? null
+              : (branchMenu.root.hidden === true
+                ? h(MenuItem, {
+                  icon: 'eye',
+                  label: translate('roots.unhide', { name: branchMenu.root.name }),
+                  dataKey: 'repo-unhide',
+                  onClick: () => {
+                    runRootAction('onUnhide', branchMenu.root)
+                  }
+                })
+                : h(MenuItem, {
+                  icon: 'eye-off',
+                  label: translate('roots.hide', { name: branchMenu.root.name }),
+                  dataKey: 'repo-hide',
+                  onClick: () => {
+                    runRootAction('onHide', branchMenu.root)
+                  }
+                })),
+            branchMenu.root.kind === 'extra'
+              ? h(MenuItem, {
+                icon: 'trash',
+                label: translate('toolbar.removeRoot', { name: branchMenu.root.name }),
+                dataKey: 'repo-remove',
+                onClick: () => {
+                  runRootAction('onRemove', branchMenu.root)
+                }
+              })
+              : null)
 
         return h('div', { className: 'dgp-repolist', 'data-dgp-repolist': 'true' },
           h('div', { className: 'dgp-repolist-head' },
@@ -5243,78 +5313,40 @@ window.__ModuleLoader__.load({
                 const hidden = root.hidden === true
                 const hasBranch = typeof root.branch === 'string' && root.branch !== ''
                 return h('li', { key: root.id, className: 'dgp-item' },
-                  h('div', { className: 'dgp-row-wrap' },
-                    h('button', {
-                      type: 'button',
-                      className: 'dgp-row dgp-repo-row',
-                      'data-dgp-repo': root.id,
-                      'data-active': !hidden && root.id === activeRootId ? 'true' : 'false',
-                      'data-hidden': hidden ? 'true' : undefined,
-                      'aria-current': !hidden && root.id === activeRootId ? 'true' : undefined,
-                      title: root.path,
-                      onClick: () => {
-                        // 已隐藏的行不参与切换：先取消隐藏，才能重新成为当前仓库
-                        if (hidden) return
-                        if (typeof source.onSelect === 'function') source.onSelect(root)
-                      }
-                    },
-                    h(Icon, { name: 'git-branch', size: 13 }),
-                    h('span', { className: 'dgp-name dgp-oneline' }, root.name)),
-                    // 隐藏的行不提供分支菜单：它不参与切换，点开也只会让人以为切过去了
-                    hidden
-                      ? null
-                      : h('button', {
-                        type: 'button',
-                        className: 'dgp-repo-branch dgp-oneline',
-                        'data-dgp-branch': root.id,
-                        title: translate('branch.hint', { branch: hasBranch ? root.branch : translate('root.noBranch') }),
-                        onClick: (event) => {
-                          event.stopPropagation()
-                          loadBranches(root, event.currentTarget.getBoundingClientRect())
-                        }
-                      }, hasBranch ? root.branch : translate('root.noBranch')),
-                    root.kind === 'primary'
-                      ? null
-                      : h('button', {
-                        type: 'button',
-                        className: 'dgp-row-action',
-                        'data-dgp-repo-hide': root.id,
-                        title: translate('roots.hide', { name: root.name }),
-                        'aria-label': translate('roots.hide', { name: root.name }),
-                        onClick: (event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          if (typeof source.onHide === 'function') source.onHide(root)
-                        }
-                      }, h(Icon, { name: 'eye-off', size: 13 })),
-                    hidden
-                      ? h('button', {
-                        type: 'button',
-                        className: 'dgp-row-action',
-                        'data-dgp-repo-unhide': root.id,
-                        title: translate('roots.unhide', { name: root.name }),
-                        'aria-label': translate('roots.unhide', { name: root.name }),
-                        onClick: (event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          if (typeof source.onUnhide === 'function') source.onUnhide(root)
-                        }
-                      }, h(Icon, { name: 'eye', size: 13 }))
-                      : null,
-                    root.kind === 'extra'
-                      ? h('button', {
-                        type: 'button',
-                        className: 'dgp-row-action',
-                        'data-dgp-repo-remove': root.id,
-                        title: translate('toolbar.removeRoot', { name: root.name }),
-                        'aria-label': translate('toolbar.removeRoot', { name: root.name }),
-                        onClick: (event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          if (typeof source.onRemove === 'function') source.onRemove(root)
-                        }
-                      }, h(Icon, { name: 'trash', size: 13 }))
-                      : null))
+                  h('div', {
+                    className: 'dgp-row-wrap dgp-repo-wrap',
+                    'data-active': !hidden && root.id === activeRootId ? 'true' : 'false',
+                    'data-hidden': hidden ? 'true' : undefined
+                  },
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-row dgp-repo-row',
+                    'data-dgp-repo': root.id,
+                    'data-active': !hidden && root.id === activeRootId ? 'true' : 'false',
+                    'data-hidden': hidden ? 'true' : undefined,
+                    'aria-current': !hidden && root.id === activeRootId ? 'true' : undefined,
+                    title: root.path,
+                    onClick: () => {
+                      // 已隐藏的行不参与切换：先取消隐藏，才能重新成为当前仓库
+                      if (hidden) return
+                      if (typeof source.onSelect === 'function') source.onSelect(root)
+                    }
+                  },
+                  h(Icon, { name: 'git-branch', size: 13 }),
+                  h('span', { className: 'dgp-name dgp-oneline' }, root.name)),
+                  // 分支按钮是所有仓库操作的唯一入口：切分支、拉取、隐藏/取消隐藏、移除
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-repo-branch dgp-oneline',
+                    'data-dgp-branch': root.id,
+                    title: translate(hidden ? 'branch.hintHidden' : 'branch.hint', {
+                      branch: hasBranch ? root.branch : translate('root.noBranch')
+                    }),
+                    onClick: (event) => {
+                      event.stopPropagation()
+                      loadBranches(root, event.currentTarget.getBoundingClientRect())
+                    }
+                  }, hasBranch ? root.branch : translate('root.noBranch'))))
               })
             )
             : null,

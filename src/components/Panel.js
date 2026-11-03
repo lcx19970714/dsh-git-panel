@@ -24,11 +24,12 @@ import { DiffView } from './DiffView.js'
 import { FileEditor } from './FileEditor.js'
 import { EmptyState, LoadingState, InlineNote } from './States.js'
 import { CommitBox } from './CommitBox.js'
+import { CreatePullForm } from './CreatePullForm.js'
 import { SettingsView } from './SettingsView.js'
 import { RemotePane } from './RemotePane.js'
 import { RemoteDetail } from './RemoteDetail.js'
 import { PullDetail } from './PullDetail.js'
-import { MODE, readRemoteAccount, saveRemoteAccount, usePref, useLatestGuard } from '../store.js'
+import { MODE, readPrefs, writePref, readRemoteAccount, saveRemoteAccount, usePref, useLatestGuard } from '../store.js'
 import * as api from '../api.js'
 import { openExternalUrl } from '../util/openUrl.js'
 import { reconcileSelection } from '../util/changes.js'
@@ -195,6 +196,12 @@ export function Panel(props) {
   const [generateElapsed, setGenerateElapsed] = useState(0)
   const [commitNote, setCommitNote] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
+  /**
+   * 创建 PR 表单（右侧面板）：
+   * { loading, error, repo, head, bases, accounts, accountId, base, title, body, bodyHeight,
+   *   pushed, generating, creating, created, notice }
+   */
+  const [pullForm, setPullForm] = useState(null)
   const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
 
   const [moreOpen, setMoreOpen] = useState(false)
@@ -731,6 +738,96 @@ export function Panel(props) {
   const refOfPair = (pair) => (pair === null || pair === undefined ? null : pair.provider + '/' + pair.model)
 
   /** 打开设置页：同时拉模型目录和当前设置。 */
+  /** 目标分支记忆键：按 provider + 仓库全名区分。 */
+  const pullTargetKey = (repo) => repo.provider + ':' + repo.fullName
+
+  /** 打开创建 PR 表单：先向宿主要仓库/账号/分支信息。 */
+  const openCreatePull = useCallback(async () => {
+    if (activeRoot === null || activeRoot.isGit !== true) return
+    setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', pushed: false, generating: false, creating: false, created: null, notice: null })
+    try {
+      const prepared = await api.prPrepare({ rootPath: activeRoot.path })
+      const remembered = readPrefs().pullTargets?.[pullTargetKey(prepared.repo)] ?? ''
+      const base = prepared.bases.includes(remembered) ? remembered : prepared.bases[0]
+      setPullForm({
+        loading: false,
+        error: null,
+        repo: prepared.repo,
+        head: prepared.head,
+        bases: prepared.bases,
+        accounts: prepared.accounts,
+        accountId: prepared.accounts[0]?.id ?? '',
+        base,
+        title: '',
+        body: '',
+        bodyHeight: '160px',
+        pushed: prepared.pushed === true,
+        generating: false,
+        creating: false,
+        created: null,
+        notice: null
+      })
+    } catch (error) {
+      setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', pushed: false, generating: false, creating: false, created: null, notice: null })
+    }
+  }, [activeRoot])
+
+  const closeCreatePull = useCallback(() => setPullForm(null), [])
+
+  const changePullField = useCallback((field, value) => {
+    setPullForm((previous) => {
+      if (previous === null || previous.created !== null) return previous
+      if (field === 'body') {
+        const lines = String(value).split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)), 0)
+        return { ...previous, body: value, bodyHeight: Math.min(Math.max(lines, 6), 30) * 19 + 24 + 'px' }
+      }
+      return { ...previous, [field]: value, notice: null }
+    })
+  }, [])
+
+  /** 用模型生成标题与描述（失败就地显示原因）。 */
+  const generatePullText = useCallback(async () => {
+    if (pullForm === null || activeRoot === null) return
+    setPullForm({ ...pullForm, generating: true, error: null, notice: null })
+    try {
+      const generated = await api.prGenerate({ rootPath: activeRoot.path, base: pullForm.base })
+      setPullForm((previous) => (previous === null ? previous : {
+        ...previous,
+        generating: false,
+        title: generated.title,
+        body: generated.body,
+        notice: tRef.current('pr.generated', { count: generated.commits })
+      }))
+    } catch (error) {
+      setPullForm((previous) => (previous === null ? previous : {
+        ...previous, generating: false, error: api.describeError(error, tRef.current)
+      }))
+    }
+  }, [pullForm, activeRoot])
+
+  /** 创建 PR：成功后记住目标分支，供下次默认。 */
+  const createPull = useCallback(async () => {
+    if (pullForm === null || activeRoot === null) return
+    setPullForm({ ...pullForm, creating: true, error: null, notice: null })
+    try {
+      const created = await api.prCreate({
+        rootPath: activeRoot.path,
+        accountId: pullForm.accountId,
+        fullName: pullForm.repo.fullName,
+        base: pullForm.base,
+        title: pullForm.title,
+        body: pullForm.body
+      })
+      writePref('pullTargets', { ...(readPrefs().pullTargets ?? {}), [pullTargetKey(pullForm.repo)]: pullForm.base })
+      await refreshStatus()
+      setPullForm((previous) => (previous === null ? previous : { ...previous, creating: false, created }))
+    } catch (error) {
+      setPullForm((previous) => (previous === null ? previous : {
+        ...previous, creating: false, error: api.describeError(error, tRef.current)
+      }))
+    }
+  }, [pullForm, activeRoot, refreshStatus])
+
   const openSettings = useCallback(async () => {
     setShowSettings(true)
     setSettingsState({ loading: true, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
@@ -1698,6 +1795,9 @@ function buildUpdateNote(updateState, t) {
           onChange: changeCommitMessage,
           onCommit: commitStaged,
           onGenerate: generateMessage,
+          onCreatePull: mode === MODE.changes && activeRoot !== null && activeRoot.isGit === true
+            ? openCreatePull
+            : undefined,
           t
         }),
         h(ChangesList, {
@@ -1733,7 +1833,20 @@ function buildUpdateNote(updateState, t) {
   }
 
   let rightPane
-  if (mode === MODE.remote && openPull !== null) {
+  if (mode === MODE.changes && pullForm !== null) {
+    rightPane = h(CreatePullForm, {
+      form: pullForm,
+      onCancel: closeCreatePull,
+      onChangeBase: (value) => changePullField('base', value),
+      onChangeAccount: (value) => changePullField('accountId', value),
+      onChangeTitle: (value) => changePullField('title', value),
+      onChangeBody: (value) => changePullField('body', value),
+      onGenerate: generatePullText,
+      onCreate: createPull,
+      onOpenUrl: openExternal,
+      t
+    })
+  } else if (mode === MODE.remote && openPull !== null) {
     rightPane = h(PullDetail, {
       // 每个 PR 一份独立的本地状态（AI 结果、评论草稿），切 PR 时重置
       key: openPull.fullName + '#' + String(openPull.number),

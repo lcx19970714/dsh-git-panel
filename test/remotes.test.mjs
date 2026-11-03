@@ -672,6 +672,52 @@ await test('Gitee 的 fork PR：读不到 fork 仓库时直接说清原因（不
   )
 })
 
+await test('创建 PR：POST /pulls，body 带 title/head/base/body；源与目标相同直接拒绝', async () => {
+  const credentials = fakeCredentials()
+  const calls = []
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/api\.github\.com\/repos\/alice\/app\/pulls$/, (url, options) => {
+      calls.push({ url, options })
+      return { status: 201, json: { number: 12, html_url: 'https://github.com/alice/app/pull/12', state: 'open' } }
+    }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/pulls\?/, (url, options) => {
+      calls.push({ url, options })
+      return { status: 201, json: { number: 5, html_url: 'https://gitee.com/bob/tool/pulls/5', state: 'open' } }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'a' })
+  await remotes.addAccount({ provider: 'gitee', token: 'b' })
+
+  const created = await remotes.createPull({
+    accountId: 'github:alice', fullName: 'alice/app',
+    head: 'feat/x', base: 'dev', title: 'feat: X', body: '## 摘要'
+  })
+  assert.deepEqual(created, { number: 12, url: 'https://github.com/alice/app/pull/12', state: 'open' })
+  assert.equal(calls[0].options.method, 'POST')
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    title: 'feat: X', head: 'feat/x', base: 'dev', body: '## 摘要'
+  })
+  assert.equal(calls[0].options.headers['Content-Type'], 'application/json;charset=UTF-8')
+
+  const gitee = await remotes.createPull({
+    accountId: 'gitee:bob', fullName: 'bob/tool', head: 'feat/y', base: 'dev', title: 'feat: Y', body: ''
+  })
+  assert.equal(gitee.number, 5)
+  assert.ok(calls[1].url.includes('/pulls?access_token='), 'Gitee 带 token：' + calls[1].url)
+
+  await assert.rejects(
+    () => remotes.createPull({ accountId: 'github:alice', fullName: 'alice/app', head: 'dev', base: 'dev', title: 'x', body: '' }),
+    (error) => error.code === 'bad-request'
+  )
+  await assert.rejects(
+    () => remotes.createPull({ accountId: 'github:alice', fullName: 'alice/app', head: 'feat/x', base: 'dev', title: '  ', body: '' }),
+    (error) => error.code === 'bad-request'
+  )
+})
+
 await test('关闭 / 重新打开 PR：两家都走 PATCH /pulls/{n} + state；非法状态直接拒绝', async () => {
   const credentials = fakeCredentials()
   const calls = []

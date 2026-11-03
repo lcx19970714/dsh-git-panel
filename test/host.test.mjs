@@ -316,6 +316,54 @@ test('会话级深度审阅：create/prompt 都必须带 AbortSignal（否则 DS
   assert.ok(noSignal[0] instanceof AbortSignal, '调用方没给 signal 时也要传一个真实的 AbortSignal')
 })
 
+test('创建 PR 的本地信息：远端地址识别、远端分支、是否已推送、base..HEAD 提交', async () => {
+  const { remoteInfoFor, listRemoteBranches, pushedState, branchCommits } = await import('../host/git.js')
+  const platform = path.join(tempDir('dgp-pr-platform-'), 'repo.git')
+  execFileSync('git', ['init', '--bare', '-q', platform], { stdio: 'pipe' })
+  const work = makeRepo(path.join(tempDir('dgp-pr-work-'), 'repo'))
+  const g = (...args) => execFileSync('git', args, { cwd: work, stdio: 'pipe' })
+  g('remote', 'add', 'origin', platform)
+  g('push', '-q', 'origin', 'HEAD:refs/heads/master')
+  g('push', '-q', 'origin', 'HEAD:refs/heads/dev')
+  g('switch', '-q', '-c', 'feat/x')
+  writeFileSync(path.join(work, 'b.js'), 'export const b = 2\n')
+  g('add', '-A')
+  g('commit', '-qm', 'feat: add b')
+  g('push', '-q', 'origin', 'feat/x:refs/heads/feat/x')
+
+  // origin 是本地路径：不是 GitHub/Gitee，识别为 null
+  assert.equal(await remoteInfoFor(work), null)
+  // 改成 github 地址后能识别出 owner/repo（不需要网络）
+  g('remote', 'set-url', 'origin', 'git@github.com:alice/app.git')
+  const info = await remoteInfoFor(work)
+  assert.deepEqual(info, { provider: 'github', fullName: 'alice/app', url: 'git@github.com:alice/app.git' })
+
+  // 远端分支列表来自本地 refs/remotes（先把本地路径的跟踪分支抓下来）
+  g('remote', 'set-url', 'origin', platform)
+  await execFileSync('git', ['fetch', '-q', 'origin'], { cwd: work, stdio: 'pipe' })
+  const branches = await listRemoteBranches(work)
+  assert.ok(branches.includes('dev'), '应列出远端 dev：' + branches.join(','))
+  assert.ok(branches.includes('master'))
+
+  const pushed = await pushedState(work, 'feat/x')
+  assert.equal(pushed.pushed, true, '刚推过，应判定已推送')
+  assert.equal(pushed.local, pushed.remoteSha)
+
+  const commits = await branchCommits(work, 'origin/master')
+  assert.equal(commits.length, 1, 'base..HEAD 应有 1 个提交')
+  assert.equal(commits[0].subject, 'feat: add b')
+})
+
+test('生成 PR 文案：严格 JSON，非法输出直接报错', async () => {
+  const { parsePullText } = await import('../host/pr-text.js')
+  const valid = JSON.stringify({ title: 'feat: X', body: '## 变更摘要\n- a' })
+  assert.deepEqual(parsePullText(valid), { title: 'feat: X', body: '## 变更摘要\n- a' })
+  for (const bad of ['', '不是 JSON', '{"body":"x"}', '{"title":"x"}', '{"title":"","body":""}', '["x"]']) {
+    await assert.rejects(() => Promise.resolve().then(() => parsePullText(bad)),
+      (error) => error.code === 'bad-model-output', '应拒绝：' + bad)
+  }
+})
+
 test('深度审阅的准备：已在 PR 提交上时只切分支，不再 fetch', async () => {
   const { prepareReviewBranch, headShaOf, reviewBranchName } = await import('../host/git.js')
   const dir = makeRepo(path.join(tempDir('dgp-already-'), 'repo'))

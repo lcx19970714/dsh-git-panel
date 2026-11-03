@@ -1253,6 +1253,83 @@ export async function trackRemoteBranch(repoRoot, remote, name, options = {}) {
   return { branch: head.branch, head: head.head, upstream: head.upstream ?? null }
 }
 
+/* ------------------------------------------------------- 创建 PR 的本地信息 */
+
+const REMOTE_URL_PATTERNS = [
+  { provider: 'github', pattern: /github\.com[:/]+([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i },
+  { provider: 'gitee', pattern: /gitee\.com[:/]+([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i }
+]
+
+/** origin 指向哪个平台仓库；不是 GitHub/Gitee 时返回 null。 */
+export async function remoteInfoFor(repoRoot, options = {}) {
+  const result = await runGit(repoRoot, ['config', '--get', 'remote.origin.url'], {
+    allowFailure: true,
+    signal: options.signal
+  })
+  if (result.code !== 0) return null
+  const url = result.stdout.toString('utf8').trim()
+  for (const { provider, pattern } of REMOTE_URL_PATTERNS) {
+    const match = pattern.exec(url)
+    if (match === null) continue
+    return { provider, fullName: match[1] + '/' + match[2], url }
+  }
+  return null
+}
+
+/** 远端跟踪分支（去掉 remote 前缀与 HEAD）。 */
+export async function listRemoteBranches(repoRoot, remoteName = 'origin', options = {}) {
+  const result = await runGit(repoRoot, [
+    'for-each-ref',
+    '--format=%(refname:short)',
+    'refs/remotes/' + remoteName
+  ], { signal: options.signal })
+  return result.stdout.toString('utf8').split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && line !== remoteName + '/HEAD')
+    .map((line) => line.slice(remoteName.length + 1))
+}
+
+/** 本地 HEAD 是否已经推到了远端同名分支（SHA 相同才算）。 */
+export async function pushedState(repoRoot, branch, remoteName = 'origin', options = {}) {
+  const head = await runGit(repoRoot, ['rev-parse', 'HEAD'], { signal: options.signal })
+  const local = head.stdout.toString('utf8').trim()
+  const remote = await runGit(repoRoot, ['rev-parse', '--verify', '--quiet', 'refs/remotes/' + remoteName + '/' + branch], {
+    allowFailure: true,
+    signal: options.signal
+  })
+  const remoteSha = remote.code === 0 ? remote.stdout.toString('utf8').trim() : ''
+  return { local, remoteSha, pushed: remoteSha !== '' && remoteSha === local }
+}
+
+/** base...HEAD 的 patch 文本（给生成 PR 描述用；超长由调用方截断）。 */
+export async function branchDiffText(repoRoot, baseRef, options = {}) {
+  const result = await runGit(repoRoot, ['diff', '--no-color', '--no-ext-diff', baseRef + '...HEAD'], {
+    signal: options.signal,
+    maxOutput: options.maxOutput
+  })
+  return result.stdout.toString('utf8')
+}
+
+/** base..HEAD 的提交（最多 limit 条，只要首行标题）。 */
+export async function branchCommits(repoRoot, baseRef, options = {}) {
+  const limit = Number.isFinite(options.limit) ? options.limit : 50
+  const result = await runGit(repoRoot, [
+    'log',
+    '--max-count=' + limit,
+    '--format=%H%x09%s',
+    baseRef + '..HEAD'
+  ], { signal: options.signal })
+  return result.stdout.toString('utf8').split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .map((line) => {
+      const at = line.indexOf('\t')
+      return at === -1
+        ? { sha: line, subject: '' }
+        : { sha: line.slice(0, at), subject: line.slice(at + 1) }
+    })
+}
+
 /* --------------------------------------------------- 为审阅准备本地目录 */
 
 function reviewAuthArgs(user, token) {

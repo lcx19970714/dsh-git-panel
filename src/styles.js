@@ -1048,6 +1048,13 @@ export const CSS = `
 .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dgp-ai-error > .dgp-detail-failure { margin: 0; }
 .dgp-pull-confirm { display: inline-flex; gap: 6px; align-items: center; }
+/* 创建 PR 表单（右侧面板） */
+.dgp-pr-form { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; overflow-y: auto; }
+.dgp-pr-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dgp-pr-row > .dgp-settings-label { min-width: 72px; }
+.dgp-pr-row > .dgp-select { min-width: 160px; }
+.dgp-pr-body { width: 100%; resize: vertical; font-family: var(--ds-font-family-code); font-size: 12px; line-height: 1.6; }
+.dgp-commit-pr { flex: none; }
 /* PR 评论：已有对话 + 常驻输入框 */
 .dgp-comment-body {
   margin: 0;

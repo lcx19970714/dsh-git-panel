@@ -301,6 +301,41 @@ export function createPulls(deps) {
     }
   }
 
+  /**
+   * 创建 PR：POST /repos/{o}/{r}/pulls，body { title, head, base, body }。
+   * GitHub 与 Gitee 的路径与字段一致；head 是源分支名（同仓库）。
+   */
+  async function createPull(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const head = input.head
+    const base = input.base
+    const title = typeof input.title === 'string' ? input.title.trim() : ''
+    const body = typeof input.body === 'string' ? input.body : ''
+    if (typeof head !== 'string' || head === '') throw new GitError('bad-request', '缺少源分支')
+    if (typeof base !== 'string' || base === '') throw new GitError('bad-request', '缺少目标分支')
+    if (head === base) throw new GitError('bad-request', '源分支与目标分支不能相同')
+    if (title === '') throw new GitError('bad-request', 'PR 标题不能为空')
+
+    const headers = provider.headers(account.token)
+    const url = provider.apiBase + provider.repoPath(fullName) + '/pulls'
+    const created = await readObject(
+      await requestJson(fetchImpl, provider.authorize(url, account.token), {
+        method: 'POST',
+        headers,
+        json: { title, head, base, body }
+      }, options.signal),
+      'PR 创建结果'
+    )
+    const number = Number.isFinite(created.number) ? created.number : null
+    if (number === null) throw new GitError('remote-api-failed', '平台没有返回 PR 编号，无法确认创建成功')
+    return {
+      number,
+      url: typeof created.html_url === 'string' ? created.html_url : '',
+      state: typeof created.state === 'string' ? created.state : 'open'
+    }
+  }
+
   /** 发一条 PR 评论（内容由用户在界面上确认/编辑后提交）。 */
   async function commentPull(input, options = {}) {
     const { provider, account } = await findAccount(input.accountId)
@@ -401,5 +436,5 @@ export function createPulls(deps) {
     }
   }
 
-  return { pullDetail, pullDiff, reviewSource, assertRepoAccess, reviewPull, testPull, passPull, commentPull, setPullState, mergePull }
+  return { pullDetail, pullDiff, reviewSource, assertRepoAccess, reviewPull, testPull, passPull, commentPull, setPullState, createPull, mergePull }
 }

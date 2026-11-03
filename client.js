@@ -1230,6 +1230,20 @@ window.__ModuleLoader__.load({
       .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .dgp-ai-error > .dgp-detail-failure { margin: 0; }
       .dgp-pull-confirm { display: inline-flex; gap: 6px; align-items: center; }
+      /* 有新版本：版本号按钮提示一下 */
+      .dgp-version[data-newer="true"] { color: var(--dsw-alias-state-warn-label); }
+      .dgp-update-note-link {
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        padding: 0 2px;
+        font: inherit;
+        color: inherit;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .dgp-update-note-link:hover { text-decoration: underline; }
       /* 变更页签：当前分支的 PR 状态卡 */
       .dgp-pr-card {
         display: flex;
@@ -1638,14 +1652,22 @@ window.__ModuleLoader__.load({
       const NS = 'dshGitPanel'
 
       const zh = {
-        'toolbar.checkUpdates': '检测更新',
+        'toolbar.checkUpdates': '检查插件更新',
         'toolbar.openRemote': '打开 Git 仓库',
         'toolbar.refreshNow': '立即刷新',
+        'update.currentVersion': '当前 v{version}',
+        'update.latestVersion': '最新 v{version}',
+        'update.pluginUpToDate': '插件已是最新（v{version}）',
+        'update.pluginNewer': '有新版本 v{version}（当前 v{current}）',
+        'update.openRelease': '打开 Release 页面',
+        'update.fetching': '正在拉取远端…',
+        'update.upstreamChecked': '上游 {upstream}（{time}）',
+        'toolbar.fetchUpstream': '检查上游更新（git fetch）',
         'update.checking': '正在检测更新…',
         'update.upToDate': '已是最新（{upstream}）',
         'update.behind': '落后 {count} 个提交（{upstream}）',
         'update.ahead': '本地领先 {count} 个提交（{upstream}）',
-        'update.failed': '检测更新失败：{message}',
+        'update.failed': '检查更新失败：{message}',
         'update.noRemote': '这个仓库没有配置远端',
         'update.checkedAt': '检测于 {time}',
         'tab.title': '变更',
@@ -2019,9 +2041,17 @@ window.__ModuleLoader__.load({
       }
 
       const en = {
-        'toolbar.checkUpdates': 'Check for updates',
+        'toolbar.checkUpdates': 'Check plugin updates',
         'toolbar.openRemote': 'Open Git repository',
         'toolbar.refreshNow': 'Refresh now',
+        'update.currentVersion': 'Current v{version}',
+        'update.latestVersion': 'Latest v{version}',
+        'update.pluginUpToDate': 'Plugin is up to date (v{version})',
+        'update.pluginNewer': 'New version v{version} available (current v{current})',
+        'update.openRelease': 'Open release page',
+        'update.fetching': 'Fetching remote…',
+        'update.upstreamChecked': 'Upstream {upstream} ({time})',
+        'toolbar.fetchUpstream': 'Check upstream (git fetch)',
         'update.checking': 'Checking for updates…',
         'update.upToDate': 'Up to date ({upstream})',
         'update.behind': '{count} commits behind ({upstream})',
@@ -2601,15 +2631,21 @@ window.__ModuleLoader__.load({
          * 检测更新（git fetch）的状态。
          * fetchedAt 为 0 表示还没检测过；checkSeq 保证只有最新一次结果落地。
          */
-        const [updateState, setUpdateState] = useState({ busy: false, fetchedAt: 0, ahead: 0, behind: 0, upstream: null, remoteUrl: null, error: null })
+        /** 插件自身版本与更新检查（与本仓库的 git 状态无关）。 */
+        const [pluginState, setPluginState] = useState({
+          version: null, busy: false, latestVersion: null, url: '', publishedAt: '', newer: false, checkedAt: 0, error: null
+        })
+        /** 上游（git fetch）检查结果：只影响提示与 tooltip。 */
+        const [upstreamState, setUpstreamState] = useState({ fetchedAt: 0, ahead: 0, behind: 0, upstream: null })
+        /** 工具条提示：插件检查结果与上游检查结果共用一条，谁最后动作显示谁。 */
+        const [toolbarNote, setToolbarNote] = useState(null)
         const checkSeq = useLatestGuard()
 
-        // 下面四个派生值只依赖 state，放在动作之前：checkUpdates/openRemote 要用到它们
-        // 版本号 = 当前提交的短 SHA（status.head 已经是 --short 的结果）
-        const versionText = status !== null && status.head !== null ? status.head : '—'
+        // 派生值只依赖 state，放在动作之前：checkUpdates/openRemote 要用到它们
+        const versionText = pluginState.version === null ? '—' : 'v' + pluginState.version
         const remoteWebUrl = webUrlOf(status === null ? null : status.remoteUrl)
-        const versionTitle = buildVersionTitle(activeRoot, status, updateState, remoteWebUrl, t)
-        const updateNote = buildUpdateNote(updateState, t)
+        const versionTitle = buildVersionTitle(pluginState, upstreamState, t)
+        const updateNote = toolbarNote
         const draftsRef = useRef(drafts)
         draftsRef.current = drafts
 
@@ -2944,41 +2980,77 @@ window.__ModuleLoader__.load({
          * 检测更新 = 让宿主执行一次 git fetch，再回来看 ahead/behind。
          * 这是只读操作（只更新远端跟踪引用），所以不需要二次确认。
          */
+        /** 检查插件是否最新（当前安装版本 vs GitHub 最新 release）。 */
         const checkUpdates = useCallback(async () => {
-          if (activeRoot === null || activeRoot.isGit === false) return
           const token = checkSeq.begin()
-          setUpdateState((previous) => ({ ...previous, busy: true, error: null }))
+          setPluginState((previous) => ({ ...previous, busy: true, error: null }))
+          try {
+            const value = await api.pluginUpdate()
+            if (!checkSeq.isLatest(token)) return
+            setPluginState({
+              version: value.currentVersion,
+              busy: false,
+              latestVersion: value.latestVersion,
+              url: value.url,
+              publishedAt: value.publishedAt,
+              newer: value.newer === true,
+              checkedAt: Date.now(),
+              error: null
+            })
+            setToolbarNote(value.newer === true
+              ? {
+                tone: 'warn',
+                text: tRef.current('update.pluginNewer', { version: value.latestVersion, current: value.currentVersion }),
+                url: value.url
+              }
+              : { tone: 'info', text: tRef.current('update.pluginUpToDate', { version: value.currentVersion }) })
+          } catch (error) {
+            if (!checkSeq.isLatest(token)) return
+            setPluginState((previous) => ({ ...previous, busy: false, error: api.describeError(error, tRef.current) }))
+            setToolbarNote({
+              tone: 'error',
+              text: tRef.current('update.failed', { message: api.describeError(error, tRef.current) })
+            })
+          }
+        }, [checkSeq])
+
+        /** 读一次插件版本（本地 package.json，不联网），让按钮一进来就显示真实版本。 */
+        useEffect(() => {
+          let alive = true
+          api.pluginInfo().then((value) => {
+            if (!alive) return
+            setPluginState((previous) => ({ ...previous, version: value.version }))
+          }).catch((error) => {
+            if (!alive) return
+            setPluginState((previous) => ({ ...previous, error: api.describeError(error, tRef.current) }))
+          })
+          return () => {
+            alive = false
+          }
+        }, [])
+
+        /** 上游检查（git fetch）：手动触发，结果只报告不自动合并。 */
+        const fetchUpstream = useCallback(async () => {
+          if (activeRoot === null || activeRoot.isGit !== true) return
+          setToolbarNote({ tone: 'info', text: tRef.current('update.fetching') })
           try {
             const value = await api.fetchRemote({ rootPath: activeRoot.path })
-            if (!checkSeq.isLatest(token)) return
-            setUpdateState({
-              busy: false,
+            setUpstreamState({
               fetchedAt: value.fetchedAt,
               ahead: value.ahead,
               behind: value.behind,
-              upstream: value.upstream,
-              remoteUrl: value.url,
-              error: null
+              upstream: value.upstream
             })
+            setToolbarNote(buildUpstreamNote(value, tRef.current))
             // fetch 改了远端跟踪引用：status 里的 ahead/behind 也要跟上
             refreshStatus()
           } catch (error) {
-            if (!checkSeq.isLatest(token)) return
-            if (error !== null && error !== undefined && error.code === 'aborted') {
-              setUpdateState((previous) => ({ ...previous, busy: false }))
-              return
-            }
-            setUpdateState({
-              busy: false,
-              fetchedAt: Date.now(),
-              ahead: 0,
-              behind: 0,
-              upstream: null,
-              remoteUrl: null,
-              error: api.describeError(error, tRef.current)
+            setToolbarNote({
+              tone: 'error',
+              text: tRef.current('update.failed', { message: api.describeError(error, tRef.current) })
             })
           }
-        }, [activeRoot, checkSeq, refreshStatus])
+        }, [activeRoot, refreshStatus])
 
         /** 打开远端仓库网页（本地路径类远端没有网页，按钮此时是禁用的）。 */
         const openRemote = useCallback(() => {
@@ -4000,33 +4072,33 @@ window.__ModuleLoader__.load({
         }, [refreshAll, mode])
 
 
-      /** 版本号按钮的 tooltip：检测更新 · 分支 · 提交 · 上游 · 上次检测时间。 */
-      function buildVersionTitle(activeRoot, status, updateState, remoteWebUrl, t) {
+      /** 版本号按钮的 tooltip：插件版本 · 最新版本 · 上游 · 检测时间。 */
+      function buildVersionTitle(pluginState, upstreamState, t) {
         const parts = [t('toolbar.checkUpdates')]
-        if (status !== null) {
-          if (status.branch !== null) parts.push(status.branch)
-          if (status.head !== null) parts.push(status.head)
-          if (status.upstream !== null) parts.push(status.upstream)
+        if (pluginState.version !== null) parts.push(t('update.currentVersion', { version: pluginState.version }))
+        if (pluginState.checkedAt > 0 && pluginState.error === null) {
+          parts.push(pluginState.newer
+            ? t('update.latestVersion', { version: pluginState.latestVersion })
+            : t('update.pluginUpToDate', { version: pluginState.version }))
+          parts.push(t('update.checkedAt', { time: formatClock(pluginState.checkedAt) }))
         }
-        if (activeRoot !== null && activeRoot.isGit === false) parts.push(t('update.noRemote'))
-        else if (remoteWebUrl === null) parts.push(t('update.noRemote'))
-        if (updateState.fetchedAt > 0 && updateState.error === null) {
-          parts.push(t('update.checkedAt', { time: formatClock(updateState.fetchedAt) }))
+        if (upstreamState.fetchedAt > 0) {
+          parts.push(t('update.upstreamChecked', {
+            upstream: upstreamState.upstream === null ? '' : upstreamState.upstream,
+            time: formatClock(upstreamState.fetchedAt)
+          }))
         }
         return parts.join(' \u00b7 ')
       }
 
       /**
-       * 检测更新的一句话结果。返回 null 表示还没有结果可报（从未检测过）。
+       * 上游检查的一句话结果。
        * 落后优先于领先：同时有分叉时更重要的是"你落后了"。
        */
-      function buildUpdateNote(updateState, t) {
-        if (updateState.busy === true) return { tone: 'info', text: t('update.checking') }
-        if (updateState.error !== null) return { tone: 'error', text: t('update.failed', { message: updateState.error }) }
-        if (updateState.fetchedAt === 0) return null
-        const upstream = updateState.upstream === null ? '' : updateState.upstream
-        if (updateState.behind > 0) return { tone: 'warn', text: t('update.behind', { count: updateState.behind, upstream }) }
-        if (updateState.ahead > 0) return { tone: 'info', text: t('update.ahead', { count: updateState.ahead, upstream }) }
+      function buildUpstreamNote(value, t) {
+        const upstream = value.upstream === null || value.upstream === undefined ? '' : value.upstream
+        if (value.behind > 0) return { tone: 'warn', text: t('update.behind', { count: value.behind, upstream }) }
+        if (value.ahead > 0) return { tone: 'info', text: t('update.ahead', { count: value.ahead, upstream }) }
         return { tone: 'info', text: t('update.upToDate', { upstream }) }
       }
 
@@ -4091,20 +4163,31 @@ window.__ModuleLoader__.load({
             // 检测更新的结果贴在版本号左边，不单独占一行（宽度不够时自己截断，全文在 title 里）
             updateNote === null
               ? null
-              : h('span', {
-                className: 'dgp-update-note',
-                'data-update-note': updateNote.tone,
-                'data-tone': updateNote.tone,
-                title: updateNote.text
-              }, updateNote.text),
+              : (updateNote.url === undefined || updateNote.url === ''
+                ? h('span', {
+                  className: 'dgp-update-note',
+                  'data-update-note': updateNote.tone,
+                  'data-tone': updateNote.tone,
+                  title: updateNote.text
+                }, updateNote.text)
+                : h('button', {
+                  type: 'button',
+                  className: 'dgp-update-note dgp-update-note-link',
+                  'data-dgp-version': 'note-link',
+                  'data-update-note': updateNote.tone,
+                  'data-tone': updateNote.tone,
+                  title: t('update.openRelease'),
+                  onClick: () => openExternalUrl(updateNote.url)
+                }, updateNote.text, h(Icon, { name: 'external', size: 11 }))),
             h('button', {
               type: 'button',
               className: 'dgp-version',
               title: versionTitle,
               'aria-label': t('toolbar.checkUpdates'),
               'data-action': 'check-updates',
-              'data-busy': updateState.busy ? 'true' : undefined,
-              disabled: activeRoot === null || activeRoot.isGit === false,
+              'data-busy': pluginState.busy ? 'true' : undefined,
+              'data-newer': pluginState.newer ? 'true' : undefined,
+              disabled: pluginState.busy,
               onClick: checkUpdates
             }, h(Icon, { name: 'sync', size: 13 }), h('span', { className: 'dgp-version-text' }, versionText)),
             h('button', {
@@ -4128,6 +4211,7 @@ window.__ModuleLoader__.load({
               type: 'button',
               className: 'dgp-iconbtn',
               title: t('toolbar.more'),
+              'data-action': 'more',
               'aria-expanded': moreOpen ? 'true' : 'false',
               onClick: () => {
                 const node = moreAnchorRef.current
@@ -4450,6 +4534,15 @@ window.__ModuleLoader__.load({
           label: t('toolbar.refreshNow'),
           onClick: () => {
             refreshAll()
+            setMoreOpen(false)
+          }
+        }),
+        h(MenuItem, {
+          icon: 'sync',
+          label: t('toolbar.fetchUpstream'),
+          disabled: activeRoot === null || activeRoot.isGit !== true,
+          onClick: () => {
+            fetchUpstream()
             setMoreOpen(false)
           }
         }),
@@ -7159,6 +7252,16 @@ window.__ModuleLoader__.load({
         return call('pr/prepare', payload, options)
       }
 
+      /** 当前安装的插件版本（本地读，不联网）。 */
+      function pluginInfo(payload, options) {
+        return call('plugin/info', payload, options)
+      }
+
+      /** 检查插件是否有新版本（GitHub 最新 release）。 */
+      function pluginUpdate(payload, options) {
+        return call('plugin/update', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 30_000 })
+      }
+
       /** 当前分支关联的 PR 摘要（没有关联 PR 时 linked:false + reason）。 */
       function prLinked(payload, options) {
         return call('pr/linked', payload, options)
@@ -7220,7 +7323,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, prPrepare, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, prPrepare, pluginInfo, pluginUpdate, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {

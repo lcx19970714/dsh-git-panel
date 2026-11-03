@@ -67,6 +67,7 @@ import {
   branchDiffText
 } from './host/git.js'
 import { generatePullText } from './host/pr-text.js'
+import { checkPluginUpdate, pluginInfo } from './host/plugin-meta.js'
 import { createReviewLog } from './host/review-log.js'
 import { createRemotes } from './host/remotes/index.js'
 import {
@@ -152,6 +153,8 @@ export const ENDPOINTS = Object.freeze([
   'pr/linked',
   'pr/generate',
   'pr/create',
+  'plugin/info',
+  'plugin/update',
   'models/list',
   'settings/get',
   'settings/set',
@@ -1163,6 +1166,18 @@ function createDispatcher(ctx) {
     return { ...created, head: head.branch, base }
   }
 
+  /* 插件自身版本 ------------------------------------------------------ */
+
+  /** 当前安装的插件版本（本地读 package.json，不联网）。 */
+  async function pluginVersion() {
+    return pluginInfo()
+  }
+
+  /** 检查插件是否有新版本（GitHub 最新 release）。 */
+  async function pluginUpdateCheck(request, signal) {
+    return checkPluginUpdate({ signal })
+  }
+
   /* models / settings ------------------------------------------------- */
   /** 列出 DSH 当前可用的模型（来自 llm 服务，不读任何配置文件）。 */
   async function modelsList() {
@@ -1291,6 +1306,8 @@ function createDispatcher(ctx) {
     'pr/linked': (request, signal) => prLinked(request, signal),
     'pr/generate': (request, signal) => prGenerate(request, signal),
     'pr/create': (request, signal) => prCreate(request, signal),
+    'plugin/info': () => pluginVersion(),
+    'plugin/update': (request, signal) => pluginUpdateCheck(request, signal),
     'models/list': () => modelsList(),
     'settings/get': () => settingsGet(),
     'settings/set': (request, signal) => settingsSet(request),

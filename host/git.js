@@ -1256,9 +1256,23 @@ export async function trackRemoteBranch(repoRoot, remote, name, options = {}) {
 /* --------------------------------------------------- 为审阅准备本地目录 */
 
 function reviewAuthArgs(user, token) {
-  if (typeof token !== 'string' || token === '') return []
+  // credential.helper 留空：禁用本机凭据管理器，避免它用缓存的旧凭据覆盖我们的请求头
+  const args = ['-c', 'credential.helper=']
+  if (typeof token !== 'string' || token === '') return args
   const basic = Buffer.from(String(user) + ':' + token, 'utf8').toString('base64')
-  return ['-c', 'http.extraHeader=AUTHORIZATION: basic ' + basic]
+  return [...args, '-c', 'http.extraHeader=Authorization: Basic ' + basic]
+}
+
+/** 把 git 的认证失败翻译成可操作的原因（其余错误原样上抛）。 */
+function mapGitAuthError(error, context) {
+  const text = error instanceof GitError ? error.message : String(error && error.message ? error.message : error)
+  if (!/Authentication failed|Unauthorized|\b401\b|could not read Username/i.test(text)) return error
+  const who = context.user === undefined || context.user === '' ? '当前账号' : '账号 ' + context.user
+  return new GitError('git-auth-failed',
+    context.hint
+      ? context.hint + '（' + who + '，仓库 ' + context.url + '）原始错误：' + text
+      : 'Gitee / GitHub 拒绝了这个令牌：请确认' + who + ' 对 ' + context.url + ' 有读权限，'
+        + '且令牌包含仓库（projects / repo）权限。原始错误：' + text)
 }
 
 /** 审阅用的分支名：每次都是独立的，不覆盖用户已有分支。 */
@@ -1276,10 +1290,14 @@ export async function prepareReviewBranch(repoRoot, input, options = {}) {
   const number = input.number
   if (!Number.isInteger(number) || number <= 0) throw new GitError('bad-request', 'PR 编号不合法')
   const branch = reviewBranchName(number)
-  await runGit(repoRoot, [
-    ...reviewAuthArgs(input.user, input.token),
-    'fetch', '--no-tags', input.url, '+' + input.remoteRef + ':refs/heads/' + branch
-  ], { signal, timeoutMs: 5 * 60 * 1000 })
+  try {
+    await runGit(repoRoot, [
+      ...reviewAuthArgs(input.user, input.token),
+      'fetch', '--no-tags', input.url, '+' + input.remoteRef + ':refs/heads/' + branch
+    ], { signal, timeoutMs: 5 * 60 * 1000 })
+  } catch (error) {
+    throw mapGitAuthError(error, { user: input.user, url: input.url, hint: input.authHint })
+  }
   await runGit(repoRoot, ['switch', branch], { signal })
   const head = await readHead(repoRoot)
   return { branch: head.branch, head: head.head }
@@ -1303,14 +1321,18 @@ export async function cloneForReview(targetDir, input, options = {}) {
   const branch = typeof input.branch === 'string' && input.branch !== ''
     ? input.branch
     : reviewBranchName(input.number)
-  await runGit(target, [
-    ...reviewAuthArgs(input.user, input.token),
-    'clone', '--progress', input.url, '.'
-  ], { signal, timeoutMs: 15 * 60 * 1000 })
-  await runGit(target, [
-    ...reviewAuthArgs(input.user, input.token),
-    'fetch', 'origin', '+' + input.remoteRef + ':refs/heads/' + branch
-  ], { signal, timeoutMs: 5 * 60 * 1000 })
+  try {
+    await runGit(target, [
+      ...reviewAuthArgs(input.user, input.token),
+      'clone', '--progress', input.url, '.'
+    ], { signal, timeoutMs: 15 * 60 * 1000 })
+    await runGit(target, [
+      ...reviewAuthArgs(input.user, input.token),
+      'fetch', 'origin', '+' + input.remoteRef + ':refs/heads/' + branch
+    ], { signal, timeoutMs: 5 * 60 * 1000 })
+  } catch (error) {
+    throw mapGitAuthError(error, { user: input.user, url: input.url, hint: input.authHint })
+  }
   await runGit(target, ['switch', branch], { signal })
   const head = await readHead(target)
   return { path: target, branch: head.branch, head: head.head }

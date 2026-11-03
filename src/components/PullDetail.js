@@ -311,6 +311,13 @@ export function PullDetail(props) {
         ai.result.truncated === true
           ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))
           : null,
+        ai.result.filesTruncated === true
+          ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-files-truncated' }, t('pull.aiFilesTruncated'))
+          : null,
+        typeof ai.result.cleanupError === 'string' && ai.result.cleanupError !== ''
+          ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-cleanup-warn' },
+            t('pull.aiCleanupWarn', { message: ai.result.cleanupError }))
+          : null,
         Array.isArray(ai.result.skippedFiles) && ai.result.skippedFiles.length > 0
           ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-skipped' },
             h('p', { className: 'dgp-detail-notice' },

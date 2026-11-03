@@ -103,6 +103,21 @@ await test('buildReviewInput：没有 patch 的文件要写明原因，并记入
   assert.ok(built.text.includes('未被审阅'), '提示词里要说明这个文件没被读到')
 })
 
+await test('文件清单被平台截断时：提示词里注明，结果里带 filesTruncated', async () => {
+  const built = buildReviewInput({
+    pull: { title: 'T' },
+    files: [{ filename: 'a.js', status: 'modified', additions: 1, deletions: 0, changes: 1, patch: '+x', patchAvailable: true }]
+  }, { filesTruncated: true })
+  assert.equal(built.filesTruncated, true)
+  assert.ok(built.text.includes('不完整'), '提示词要说明文件清单不完整')
+
+  const llm = fakeLlm(JSON.stringify(validReview))
+  const result = await generateReview(llm.service, { provider: 'p1', model: 'm1' }, { pull: { title: 'T' }, files: [] }, {
+    filesTruncated: true
+  })
+  assert.equal(result.filesTruncated, true, '结果要带回这个事实')
+})
+
 await test('parseReviewOutput：合法结构原样通过', async () => {
   const { parseReviewOutput } = await import('../host/review.js')
   const parsed = parseReviewOutput(JSON.stringify(validReview))

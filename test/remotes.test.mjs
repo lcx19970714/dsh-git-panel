@@ -622,6 +622,29 @@ await test('需要对象的接口遇到空响应时，给出明确原因', async
   )
 })
 
+await test('Gitee 的 fork PR：深度审阅要从 head 仓库拉代码，不是 base 仓库', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/repos\/bob\/tool\/pulls\/5\?[^/]*$/, {
+      json: {
+        number: 5, title: 'Fork PR', state: 'open',
+        base: { ref: 'master', repo: { full_name: 'bob/tool' } },
+        head: { ref: 'fix/thing', repo: { full_name: 'carol/tool' } },
+        html_url: 'https://gitee.com/bob/tool/pulls/5'
+      }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+
+  const source = await remotes.reviewSource({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 5 })
+  assert.equal(source.pull.headRepo, 'carol/tool', 'PR 详情要带 head 仓库')
+  assert.equal(source.repoUsed, 'carol/tool', '应从 head 仓库拉')
+  assert.ok(source.url.includes('gitee.com/carol/tool.git'), 'URL 指向 head 仓库：' + source.url)
+  assert.equal(source.remoteRef, 'refs/heads/fix/thing')
+})
+
 await test('PR 文件 diff：按页取满、带 patch；Gitee 与 GitHub 都走 files 接口', async () => {
   const credentials = fakeCredentials()
   const seen = []

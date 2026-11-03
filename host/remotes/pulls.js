@@ -158,10 +158,13 @@ export function createPulls(deps) {
     const { provider, account } = await findAccount(input.accountId)
     const fullName = requireFullName(input.fullName)
     const number = requirePullNumber(input.number)
+    // fork PR 的 head 在另一个仓库：URL 要指向真正有那个分支的仓库
+    const repoUsed = provider.reviewRepo(fullName, detail.pull)
     return {
       pull: detail.pull,
       fullName,
-      url: provider.gitUrl(fullName),
+      repoUsed,
+      url: provider.gitUrl(repoUsed),
       remoteRef: provider.reviewRef(number, detail.pull),
       user: provider.gitUser === null ? account.login : provider.gitUser,
       token: account.token

@@ -180,6 +180,7 @@ export async function deepReview(input) {
     result = await generateReview(llm, pair, { pull, files }, {
       mode: 'deep',
       fullFiles,
+      filesTruncated: input.filesTruncated,
       signal,
       timeoutMs: input.timeoutMs
     })

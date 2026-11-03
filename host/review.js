@@ -63,6 +63,7 @@ const DEEP_SYSTEM_PROMPT = SYSTEM_PROMPT + '\n' + [
 
 /** 把 PR 与文件列表拼成提示词正文，并在超限时明确写出截断。 */
 export function buildReviewInput(input, options = {}) {
+  const filesTruncated = options.filesTruncated === true || input.filesTruncated === true
   const deep = options.mode === 'deep'
   const fullFiles = deep && Array.isArray(options.fullFiles) ? options.fullFiles : []
   const limit = deep ? DEEP_INPUT_LIMIT : REVIEW_DIFF_LIMIT
@@ -70,6 +71,7 @@ export function buildReviewInput(input, options = {}) {
   const files = Array.isArray(input.files) ? input.files : []
   const head = [
     '## PR',
+    filesTruncated ? '（注意：PR 的文件数量超过平台单次上限，下面的文件清单不完整，可能有改动未被审阅。）' : '',
     '- 标题：' + (pull.title || '(无)'),
     '- 作者：' + (pull.author || '(未知)'),
     '- 分支：' + (pull.headBranch || '?') + ' → ' + (pull.baseBranch || '?'),
@@ -132,7 +134,7 @@ export function buildReviewInput(input, options = {}) {
     }
   }
 
-  return { text: head + blocks.join(''), truncated: false, filesIncluded: blocks.length, skippedFiles, deep }
+  return { text: head + blocks.join(''), truncated: false, filesIncluded: blocks.length, skippedFiles, deep, filesTruncated }
 }
 
 /** 严格校验模型输出：缺字段/类型不对/枚举越界都直接报，不修补。 */
@@ -204,9 +206,10 @@ export async function generateReview(llm, pair, input, options = {}) {
   if (llm === null || llm === undefined) {
     throw new GitError('no-llm', '当前 profile 没有挂载 LLM 服务，无法做 AI 审阅')
   }
-  const { text, truncated, filesIncluded, skippedFiles } = buildReviewInput(input, {
+  const { text, truncated, filesIncluded, skippedFiles, filesTruncated } = buildReviewInput(input, {
     mode: deep ? 'deep' : 'diff',
-    fullFiles: options.fullFiles
+    fullFiles: options.fullFiles,
+    filesTruncated: options.filesTruncated
   })
   const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
     ? options.timeoutMs
@@ -265,5 +268,5 @@ export async function generateReview(llm, pair, input, options = {}) {
 
   if (failure !== null) throw new GitError('model-failed', '模型返回了错误（' + pair.provider + '/' + pair.model + '）：' + failure)
   const review = parseReviewOutput(output)
-  return { ...review, truncated, filesIncluded, skippedFiles, model: pair.provider + '/' + pair.model }
+  return { ...review, truncated, filesIncluded, skippedFiles, filesTruncated, model: pair.provider + '/' + pair.model }
 }

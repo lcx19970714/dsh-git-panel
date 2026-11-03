@@ -4357,25 +4357,28 @@ test('用例 9：变更模式下刷新，文件消失则清空选中与 diff', a
 /* ================================================================== */
 
 /* ================================================================== */
-/* 用例 10a：版本号 chip = 当前提交短 SHA，点击 = 检测更新               */
+/* 用例 10a：版本号 chip = 插件版本，点击 = 检查插件是否有新版本           */
 /* ================================================================== */
 
-test('用例 10a：点版本号触发 git fetch 检测更新，并给出结果与刷新 status', async () => {
+test('用例 10a：版本号显示插件版本；点击检查插件更新，有新版本可点开 release', async () => {
   const checks = []
   await withPanel({
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
       status: () => sayOk({ ...statusThree(), remoteUrl: 'git@github.com:owner/repo.git' }),
-      'remote/fetch': () => {
-        checks.push('fetch')
+      'plugin/info': () => sayOk({
+        name: 'dsh-git-panel', version: '0.35.1',
+        repositoryUrl: 'git+https://github.com/lcx19970714/dsh-git-panel.git',
+        fullName: 'lcx19970714/dsh-git-panel'
+      }),
+      'plugin/update': () => {
+        checks.push('update')
         return sayOk({
-          url: 'git@github.com:owner/repo.git',
-          branch: 'main',
-          head: 'abc1234',
-          upstream: 'origin/main',
-          ahead: 0,
-          behind: 3,
-          fetchedAt: Date.now()
+          currentVersion: '0.35.1',
+          latestVersion: '0.36.0',
+          url: 'https://github.com/lcx19970714/dsh-git-panel/releases/tag/v0.36.0',
+          publishedAt: '2026-11-01T00:00:00Z',
+          newer: true
         })
       }
     }
@@ -4386,47 +4389,47 @@ test('用例 10a：点版本号触发 git fetch 检测更新，并给出结果�
       isHost(node) && node.type === 'button' && attr(node, 'data-action') === 'check-updates'
     ))
     assert(chip !== null, '找不到版本号按钮')
-    eq(textOf(chip), 'abc1234', '版本号应显示提交短 SHA')
-    assert(textOf(chip).length > 0, '版本号不应为空')
+    eq(textOf(chip), 'v0.35.1', '版本号显示插件版本，不是提交 SHA')
+    eq(chip.props.disabled, false, '没有仓库时也应能检查插件更新')
 
-    const mark = panel.router.mark()
     click(chip)
     await panel.flush()
-
-    eq(checks.length, 1, '点一次只应检测一次')
-    const fetchCalls = panel.router.all('remote/fetch', mark)
-    eq(fetchCalls.length, 1, '应调用 remote/fetch')
-    eq(fetchCalls[0].payload, { rootPath: PROJECT }, 'remote/fetch 载荷')
+    eq(checks.length, 1, '点一次只应检查一次')
+    eq(panel.router.all('remote/fetch', panel.router.mark()).length, 0, '检查插件更新不应触发 git fetch')
 
     const note = findOne(panel.tree, (node) => isHost(node) && node.props['data-update-note'] !== undefined)
-    assert(note !== null, '应显示检测结果')
-    eq(attr(note, 'data-update-note'), 'warn', '落后时应是 warn')
-    assert(textOf(note).includes('落后 3 个提交'), '结果文案：' + textOf(note))
-    assert(textOf(note).includes('origin/main'), '结果里应带上游名')
+    assert(note !== null, '应显示检查结果')
+    eq(attr(note, 'data-update-note'), 'warn', '有新版本应是 warn')
+    assert(textOf(note).includes('0.36.0'), '结果要带新版本号：' + textOf(note))
+    assert(textOf(note).includes('0.35.1'), '结果要带当前版本：' + textOf(note))
 
-    // 结果贴在版本号左边，不单独占一行
-    const toolbar = panel.one((node) => isHost(node) && hasClass(node, 'dgp-toolbar'))
-    assert(findOne(toolbar, (node) => isHost(node) && attr(node, 'data-update-note') !== undefined) !== null,
-      '检测结果应在工具条里')
-    eq(panel.class('dgp-notebar').length, 0, '不应再单独起一行提示')
-
-    assert(panel.router.all('status', mark).length >= 1, '检测后应刷新 status（fetch 改了远端跟踪引用）')
+    // 有新版本时按钮高亮，并且结果可点开 release 页
+    const newerChip = findOne(panel.tree, (node) => (
+      isHost(node) && node.type === 'button' && attr(node, 'data-action') === 'check-updates'
+    ))
+    eq(attr(newerChip, 'data-newer'), 'true', '有新版本时按钮要有标记')
+    click(note)
+    eq(panel.window.opened.length, 1, '点结果应打开 release 页')
+    assert(panel.window.opened[0].url.includes('/releases/tag/v0.36.0'), '打开的是 release 地址')
   })
 })
 
 /* ================================================================== */
-/* 用例 10b：已是最新 / 无远端的呈现                                    */
+/* 用例 10b：插件已是最新时给 info 提示                                    */
 /* ================================================================== */
 
-test('用例 10b：已是最新时给 info 提示', async () => {
+test('用例 10b：插件已是最新时给 info 提示，且不带可点链接', async () => {
   await withPanel({
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
-      status: () => sayOk({ ...statusThree(), remoteUrl: 'https://github.com/owner/repo.git' }),
-      'remote/fetch': () => sayOk({
-        url: 'https://github.com/owner/repo.git',
-        branch: 'main', head: 'abc1234', upstream: 'origin/main',
-        ahead: 0, behind: 0, fetchedAt: Date.now()
+      status: () => sayOk(statusThree()),
+      'plugin/info': () => sayOk({ name: 'dsh-git-panel', version: '0.35.1', repositoryUrl: '', fullName: null }),
+      'plugin/update': () => sayOk({
+        currentVersion: '0.35.1',
+        latestVersion: '0.35.1',
+        url: 'https://github.com/lcx19970714/dsh-git-panel/releases/tag/v0.35.1',
+        publishedAt: '2026-11-01T00:00:00Z',
+        newer: false
       })
     }
   }, async (panel) => {
@@ -4436,15 +4439,23 @@ test('用例 10b：已是最新时给 info 提示', async () => {
     const note = findOne(panel.tree, (node) => isHost(node) && node.props['data-update-note'] !== undefined)
     eq(attr(note, 'data-update-note'), 'info')
     assert(textOf(note).includes('已是最新'), '文案：' + textOf(note))
+    eq(note.type, 'span', '已是最新时不是一个可点的链接')
+    eq(attr(findOne(panel.tree, (node) => isHost(node) && attr(node, 'data-action') === 'check-updates'), 'data-newer'), undefined,
+      '已是最新时不应有更新标记')
   })
 })
 
-test('用例 10c：远端检测失败 → 错误提示（不留"看起来成功"的状态）', async () => {
+/* ================================================================== */
+/* 用例 10c：检查插件更新失败 → 错误提示（不假装"已是最新"）               */
+/* ================================================================== */
+
+test('用例 10c：检查插件更新失败 → 错误提示（不留"看起来成功"的状态）', async () => {
   await withPanel({
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
       status: () => sayOk(statusThree()),
-      'remote/fetch': () => sayFail('no-remote', '这个仓库没有配置远端（origin）')
+      'plugin/info': () => sayOk({ name: 'dsh-git-panel', version: '0.35.1', repositoryUrl: '', fullName: null }),
+      'plugin/update': () => sayFail('update-check-failed', 'HTTP 403：GitHub 未登录的请求有频率限制')
     }
   }, async (panel) => {
     await panel.flush()
@@ -4452,7 +4463,49 @@ test('用例 10c：远端检测失败 → 错误提示（不留"看起来成功"
     await panel.flush()
     const note = findOne(panel.tree, (node) => isHost(node) && node.props['data-update-note'] !== undefined)
     eq(attr(note, 'data-update-note'), 'error')
-    assert(textOf(note).includes('检测更新失败'), '文案：' + textOf(note))
+    assert(textOf(note).includes('检查更新失败'), '文案：' + textOf(note))
+    assert(textOf(note).includes('403'), '要带真实原因：' + textOf(note))
+  })
+})
+
+/* ================================================================== */
+/* 用例 10f：上游检查（git fetch）在 ⋯ 菜单里                             */
+/* ================================================================== */
+
+test('用例 10f：⋯ 菜单里的「检查上游更新」执行 git fetch 并报落后提交数', async () => {
+  const fetches = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk({ ...statusThree(), remoteUrl: 'git@github.com:owner/repo.git' }),
+      'plugin/info': () => sayOk({ name: 'dsh-git-panel', version: '0.35.1', repositoryUrl: '', fullName: null }),
+      'remote/fetch': (payload) => {
+        fetches.push(payload)
+        return sayOk({
+          url: 'git@github.com:owner/repo.git',
+          branch: 'main', head: 'abc1234', upstream: 'origin/main',
+          ahead: 0, behind: 3, fetchedAt: Date.now()
+        })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    // 打开 ⋯ 菜单
+    const more = panel.one((node) => isHost(node) && attr(node, 'data-action') === 'more')
+    click(more)
+    await panel.flush()
+    const item = panel.one((node) => isHost(node) && textOf(node) === '检查上游更新（git fetch）')
+    assert(item !== null, '⋯ 菜单里应有「检查上游更新」')
+    click(item)
+    await panel.flush()
+
+    eq(fetches.length, 1, '应执行一次 git fetch')
+    eq(fetches[0], { rootPath: PROJECT })
+    const note = findOne(panel.tree, (node) => isHost(node) && node.props['data-update-note'] !== undefined)
+    assert(note !== null, '应显示上游检查结果')
+    eq(attr(note, 'data-update-note'), 'warn', '落后时应是 warn')
+    assert(textOf(note).includes('落后 3 个提交'), '文案：' + textOf(note))
+    assert(textOf(note).includes('origin/main'), '要带上游名：' + textOf(note))
   })
 })
 

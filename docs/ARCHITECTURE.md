@@ -179,7 +179,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 48 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
+通过 50 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）和 `branch/create`（从当前 HEAD 建分支并切过去）。远端操作只有一个端点（`remote/fetch`），只做 git fetch（只更新远端跟踪引用，不动工作区与本地分支）
 （`runGit` 全程用 `spawn` + 参数数组，不拼 shell 字符串）。
 
 | 端点 | 入参 | 返回 |
@@ -276,6 +276,13 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 - 查询失败 → 渲染错误卡 + 重试（失败必须让人看见，不能静默当成「没有 PR」）；
 - `linked:true` → 卡片带「刷新状态」与「查看 PR」；刷新时保留上一份数据，避免先消失再出现。
 
+**版本号按钮的语义（两件事不混）**：工具条右侧的版本号 chip 是**插件自身版本**（`v<package.json version>`），
+点击检查插件是否有新版本（`plugin/update` → GitHub 最新 release）：已是最新给 info、有新版本给 warn 且可点开
+release 页、失败给 error 并说清原因。
+
+**仓库上游检查**（`git fetch` + ahead/behind）不再挂在版本号上，移到 `⋯` 菜单的「检查上游更新」：
+它是只读操作，结果只报告不自动合并。两者共用一个提示位（谁最后动作显示谁），但语义、文案与状态互不影响。
+
 **PR 状态与反馈约定**：变更页签顶部显示「当前分支的 PR」卡片（`pr/linked`）：
 状态由 `pull.merged / pull.state / gate.review.state / pull.mergeable` 推导，只用平台给的事实，
 不推断「谁 approve 了」（Gitee 不提供评审明细，卡片只显示平台合并门禁）。
@@ -349,6 +356,8 @@ PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 J
 | `remote/pull/merge` | `{accountId, fullName, number, method, deleteBranch?}` | `{merged, method, branchDeleted, headBranch}`；不可合并/已合并/非打开状态在宿主侧拦下 |
 | `remote/clone` | `{accountId, fullName, cloneUrl, projectRoot, targetName?}` | `{path, name, fullName}`；鉴权只走 `-c http.extraHeader`，不写进 `.git/config` |
 | `commit` | `{rootPath, message}` | `{head, subject, includedUnstaged}`；有暂存只提交暂存，没有则先 `git add -A` 再提交 |
+| `plugin/info` | `{}` | `{name, version, repositoryUrl, fullName}`；本地读 package.json，不联网 |
+| `plugin/update` | `{}` | `{currentVersion, latestVersion, url, publishedAt, newer}`；查 GitHub 最新 release 并严格比较版本，失败抛 `update-check-failed`（不把失败当成「已是最新」） |
 | `pr/linked` | `{rootPath, accountId?}` | `{linked:true, provider, fullName, branch, accountId, number, pull, gate, comments}` 或 `{linked:false, reason}`；reason ∈ no-remote-repo / detached-head / no-account / no-pull。没有 PR 不是错误 |
 | `pr/prepare` | `{rootPath}` | `{repo:{provider,fullName}, head, bases, accounts, pushed, ahead, behind}`；origin 指向 GitHub/Gitee、当前在分支上、有对应账号，否则直接报错（no-remote-repo / no-account / detached-head / no-base-branch） |
 | `pr/generate` | `{rootPath, base}` | `{title, body, commits}`；`git log origin/base..HEAD` + `git diff origin/base...HEAD` 交给提交说明模型，严格 JSON |

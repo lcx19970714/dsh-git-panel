@@ -1048,6 +1048,20 @@ export const CSS = `
 .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dgp-ai-error > .dgp-detail-failure { margin: 0; }
 .dgp-pull-confirm { display: inline-flex; gap: 6px; align-items: center; }
+/* 有新版本：版本号按钮提示一下 */
+.dgp-version[data-newer="true"] { color: var(--dsw-alias-state-warn-label); }
+.dgp-update-note-link {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 2px;
+  font: inherit;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.dgp-update-note-link:hover { text-decoration: underline; }
 /* 变更页签：当前分支的 PR 状态卡 */
 .dgp-pr-card {
   display: flex;

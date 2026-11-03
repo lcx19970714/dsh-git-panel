@@ -497,6 +497,63 @@ test('深度审阅的准备：找本地仓库 → 切分支；没有则克隆到
   assert.ok(existsSync(path.join(empty, 'a.js')))
 })
 
+test('插件版本与更新检查：本地版本取 package.json，最新版本严格比较，失败明确报错', async () => {
+  const { pluginInfo, compareVersions, checkPluginUpdate } = await import('../host/plugin-meta.js')
+  const pkgText = readFileSync(new URL('../package.json', import.meta.url), 'utf8')
+  const pkg = JSON.parse(pkgText)
+
+  const info = pluginInfo()
+  assert.equal(info.version, pkg.version, '版本必须来自 package.json')
+  assert.equal(info.fullName, 'lcx19970714/dsh-git-panel', '仓库全名从 repository 解析')
+
+  assert.equal(compareVersions('0.36.0', '0.35.1'), 1)
+  assert.equal(compareVersions('0.35.1', '0.36.0'), -1)
+  assert.equal(compareVersions('0.35.1', '0.35.1'), 0)
+  assert.equal(compareVersions('0.35.10', '0.35.9'), 1, '数字段按数值比较，不是字符串')
+  assert.equal(compareVersions('1.0.0', '0.99.0'), 1)
+
+  const okFetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return { tag_name: 'v999.0.0', html_url: 'https://example.com/release', published_at: '2026-11-01T00:00:00Z' }
+    }
+  })
+  const newer = await checkPluginUpdate({ fetchImpl: okFetch })
+  assert.equal(newer.currentVersion, pkg.version)
+  assert.equal(newer.latestVersion, '999.0.0', 'tag 前缀 v 要去掉')
+  assert.equal(newer.newer, true)
+  assert.equal(newer.url, 'https://example.com/release')
+
+  const sameFetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return { tag_name: 'v' + pkg.version, html_url: 'x', published_at: '2026-11-01T00:00:00Z' }
+    }
+  })
+  assert.equal((await checkPluginUpdate({ fetchImpl: sameFetch })).newer, false, '同版本不算新版本')
+
+  // 失败必须抛错，不能当成「已是最新」
+  await assert.rejects(
+    () => checkPluginUpdate({ fetchImpl: async () => ({ ok: false, status: 403, async json() { return {} } }) }),
+    (error) => error.code === 'update-check-failed' && error.message.includes('403')
+  )
+  await assert.rejects(
+    () => checkPluginUpdate({ fetchImpl: async () => { throw new Error('network down') } }),
+    (error) => error.code === 'update-check-failed' && error.message.includes('network down')
+  )
+  await assert.rejects(
+    () => checkPluginUpdate({ fetchImpl: async () => ({ ok: true, status: 200, async json() { return { tag_name: '' } } }) }),
+    (error) => error.code === 'update-check-failed'
+  )
+
+  // 路由：plugin/info 必须返回真实安装版本
+  const routeInfo = await callRoute('plugin/info', {})
+  assert.equal(routeInfo.ok, true)
+  assert.equal(routeInfo.value.version, pkg.version)
+})
+
 test('index.js 用到的 host/git.js 助手必须都已导入（防 readHead is not defined 复发）', async () => {
   const fs = await import('node:fs')
   const indexText = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8')

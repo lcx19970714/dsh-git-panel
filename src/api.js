@@ -275,6 +275,16 @@ export function prPrepare(payload, options) {
   return call('pr/prepare', payload, options)
 }
 
+/** 当前安装的插件版本（本地读，不联网）。 */
+export function pluginInfo(payload, options) {
+  return call('plugin/info', payload, options)
+}
+
+/** 检查插件是否有新版本（GitHub 最新 release）。 */
+export function pluginUpdate(payload, options) {
+  return call('plugin/update', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 30_000 })
+}
+
 /** 当前分支关联的 PR 摘要（没有关联 PR 时 linked:false + reason）。 */
 export function prLinked(payload, options) {
   return call('pr/linked', payload, options)

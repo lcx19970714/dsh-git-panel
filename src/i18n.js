@@ -8,14 +8,22 @@
 export const NS = 'dshGitPanel'
 
 export const zh = {
-  'toolbar.checkUpdates': '检测更新',
+  'toolbar.checkUpdates': '检查插件更新',
   'toolbar.openRemote': '打开 Git 仓库',
   'toolbar.refreshNow': '立即刷新',
+  'update.currentVersion': '当前 v{version}',
+  'update.latestVersion': '最新 v{version}',
+  'update.pluginUpToDate': '插件已是最新（v{version}）',
+  'update.pluginNewer': '有新版本 v{version}（当前 v{current}）',
+  'update.openRelease': '打开 Release 页面',
+  'update.fetching': '正在拉取远端…',
+  'update.upstreamChecked': '上游 {upstream}（{time}）',
+  'toolbar.fetchUpstream': '检查上游更新（git fetch）',
   'update.checking': '正在检测更新…',
   'update.upToDate': '已是最新（{upstream}）',
   'update.behind': '落后 {count} 个提交（{upstream}）',
   'update.ahead': '本地领先 {count} 个提交（{upstream}）',
-  'update.failed': '检测更新失败：{message}',
+  'update.failed': '检查更新失败：{message}',
   'update.noRemote': '这个仓库没有配置远端',
   'update.checkedAt': '检测于 {time}',
   'tab.title': '变更',
@@ -389,9 +397,17 @@ export const zh = {
 }
 
 export const en = {
-  'toolbar.checkUpdates': 'Check for updates',
+  'toolbar.checkUpdates': 'Check plugin updates',
   'toolbar.openRemote': 'Open Git repository',
   'toolbar.refreshNow': 'Refresh now',
+  'update.currentVersion': 'Current v{version}',
+  'update.latestVersion': 'Latest v{version}',
+  'update.pluginUpToDate': 'Plugin is up to date (v{version})',
+  'update.pluginNewer': 'New version v{version} available (current v{current})',
+  'update.openRelease': 'Open release page',
+  'update.fetching': 'Fetching remote…',
+  'update.upstreamChecked': 'Upstream {upstream} ({time})',
+  'toolbar.fetchUpstream': 'Check upstream (git fetch)',
   'update.checking': 'Checking for updates…',
   'update.upToDate': 'Up to date ({upstream})',
   'update.behind': '{count} commits behind ({upstream})',

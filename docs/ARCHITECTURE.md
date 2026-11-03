@@ -217,6 +217,9 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 **深度审阅约定**：`remote/pull/deep-review` 不只发 diff：宿主把 PR 的 head 拉到临时目录，
 读**改动文件的完整内容**后再交给模型（输入上限 600k 字符、单文件 80k）。
 
+- 找本地仓库：客户端把项目里**所有**仓库根的路径都发给宿主（不是只发当前选中的那个），
+  宿主逐个读 `remote.origin.url`，去掉 `.git`、统一小写与正斜杠后判断是否包含 PR 的 `owner/repo`，
+  命中第一个就复用它；命中不到才临时拉取。结果里带 `localRootUsed`，界面显示用的是哪个仓库。
 - 拉取方式：本地仓库的 origin 与 PR 仓库一致时，用 `git clone --shared` 在临时目录借用它的对象库
   （用户仓库零写入：不新增 ref、不注册 worktree），再 `--depth=1` fetch 只下载缺失对象；
   不一致或没有本地仓库时，在系统临时目录建裸仓库 `git fetch --depth=1`，用完整个目录删除；

@@ -230,10 +230,17 @@ test('deep-review：本地仓库匹配时复用对象库，不匹配时用临时
   const local = path.join(tempDir('dgp-local-'), 'clone')
   execFileSync('git', ['clone', '-q', platform, local], { stdio: 'pipe' })
 
+  // 传多个仓库根：只有匹配 origin 的那个才会被复用
+  const platform2 = path.join(tempDir('dgp-platform2-'), 'bob', 'tool.git')
+  execFileSync('git', ['init', '--bare', '-q', platform2], { stdio: 'pipe' })
+  execFileSync('git', ['push', '-q', platform2, 'HEAD:refs/heads/main'], { cwd: work, stdio: 'pipe' })
+  const other = path.join(tempDir('dgp-local-other-'), 'other')
+  execFileSync('git', ['clone', '-q', platform2, other], { stdio: 'pipe' })
   const reused = await materializePull({
     fullName: 'alice/app', url: platform, remoteRef: 'refs/pull/1/head', user: 'x', token: ''
-  }, { localRoot: local })
+  }, { localRoots: [other, local] })
   assert.equal(reused.objectSource, 'local', '应复用本地仓库')
+  assert.equal(reused.localRoot, local, '命中的应是 origin 匹配的那个仓库：' + reused.localRoot)
   assert.ok(existsSync(path.join(reused.tree, 'a.js')), 'worktree 里应有文件')
   await reused.cleanup()
   assert.equal(existsSync(reused.tree), false, 'worktree 应被清理')
@@ -245,7 +252,7 @@ test('deep-review：本地仓库匹配时复用对象库，不匹配时用临时
   const tempRoot = tempDir('dgp-temp-')
   const fetched = await materializePull({
     fullName: 'other/repo', url: platform, remoteRef: 'refs/pull/1/head', user: 'x', token: ''
-  }, { localRoot: local, tempRoot })
+  }, { localRoots: [local], tempRoot })
   assert.equal(fetched.objectSource, 'temp', '仓库不匹配时用临时裸仓库')
   assert.ok(existsSync(path.join(fetched.tree, 'a.js')))
   await fetched.cleanup()

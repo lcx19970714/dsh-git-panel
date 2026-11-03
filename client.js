@@ -1659,8 +1659,8 @@ window.__ModuleLoader__.load({
         'pull.aiDeepHint': '把 PR 的分支拉到临时目录，连同完整文件内容一起审（更慢，但能看上下文）',
         'pull.aiDeepRunning': '正在拉取 PR 代码并读取完整文件，可能需要更久…',
         'pull.aiDeepInfo': '深度审阅：已读取 {count} 个完整文件',
-        'pull.aiDeepLocal': '复用了本地仓库的对象（已存在的提交不会重下）',
-        'pull.aiDeepTemp': '临时拉取（本地没有对应仓库）',
+        'pull.aiDeepLocal': '复用了本地仓库 {repo} 的对象（已存在的提交不会重下）',
+        'pull.aiDeepTemp': '临时拉取（项目里没有这个仓库的本地克隆）',
         'pull.aiDeepSkipped': '有 {count} 个文件没读到完整内容：',
         'pull.aiStart': '开始审阅',
         'pull.aiOpenSettings': '去设置模型',
@@ -1983,7 +1983,7 @@ window.__ModuleLoader__.load({
         'pull.aiDeepHint': 'Fetch the PR branch into a temp folder and review with full file contents (slower, but sees context)',
         'pull.aiDeepRunning': 'Fetching the PR and reading full files — this takes longer…',
         'pull.aiDeepInfo': 'Deep review: read {count} full files',
-        'pull.aiDeepLocal': 'reused your local repository objects',
+        'pull.aiDeepLocal': 'reused objects from your local clone {repo}',
         'pull.aiDeepTemp': 'fetched into a temporary repo (no matching local clone)',
         'pull.aiDeepSkipped': '{count} file(s) had no full content:',
         'pull.aiStart': 'Start review',
@@ -3850,8 +3850,8 @@ window.__ModuleLoader__.load({
             onPass: passPull,
             onAiReview: aiReviewPull,
             onDeepReview: deepReviewPull,
-            // 本地有对应仓库时深度审阅可以复用它的对象库（快很多）
-            localRepoRoot: activeRoot !== null && activeRoot.isGit === true ? activeRoot.path : null,
+            // 深度审阅会拿这些仓库逐个比对 origin，命中就复用它的对象库（快很多）
+            localRepoRoots: gitRoots.map((root) => root.path),
             onComment: commentPull,
             onOpenSettings: openSettings,
             onMerge: mergePull,
@@ -9039,9 +9039,9 @@ window.__ModuleLoader__.load({
             accountId: selection.accountId,
             fullName: selection.fullName,
             number: pull.number,
-            // 深度审阅：本地有对应仓库就带上，宿主据此复用它的对象库
-            ...(mode === 'deep' && typeof source.localRepoRoot === 'string'
-              ? { rootPath: source.localRepoRoot }
+            // 深度审阅：把项目里的仓库根都带上，宿主逐个比对 origin 后决定是否复用
+            ...(mode === 'deep' && Array.isArray(source.localRepoRoots)
+              ? { rootPaths: source.localRepoRoots }
               : {})
           })
           if (result !== null && result !== undefined && result.ok === true) {
@@ -9202,7 +9202,9 @@ window.__ModuleLoader__.load({
                 ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-deep-info' },
                   t('pull.aiDeepInfo', { count: ai.result.filesRead ?? 0 }),
                   ' · ',
-                  t(ai.result.objectSource === 'local' ? 'pull.aiDeepLocal' : 'pull.aiDeepTemp'))
+                  ai.result.objectSource === 'local'
+                    ? t('pull.aiDeepLocal', { repo: String(ai.result.localRootUsed ?? '').split(/[\\/]/).pop() })
+                    : t('pull.aiDeepTemp'))
                 : null,
               Array.isArray(ai.result.fullFilesSkipped) && ai.result.fullFilesSkipped.length > 0
                 ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-deep-skipped' },

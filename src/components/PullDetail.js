@@ -129,9 +129,9 @@ export function PullDetail(props) {
       accountId: selection.accountId,
       fullName: selection.fullName,
       number: pull.number,
-      // 深度审阅：本地有对应仓库就带上，宿主据此复用它的对象库
-      ...(mode === 'deep' && typeof source.localRepoRoot === 'string'
-        ? { rootPath: source.localRepoRoot }
+      // 深度审阅：把项目里的仓库根都带上，宿主逐个比对 origin 后决定是否复用
+      ...(mode === 'deep' && Array.isArray(source.localRepoRoots)
+        ? { rootPaths: source.localRepoRoots }
         : {})
     })
     if (result !== null && result !== undefined && result.ok === true) {
@@ -292,7 +292,9 @@ export function PullDetail(props) {
           ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-deep-info' },
             t('pull.aiDeepInfo', { count: ai.result.filesRead ?? 0 }),
             ' · ',
-            t(ai.result.objectSource === 'local' ? 'pull.aiDeepLocal' : 'pull.aiDeepTemp'))
+            ai.result.objectSource === 'local'
+              ? t('pull.aiDeepLocal', { repo: String(ai.result.localRootUsed ?? '').split(/[\\/]/).pop() })
+              : t('pull.aiDeepTemp'))
           : null,
         Array.isArray(ai.result.fullFilesSkipped) && ai.result.fullFilesSkipped.length > 0
           ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-deep-skipped' },

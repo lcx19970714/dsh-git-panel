@@ -51,8 +51,18 @@ async function localRepoMatches(root, fullName) {
  */
 export async function materializePull(source, options = {}) {
   const { signal, tempRoot } = options
-  const localRoot = typeof options.localRoot === 'string' && options.localRoot !== '' ? options.localRoot : null
-  const useLocal = localRoot !== null && await localRepoMatches(localRoot, source.fullName)
+  const candidates = Array.isArray(options.localRoots)
+    ? options.localRoots.filter((root) => typeof root === 'string' && root !== '')
+    : []
+  // 逐个试项目里的仓库根：命中第一个就复用（同一仓库的多个克隆对象内容一致）
+  let localRoot = null
+  for (const candidate of candidates) {
+    if (await localRepoMatches(candidate, source.fullName)) {
+      localRoot = candidate
+      break
+    }
+  }
+  const useLocal = localRoot !== null
 
   if (useLocal) {
     const base = await mkdtemp(path.join(tempRoot ?? os.tmpdir(), 'dsh-deep-review-local-'))
@@ -75,7 +85,7 @@ export async function materializePull(source, options = {}) {
       if (error instanceof GitError) throw error
       throw new GitError('deep-review-failed', '从本地仓库取 PR 代码失败：' + (error instanceof Error ? error.message : String(error)))
     }
-    return { root: base, tree, objectSource: 'local', cleanup }
+    return { root: base, tree, objectSource: 'local', localRoot, cleanup }
   }
 
   const base = await mkdtemp(path.join(tempRoot ?? os.tmpdir(), 'dsh-deep-review-'))
@@ -98,7 +108,7 @@ export async function materializePull(source, options = {}) {
     if (error instanceof GitError) throw error
     throw new GitError('deep-review-failed', '拉取 PR 代码失败：' + (error instanceof Error ? error.message : String(error)))
   }
-  return { root: base, tree, objectSource: 'temp', cleanup }
+  return { root: base, tree, objectSource: 'temp', localRoot: null, cleanup }
 }
 
 /**
@@ -159,7 +169,7 @@ export async function deepReview(input) {
   const materialized = await materializePull(source, {
     signal,
     tempRoot: input.tempRoot,
-    localRoot: input.localRoot
+    localRoots: input.localRoots
   })
   let result
   let cleanupError = null
@@ -177,6 +187,7 @@ export async function deepReview(input) {
       ...result,
       deep: true,
       objectSource: materialized.objectSource,
+      localRootUsed: materialized.localRoot,
       filesRead: fullFiles.length,
       // 没读到完整内容的文件（二进制/过大/已删除）要如实带出去
       fullFilesSkipped: skipped

@@ -672,6 +672,44 @@ await test('Gitee 的 fork PR：读不到 fork 仓库时直接说清原因（不
   )
 })
 
+await test('PR 详情带评论列表：GitHub 走 issues 评论、Gitee 走 pulls 评论，读失败要显式标记', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/repos\/alice\/app\/issues\/7\/comments\?/, {
+      json: [{ id: 11, user: { login: 'bob' }, body: '看起来不错', created_at: '2026-11-01T10:00:00Z', html_url: 'x' }]
+    }],
+    [/\/repos\/alice\/app\/pulls\/7\/reviews$/, { json: [] }],
+    [/\/repos\/alice\/app\/pulls\/7$/, {
+      json: { number: 7, title: 'T', state: 'open', base: { ref: 'main' }, head: { ref: 'feat', sha: 'a'.repeat(40) } }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+
+  const detail = await remotes.pullDetail({ accountId: 'github:alice', fullName: 'alice/app', number: 7 })
+  assert.equal(detail.comments.length, 1, '应读到评论')
+  assert.deepEqual(detail.comments[0], {
+    id: 11, author: 'bob', body: '看起来不错', createdAt: '2026-11-01T10:00:00Z', url: 'x'
+  })
+  assert.equal(detail.commentsUnavailable, null)
+
+  // 评论接口 500：PR 详情照常返回，但明确标记评论不可用
+  const failing = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/repos\/alice\/app\/issues\/7\/comments\?/, { status: 500, json: {} }],
+    [/\/repos\/alice\/app\/pulls\/7\/reviews$/, { json: [] }],
+    [/\/repos\/alice\/app\/pulls\/7$/, { json: { number: 7, title: 'T', state: 'open', base: { ref: 'main' }, head: { ref: 'feat' } } }]
+  ])
+  const remotes2 = createRemotes({ credentials: fakeCredentials(), fetchImpl: failing })
+  await remotes2.addAccount({ provider: 'github', token: 't' })
+  const partial = await remotes2.pullDetail({ accountId: 'github:alice', fullName: 'alice/app', number: 7 })
+  assert.equal(partial.pull.title, 'T', 'PR 详情不受影响')
+  assert.equal(partial.comments.length, 0)
+  assert.ok(typeof partial.commentsUnavailable === 'string' && partial.commentsUnavailable !== '',
+    '评论读失败要明确标记原因')
+})
+
 await test('PR 文件 diff：按页取满、带 patch；Gitee 与 GitHub 都走 files 接口', async () => {
   const credentials = fakeCredentials()
   const seen = []

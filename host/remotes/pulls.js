@@ -31,6 +31,19 @@ export function createPulls(deps) {
 
     const detail = await readObject(await send(base), 'PR 详情')
 
+    // 评论列表：GET 与 POST 同一个路径（GitHub issues/{n}/comments、Gitee pulls/{n}/comments）
+    let comments = []
+    let commentsUnavailable = null
+    try {
+      const repoBase = provider.apiBase + provider.repoPath(fullName)
+      const listed = await readJson(await send(repoBase + provider.commentPath(number) + '?per_page=50&page=1'))
+      if (Array.isArray(listed)) comments = listed.map(provider.pull.normalizeComment)
+      else commentsUnavailable = '平台返回的评论列表不是数组'
+    } catch (error) {
+      // 评论读不到不拖垮 PR 详情，但必须明确告诉界面
+      commentsUnavailable = error instanceof GitError ? error.message : String(error)
+    }
+
     let reviews = []
     if (provider.pull.reviewsPath !== null) {
       const listed = await readArray(await send(base + '/reviews'), provider.label + ' 审查记录')
@@ -43,6 +56,8 @@ export function createPulls(deps) {
     return {
       pull: provider.pull.normalizePull(detail),
       reviews,
+      comments,
+      commentsUnavailable,
       gate: {
         review: reviewGate,
         // 两家都没有「查询测试状态」的接口，只能执行或从合并被拒反推

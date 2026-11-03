@@ -1229,6 +1229,28 @@ window.__ModuleLoader__.load({
       .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
       .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .dgp-ai-error > .dgp-detail-failure { margin: 0; }
+      /* PR 评论：已有对话 + 常驻输入框 */
+      .dgp-comment-body {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.6;
+        color: var(--dsw-alias-label-secondary);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .dgp-comment-compose { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+      .dgp-ai-draft {
+        margin: 0;
+        padding: 8px;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+        font-size: 12px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        max-height: 240px;
+        overflow-y: auto;
+      }
       /* 深度审阅执行步骤：每一步做了什么、耗时、是否失败 */
       .dgp-ai-steps { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
       .dgp-step-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 1px; }
@@ -1718,6 +1740,11 @@ window.__ModuleLoader__.load({
         'pull.severity.major': '重要',
         'pull.severity.minor': '次要',
         'pull.severity.nit': '细节',
+        'pull.commentsTitle': '评论',
+        'pull.commentsEmpty': '还没有评论：在下面写一条给对方留言。',
+        'pull.commentPlaceholder': '写给作者的话（支持 Markdown）：确认无误再点发表评论',
+        'pull.commentFilled': '已填入评论框，可继续编辑',
+        'pull.aiFillComment': '填入评论框',
         'pull.aiCommentLabel': '评论草稿',
         'pull.aiCommentPlaceholder': 'AI 起草，可直接编辑；确认无误再点「提交评论」',
         'pull.aiCommentSubmit': '提交评论',
@@ -2054,6 +2081,11 @@ window.__ModuleLoader__.load({
         'pull.severity.major': 'major',
         'pull.severity.minor': 'minor',
         'pull.severity.nit': 'nit',
+        'pull.commentsTitle': 'Comments',
+        'pull.commentsEmpty': 'No comments yet — write one below.',
+        'pull.commentPlaceholder': 'Message for the author (Markdown supported); post when ready',
+        'pull.commentFilled': 'Copied into the comment box',
+        'pull.aiFillComment': 'Fill comment box',
         'pull.aiCommentLabel': 'Comment draft',
         'pull.aiCommentPlaceholder': 'Drafted by AI — edit freely; post only when you are happy with it',
         'pull.aiCommentSubmit': 'Post comment',
@@ -9126,6 +9158,8 @@ window.__ModuleLoader__.load({
         const [draft, setDraft] = useState('')
         const [commentBusy, setCommentBusy] = useState(false)
         const [commentNotice, setCommentNotice] = useState(null)
+        // 常驻评论框：人工审阅后也能随时给对方留言
+        const [commentDraft, setCommentDraft] = useState('')
 
         if (selection === null) return null
 
@@ -9197,6 +9231,11 @@ window.__ModuleLoader__.load({
           0
         )
         const draftHeight = Math.min(Math.max(draftLines, 6), 30) * 19 + 24 + 'px'
+        const commentLines = commentDraft.split('\n').reduce(
+          (sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)),
+          0
+        )
+        const commentHeight = Math.min(Math.max(commentLines, 4), 20) * 19 + 24 + 'px'
 
         const run = async (kind, action) => {
           setBusy(kind)
@@ -9377,7 +9416,7 @@ window.__ModuleLoader__.load({
             accountId: selection.accountId,
             fullName: selection.fullName,
             number: pull.number,
-            comment: draft
+            comment: commentDraft
           })
           setCommentBusy(false)
           if (result !== null && result !== undefined && result.ok === true) setCommentNotice(result.message ?? t('pull.aiCommentDone'))
@@ -9628,23 +9667,60 @@ window.__ModuleLoader__.load({
                     className: 'dgp-btn',
                     'data-size': 'sm',
                     'data-variant': 'primary',
-                    'data-dgp-pull': 'comment-submit',
-                    disabled: commentBusy || draft.trim() === '',
-                    onClick: submitComment
-                  }, t(commentBusy ? 'pull.aiCommentSubmitting' : 'pull.aiCommentSubmit'))),
-                h('textarea', {
-                  className: 'dgp-input dgp-ai-textarea',
-                  'data-dgp-pull': 'ai-comment',
-                  style: { height: draftHeight },
-                  placeholder: t('pull.aiCommentPlaceholder'),
-                  value: draft,
-                  spellCheck: false,
-                  onChange: (event) => setDraft(event.target.value)
-                }),
-                commentNotice === null
-                  ? null
-                  : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-notice' }, commentNotice)),
+                    'data-dgp-pull': 'ai-fill-comment',
+                    disabled: draft.trim() === '',
+                    onClick: () => {
+                      setCommentDraft(draft)
+                      setCommentNotice(t('pull.commentFilled'))
+                    }
+                  }, t('pull.aiFillComment'))),
+                h('pre', { className: 'dgp-ai-draft', 'data-dgp-pull': 'ai-comment' }, draft)),
               renderSteps(ai.steps, ai.logPath))),
+
+          /* ------------------------------ 评论 ------------------------------ */
+          h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'comments' },
+            h('div', { className: 'dgp-detail-head' },
+              h('span', { className: 'dgp-detail-title' }, t('pull.commentsTitle')),
+              h('span', { className: 'dgp-detail-count' },
+                Array.isArray(data.comments) ? data.comments.length : 0)),
+            data.commentsUnavailable === null || data.commentsUnavailable === undefined
+              ? null
+              : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'comments-error' }, data.commentsUnavailable),
+            (data.comments ?? []).length === 0
+              ? h('p', { className: 'dgp-detail-empty' }, t('pull.commentsEmpty'))
+              : h('ul', { className: 'dgp-detail-list' },
+                data.comments.map((comment, index) => h('li', {
+                  key: String(comment.id ?? index),
+                  className: 'dgp-detail-item',
+                  'data-dgp-comment': String(comment.id ?? index)
+                },
+                h('span', { className: 'dgp-detail-meta' },
+                  h('span', { className: 'dgp-detail-author' }, comment.author),
+                  comment.createdAt === '' ? null : h('span', null, formatDateTime(Date.parse(comment.createdAt)))),
+                h('pre', { className: 'dgp-comment-body' }, comment.body)))),
+            h('div', { className: 'dgp-comment-compose' },
+              h('textarea', {
+                className: 'dgp-input dgp-ai-textarea',
+                'data-dgp-pull': 'comment-draft',
+                placeholder: t('pull.commentPlaceholder'),
+                value: commentDraft,
+                spellCheck: false,
+                style: { height: commentHeight },
+                onChange: (event) => setCommentDraft(event.target.value)
+              }),
+              h('div', { className: 'dgp-pull-actions' },
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-variant': 'primary',
+                  'data-dgp-pull': 'comment-submit',
+                  disabled: commentBusy || commentDraft.trim() === '',
+                  onClick: submitComment
+                }, t(commentBusy ? 'pull.aiCommentSubmitting' : 'pull.aiCommentSubmit')))),
+            commentNotice === null
+              ? null
+              : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-notice' }, commentNotice)),
 
           /* ------------------------------ 审查 ------------------------------ */
           h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'review' },

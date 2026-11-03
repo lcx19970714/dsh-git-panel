@@ -1047,6 +1047,28 @@ export const CSS = `
 .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
 .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dgp-ai-error > .dgp-detail-failure { margin: 0; }
+/* PR 评论：已有对话 + 常驻输入框 */
+.dgp-comment-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dgp-comment-compose { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.dgp-ai-draft {
+  margin: 0;
+  padding: 8px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow-y: auto;
+}
 /* 深度审阅执行步骤：每一步做了什么、耗时、是否失败 */
 .dgp-ai-steps { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
 .dgp-step-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 1px; }

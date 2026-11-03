@@ -2579,6 +2579,8 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
           commits: 2, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
         },
         reviews: [],
+        comments: [{ id: 1, author: 'author-one', body: '这个改动我先看下', createdAt: '2026-11-01T10:00:00Z', url: '' }],
+        commentsUnavailable: null,
         gate: { review: { state: 'pending', approvals: 0, changesRequested: 0 }, test: { state: 'unknown' }, mergeState: null },
         capabilities: { verdicts: ['approve', 'request-changes', 'comment'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
       }),
@@ -2637,23 +2639,30 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
     assert(textOf(skipped).includes('src/big.js'), '第二个文件也要列出')
     assert(textOf(skipped).includes('1300 行'), '要显示改动行数：' + textOf(skipped))
 
-    // 评论草稿：默认是 AI 写的，用户可以改
+    // 已有评论要能看到
+    const commentRow = panel.one((node) => isHost(node) && attr(node, 'data-dgp-comment') === '1')
+    assert(commentRow !== null, '评论区应列出已有评论')
+    assert(textOf(commentRow).includes('这个改动我先看下'), '评论正文：' + textOf(commentRow))
+
+    // AI 草稿是只读展示，点「填入评论框」写进常驻评论框
     const draftBox = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-comment')
-    assert(draftBox !== null, '应有评论草稿输入框')
-    assert(String(draftBox.props.value).includes('重试没有上限'), '草稿默认带 AI 内容')
-    assert(typeof draftBox.props.placeholder === 'string' && draftBox.props.placeholder !== '',
-      '说明应收进 placeholder，不再单独占一行')
-
-    // 高度自适应：默认至少 6 行
-    const baseHeight = Number.parseInt(String(draftBox.props.style.height), 10)
-    assert(Number.isFinite(baseHeight) && baseHeight >= 138, '默认高度至少 6 行：' + draftBox.props.style.height)
-
-    // 内容变多：高度跟着长，不需要手动拉
-    draftBox.props.onChange({ target: { value: Array.from({ length: 20 }, (_, i) => '第 ' + (i + 1) + ' 条：这里是一条建议').join('\n') } })
+    assert(draftBox !== null, '应有 AI 草稿')
+    assert(textOf(draftBox).includes('重试没有上限'), '草稿带 AI 内容：' + textOf(draftBox))
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-fill-comment'))
     await panel.flush()
-    const tallerBox = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-comment')
-    const tallerHeight = Number.parseInt(String(tallerBox.props.style.height), 10)
-    assert(tallerHeight > baseHeight, '内容变多后高度应变高：' + tallerHeight + ' vs ' + baseHeight)
+
+    const composer = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-draft')
+    assert(composer !== null, '应有常驻评论框')
+    assert(String(composer.props.value).includes('重试没有上限'), '填入后评论框带 AI 内容')
+
+    // 人工改稿：高度随内容自适应
+    const baseHeight = Number.parseInt(String(composer.props.style.height), 10)
+    assert(Number.isFinite(baseHeight) && baseHeight >= 100, '评论框默认至少 4 行：' + composer.props.style.height)
+    composer.props.onChange({ target: { value: Array.from({ length: 18 }, (_, i) => '第 ' + (i + 1) + ' 条：建议').join('\n') } })
+    await panel.flush()
+    const tallerBox = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-draft')
+    assert(Number.parseInt(String(tallerBox.props.style.height), 10) > baseHeight,
+      '内容变多后评论框应变高')
 
     tallerBox.props.onChange({ target: { value: '我自己改过的评论内容' } })
     await panel.flush()

@@ -1142,12 +1142,21 @@ export function Panel(props) {
       setLinkedPull(null)
       return
     }
-    setLinkedPull({ loading: true, error: null, data: null })
+    // 刷新时保留上一份数据：卡片不会先消失再出现
+    setLinkedPull((previous) => ({
+      loading: true,
+      error: null,
+      data: previous === null ? null : previous.data
+    }))
     try {
       const data = await api.prLinked({ rootPath: activeRoot.path })
       setLinkedPull({ loading: false, error: null, data })
     } catch (error) {
-      setLinkedPull({ loading: false, error: api.describeError(error, tRef.current), data: null })
+      setLinkedPull((previous) => ({
+        loading: false,
+        error: api.describeError(error, tRef.current),
+        data: previous === null ? null : previous.data
+      }))
     }
   }, [activeRoot])
 

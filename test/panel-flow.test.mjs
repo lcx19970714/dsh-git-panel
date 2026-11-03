@@ -3150,6 +3150,45 @@ test('用例 1W：变更页签显示当前分支的 PR 状态与未读反馈，�
   })
 })
 
+test('用例 1X：没有 PR 时不显示状态卡；查询失败才显示错误与重试', async () => {
+  // 1) 当前分支没有 PR：卡片完全不存在，不占位、不给无意义的刷新按钮
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'pr/linked': () => sayOk({ linked: false, reason: 'no-pull' })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr-card') !== undefined), null,
+      '没有 PR 时不应出现任何状态卡')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'create-pr') !== null,
+      '「创建 PR」仍然是可见的下一步')
+  })
+
+  // 2) 查询失败：必须让人看见，并给重试
+  const calls = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'pr/linked': () => {
+        calls.push(1)
+        return sayFail('remote-api-failed', 'HTTP 500：平台接口暂时不可用')
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const card = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr-card') === 'error')
+    assert(card !== null, '查询失败要显示错误卡')
+    assert(textOf(card).includes('HTTP 500'), '要带真实原因：' + textOf(card))
+    const before = calls.length
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr-card') === 'retry'))
+    await panel.flush()
+    eq(calls.length, before + 1, '点重试要真的再查一次')
+  })
+})
+
 test('用例 1R：没配 AI 审阅模型时，报错旁边有「去设置模型」入口', async () => {
   await withPanel({
     routes: {

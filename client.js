@@ -1872,12 +1872,8 @@ window.__ModuleLoader__.load({
         'group.unstageAll': '取消全部暂存',
 
         'commit.placeholder': '提交说明',
-        'prCard.loading': '正在读取 PR 状态…',
-        'prCard.retry': '刷新',
-        'prCard.no-pull': '当前分支还没有 PR',
-        'prCard.no-account': '还没有配置对应平台的账号',
-        'prCard.no-remote-repo': 'origin 不是 GitHub/Gitee 仓库',
-        'prCard.detached-head': '当前不在任何分支上',
+        'prCard.retry': '重试',
+        'prCard.refresh': '刷新状态',
         'prCard.unread': '{count} 条新反馈',
         'prCard.latest': '最近评论（{author}）：',
         'prCard.open': '查看 PR',
@@ -2257,12 +2253,8 @@ window.__ModuleLoader__.load({
         'group.unstageAll': 'Unstage all',
 
         'commit.placeholder': 'Commit message',
-        'prCard.loading': 'Reading PR status…',
-        'prCard.retry': 'Refresh',
-        'prCard.no-pull': 'No PR for this branch yet',
-        'prCard.no-account': 'No account for this platform yet',
-        'prCard.no-remote-repo': 'origin is not a GitHub/Gitee repository',
-        'prCard.detached-head': 'Not on any branch',
+        'prCard.retry': 'Retry',
+        'prCard.refresh': 'Refresh status',
         'prCard.unread': '{count} new comments',
         'prCard.latest': 'Latest ({author}): ',
         'prCard.open': 'View PR',
@@ -3574,12 +3566,21 @@ window.__ModuleLoader__.load({
             setLinkedPull(null)
             return
           }
-          setLinkedPull({ loading: true, error: null, data: null })
+          // 刷新时保留上一份数据：卡片不会先消失再出现
+          setLinkedPull((previous) => ({
+            loading: true,
+            error: null,
+            data: previous === null ? null : previous.data
+          }))
           try {
             const data = await api.prLinked({ rootPath: activeRoot.path })
             setLinkedPull({ loading: false, error: null, data })
           } catch (error) {
-            setLinkedPull({ loading: false, error: api.describeError(error, tRef.current), data: null })
+            setLinkedPull((previous) => ({
+              loading: false,
+              error: api.describeError(error, tRef.current),
+              data: previous === null ? null : previous.data
+            }))
           }
         }, [activeRoot])
 
@@ -8700,9 +8701,11 @@ window.__ModuleLoader__.load({
       /**
        * src/components/PullStatusCard.js —— 变更页签顶部：当前分支的 PR 状态
        *
-       * 只展示「平台事实 + 本地事实」，不编造：
-       *  - 没有关联 PR / 没有账号 / origin 不是平台仓库：直说原因
-       *  - 有 PR：状态（评审中 / 需要修改 / 可以合并 / 已合并 / 已关闭）、未读反馈数、最近评论预览
+       * 只在「有 PR」或「查询失败」时出现：
+       *  - 没有关联 PR / 没有账号 / origin 不是平台仓库：**什么都不显示**
+       *    （此时「创建 PR」按钮就是唯一的下一步，不需要一张空卡片占地方）
+       *  - 查询失败：显示错误 + 重试（这是用户真正需要知道的信息，不能吞）
+       *  - 有 PR：状态、未读反馈、最近评论、查看/刷新
        */
       const { h } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
@@ -8722,36 +8725,23 @@ window.__ModuleLoader__.load({
         const card = source.card
 
         if (card === null || card === undefined) return null
-        if (card.loading === true) {
-          return h('div', { className: 'dgp-pr-card', 'data-dgp-pr-card': 'loading' },
-            h('span', { className: 'dgp-detail-meta' }, t('prCard.loading')))
-        }
+
         if (card.error !== null) {
           return h('div', { className: 'dgp-pr-card', 'data-dgp-pr-card': 'error' },
-            h('p', { className: 'dgp-detail-failure' }, card.error),
+            h('p', { className: 'dgp-detail-failure', 'data-dgp-pr-card': 'error-message' }, card.error),
             h('button', {
               type: 'button',
               className: 'dgp-btn',
               'data-size': 'sm',
               'data-dgp-pr-card': 'retry',
+              disabled: card.loading === true,
               onClick: () => source.onRefresh()
             }, t('prCard.retry')))
         }
 
         const data = card.data
-        if (data === null || data.linked !== true) {
-          const reason = data === null ? 'no-pull' : data.reason
-          return h('div', { className: 'dgp-pr-card', 'data-dgp-pr-card': 'empty', 'data-reason': String(reason) },
-            h('span', { className: 'dgp-detail-meta' }, t('prCard.' + reason)),
-            h('button', {
-              type: 'button',
-              className: 'dgp-btn',
-              'data-size': 'sm',
-              'data-variant': 'ghost',
-              'data-dgp-pr-card': 'retry',
-              onClick: () => source.onRefresh()
-            }, t('prCard.retry')))
-        }
+        // 还在读，或者根本没有 PR：不占位
+        if (data === null || data.linked !== true) return null
 
         const pull = data.pull
         const status = statusOf(pull, data.gate)
@@ -8775,6 +8765,15 @@ window.__ModuleLoader__.load({
             : h('p', { className: 'dgp-pr-card-latest dgp-oneline', title: latest.body },
               t('prCard.latest', { author: latest.author }) + ' ' + latest.body.split('\n')[0]),
           h('div', { className: 'dgp-pr-card-actions' },
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'ghost',
+              'data-dgp-pr-card': 'refresh',
+              disabled: card.loading === true,
+              onClick: () => source.onRefresh()
+            }, t('prCard.refresh')),
             h('button', {
               type: 'button',
               className: 'dgp-btn',

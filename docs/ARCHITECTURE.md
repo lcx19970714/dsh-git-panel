@@ -269,6 +269,13 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 关闭 / 重新打开走 `remote/pull/state`（`PATCH /pulls/{n}` + `state`），两家路径与字段一致；
 关闭在界面里是两步确认，重新打开直接执行。
 
+显示规则（只在有意义时占位）：
+
+- `linked:false`（no-pull / no-account / no-remote-repo / detached-head）→ **不渲染卡片**：
+  这时「创建 PR」就是唯一的下一步，空卡片只是噪音；这些 reason 也不再翻译成界面文案；
+- 查询失败 → 渲染错误卡 + 重试（失败必须让人看见，不能静默当成「没有 PR」）；
+- `linked:true` → 卡片带「刷新状态」与「查看 PR」；刷新时保留上一份数据，避免先消失再出现。
+
 **PR 状态与反馈约定**：变更页签顶部显示「当前分支的 PR」卡片（`pr/linked`）：
 状态由 `pull.merged / pull.state / gate.review.state / pull.mergeable` 推导，只用平台给的事实，
 不推断「谁 approve 了」（Gitee 不提供评审明细，卡片只显示平台合并门禁）。

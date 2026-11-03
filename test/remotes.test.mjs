@@ -444,7 +444,7 @@ await test('PR 详情：返回基础信息、审查记录与平台能力', async
     [/api\.github\.com\/repos\/alice\/app\/pulls\/7$/, {
       json: {
         number: 7, title: 'Add remote panel', body: 'body text', state: 'open', user: { login: 'alice' },
-        base: { ref: 'main' }, head: { ref: 'feature/remote' }, mergeable: true, merged: false,
+        base: { ref: 'main' }, head: { ref: 'feature/remote', sha: 'a'.repeat(40) }, mergeable: true, merged: false,
         additions: 120, deletions: 8, changed_files: 6, commits: 3,
         created_at: '2026-01-30T00:00:00Z', updated_at: '2026-02-01T00:00:00Z',
         html_url: 'https://github.com/alice/app/pull/7'

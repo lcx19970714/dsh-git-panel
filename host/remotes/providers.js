@@ -84,6 +84,8 @@ function pullMeta(item, provider) {
     headBranch: typeof item.head?.ref === 'string' ? item.head.ref : '',
     // fork PR 的 head 在另一个仓库里：深度审阅要按这个仓库拉代码
     headRepo: typeof item.head?.repo?.full_name === 'string' ? item.head.repo.full_name : '',
+    // PR 的 head 提交：本地已经是这个提交时，深度审阅不需要再 fetch
+    headSha: typeof item.head?.sha === 'string' ? item.head.sha : '',
     additions: Number.isFinite(item.additions) ? item.additions : 0,
     deletions: Number.isFinite(item.deletions) ? item.deletions : 0,
     changedFiles: Number.isFinite(item.changed_files) ? item.changed_files : 0,

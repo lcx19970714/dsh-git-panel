@@ -176,22 +176,24 @@ export function remotePullTest(payload, options) {
 
 /** PR 的文件与 patch（AI 审阅的输入）。 */
 export function remotePullDiff(payload, options) {
-  return call('remote/pull/diff', payload, options)
+  return call('remote/pull/diff', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 60_000 })
 }
 
 /** 调审阅模型给出结构化结论。 */
 export function remotePullAiReview(payload, options) {
-  return call('remote/pull/ai-review', payload, options)
+  // 模型调用本身就慢：默认 20s 会让客户端先超时，而宿主还在跑
+  return call('remote/pull/ai-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 240_000 })
 }
 
 /** 深度审阅：宿主拉取 PR head 到临时 worktree，读完整文件后再让模型审。 */
 export function remotePullDeepReview(payload, options) {
-  return call('remote/pull/deep-review', payload, options)
+  // 深度审阅 = 拉代码/切分支（最长 5 分钟）+ 读文件 + 调模型（最长 3 分钟），给足 10 分钟
+  return call('remote/pull/deep-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
 }
 
 /** 把 PR 克隆到指定目录（深度审阅前的准备步骤）。 */
 export function remotePullCloneForReview(payload, options) {
-  return call('remote/pull/clone-for-review', payload, options)
+  return call('remote/pull/clone-for-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 900_000 })
 }
 
 /** 提交用户确认过的 PR 评论。 */

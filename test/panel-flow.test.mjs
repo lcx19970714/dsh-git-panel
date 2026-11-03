@@ -2720,7 +2720,13 @@ test('用例 1S：深度审阅先找本地仓库，没有就弹框确认克隆�
           comment: '1. 边界检查',
           model: 'p1/m1', truncated: false, filesIncluded: 1,
           deep: true, objectSource: 'local', localRootUsed: payload.rootPath, branch: payload.branch,
-          filesRead: 1, fullFilesSkipped: []
+          filesRead: 1, fullFilesSkipped: [],
+          logPath: 'C:/Users/x/.dsh/dsh-git-panel/review.log',
+          steps: [
+            { at: 0, level: 'info', step: '查找本地仓库', detail: '候选 1 个仓库根' },
+            { at: 12, level: 'info', step: '拉取并切换到 PR 分支', detail: 'origin/feat，耗时 120ms' },
+            { at: 500, level: 'info', step: '完成', detail: '读取完整文件 1 个' }
+          ]
         })
       },
       'remote/pull/clone-for-review': (payload) => {
@@ -2758,6 +2764,13 @@ test('用例 1S：深度审阅先找本地仓库，没有就弹框确认克隆�
     const info = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-deep-info')
     assert(info !== null, '深度审阅结果要显示读取信息')
     assert(textOf(info).includes('复用了本地仓库'), '要说明用的是哪个本地目录：' + textOf(info))
+
+    // 执行步骤：每一步做了什么要能看到
+    const steps = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'ai-steps')
+    assert(steps !== null, '应显示执行步骤')
+    assert(textOf(steps).includes('查找本地仓库'), '步骤里要有查找仓库：' + textOf(steps))
+    assert(textOf(steps).includes('拉取并切换到 PR 分支'), '步骤里要有切分支：' + textOf(steps))
+    assert(textOf(steps).includes('review.log'), '要能看到日志路径：' + textOf(steps))
   })
 })
 

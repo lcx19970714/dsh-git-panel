@@ -209,6 +209,28 @@ function test(name, fn) {
   tests.push({ name, fn })
 }
 
+test('深度审阅的准备：已在 PR 提交上时只切分支，不再 fetch', async () => {
+  const { prepareReviewBranch, headShaOf, reviewBranchName } = await import('../host/git.js')
+  const dir = makeRepo(path.join(tempDir('dgp-already-'), 'repo'))
+  const sha = await headShaOf(dir)
+  assert.equal(sha.length, 40, 'headShaOf 应返回完整提交号')
+
+  // 人为切到一个临时分支，验证 alreadyAtHead 只做 switch
+  const run = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  run('branch', 'other')
+  run('switch', '-q', 'other')
+
+  const prepared = await prepareReviewBranch(dir, {
+    sameRepo: true,
+    alreadyAtHead: true,
+    headBranch: 'other',
+    number: 3
+  })
+  assert.equal(prepared.branch, 'other', '应切到 PR 的分支')
+  assert.equal(prepared.fetched, false, '已在该提交上，不应触发 fetch')
+  assert.equal(reviewBranchName(3), 'dsh-review/pr-3')
+})
+
 test('深度审阅的准备：同仓库 PR 直接用本机 origin 切分支（不需要插件令牌）', async () => {
   const { prepareReviewBranch } = await import('../host/git.js')
   const { execFileSync } = await import('node:child_process')

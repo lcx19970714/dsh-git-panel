@@ -231,6 +231,14 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
   `project/resolve`（覆盖在终端 / VS Code 里切分支的情况；同一个分支值只重试一次，避免来回请求）；
 - 切换分支不动未提交改动：工作区脏时 git 自己拒绝，错误原样上抛；
 - 二进制、超过 2MB、已删除的文件不读完整内容，原因随 `fullFilesSkipped` 返回并显示。
+- 超时：客户端 RPC 默认 20s 只适合普通请求；`remote/pull/ai-review` 240s、
+  `remote/pull/deep-review` 600s、`remote/pull/clone-for-review` 900s，
+  避免「客户端超时了但宿主还在跑」；
+- 跳过重复拉取：PR 详情带 `headSha`，本地 HEAD 已经等于它时只做 `git switch`（甚至什么都不做），
+  不执行 `git fetch`；
+- 可观测性：每次深度审阅把步骤写进 `~/.dsh/dsh-git-panel/review.log`（时间戳 + 级别 + 耗时 + 仓库#PR），
+  同时通过宿主 logger 输出，并把步骤数组随结果/错误返回；界面「执行步骤」列出每一步做了什么、
+  耗时与失败原因，错误里附日志文件路径。
 - **同仓库 PR 不需要插件令牌**：本地克隆的 origin 就是 PR 所在仓库（或本地克隆的正是 fork）时，
   直接 `git fetch origin <headBranch>` + `git switch <headBranch>`，用用户本机配置的 git 凭据
   （SSH / 凭据管理器）——它们本来就能用，插件只负责切分支与读文件；

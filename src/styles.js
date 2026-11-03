@@ -1047,6 +1047,22 @@ export const CSS = `
 .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
 .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dgp-ai-error > .dgp-detail-failure { margin: 0; }
+/* 深度审阅执行步骤：每一步做了什么、耗时、是否失败 */
+.dgp-ai-steps { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.dgp-step-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 1px; }
+.dgp-step {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+.dgp-step[data-level="warn"] { color: var(--dsw-alias-state-warn-label); }
+.dgp-step[data-level="error"] { color: var(--dsw-alias-state-error-primary); }
+.dgp-step-time { flex: none; font-family: var(--ds-font-family-code); min-width: 56px; }
+.dgp-step-name { flex: none; color: var(--dsw-alias-label-secondary); }
+.dgp-step-detail { min-width: 0; overflow-wrap: anywhere; }
 /* 深度审阅前的「拉到哪里」确认框 */
 .dgp-ai-clone {
   display: flex;

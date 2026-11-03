@@ -1280,6 +1280,12 @@ export function reviewBranchName(number) {
   return 'dsh-review/pr-' + String(number)
 }
 
+/** 当前 HEAD 的完整提交号（判断"本地已经在 PR 提交上"）。 */
+export async function headShaOf(repoRoot, options = {}) {
+  const result = await runGit(repoRoot, ['rev-parse', 'HEAD'], { signal: options.signal })
+  return result.stdout.toString('utf8').trim()
+}
+
 /**
  * 把某个本地仓库切到 PR 对应的分支。
  *
@@ -1298,11 +1304,18 @@ export async function prepareReviewBranch(repoRoot, input, options = {}) {
   if (input.sameRepo === true) {
     const headBranch = typeof input.headBranch === 'string' ? input.headBranch : ''
     if (headBranch === '') throw new GitError('bad-request', 'PR 没有 head 分支名，无法切换')
+    // 已经在 PR 提交上：只切分支（甚至已经在目标分支就什么都不做），不重复 fetch
+    if (input.alreadyAtHead === true) {
+      const current = await readHead(repoRoot)
+      if (current.branch !== headBranch) await runGit(repoRoot, ['switch', headBranch], { signal })
+      const head = await readHead(repoRoot)
+      return { branch: head.branch, head: head.head, fetched: false }
+    }
     // 用本机 origin：该仓库用户本来就能推拉，不需要插件带令牌
     await runGit(repoRoot, ['fetch', '--no-tags', 'origin', headBranch], { signal, timeoutMs: 5 * 60 * 1000 })
     await runGit(repoRoot, ['switch', headBranch], { signal })
     const head = await readHead(repoRoot)
-    return { branch: head.branch, head: head.head }
+    return { branch: head.branch, head: head.head, fetched: true }
   }
 
   const branch = reviewBranchName(number)

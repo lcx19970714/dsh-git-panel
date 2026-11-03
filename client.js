@@ -1229,6 +1229,22 @@ window.__ModuleLoader__.load({
       .dgp-gate-chip[data-state="unknown"] { color: var(--dsw-alias-label-tertiary); }
       .dgp-ai-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .dgp-ai-error > .dgp-detail-failure { margin: 0; }
+      /* 深度审阅执行步骤：每一步做了什么、耗时、是否失败 */
+      .dgp-ai-steps { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+      .dgp-step-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 1px; }
+      .dgp-step {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--dsw-alias-label-tertiary);
+      }
+      .dgp-step[data-level="warn"] { color: var(--dsw-alias-state-warn-label); }
+      .dgp-step[data-level="error"] { color: var(--dsw-alias-state-error-primary); }
+      .dgp-step-time { flex: none; font-family: var(--ds-font-family-code); min-width: 56px; }
+      .dgp-step-name { flex: none; color: var(--dsw-alias-label-secondary); }
+      .dgp-step-detail { min-width: 0; overflow-wrap: anywhere; }
       /* 深度审阅前的「拉到哪里」确认框 */
       .dgp-ai-clone {
         display: flex;
@@ -1682,6 +1698,8 @@ window.__ModuleLoader__.load({
         'pull.aiFilesTruncated': '这个 PR 的文件数量超过平台单次上限，文件清单不完整：可能有改动未被审阅。',
         'pull.aiCleanupWarn': '临时目录清理失败（{message}）：可以手动删掉系统临时目录下的 dsh-deep-review-* 目录。',
         'pull.aiDeepSkipped': '有 {count} 个文件没读到完整内容：',
+        'pull.aiStepsTitle': '执行步骤',
+        'pull.aiLogHint': '完整日志：{path}',
         'pull.aiStart': '开始审阅',
         'pull.aiOpenSettings': '去设置模型',
         'pull.aiRerun': '重新审阅',
@@ -2014,6 +2032,8 @@ window.__ModuleLoader__.load({
         'pull.aiFilesTruncated': 'This PR has more files than the platform returns in one page: the file list is incomplete, so some changes may not have been reviewed.',
         'pull.aiCleanupWarn': 'Failed to clean up the temp folder ({message}); you can delete dsh-deep-review-* folders under your system temp dir.',
         'pull.aiDeepSkipped': '{count} file(s) had no full content:',
+        'pull.aiStepsTitle': 'Steps',
+        'pull.aiLogHint': 'Full log: {path}',
         'pull.aiStart': 'Start review',
         'pull.aiOpenSettings': 'Choose a model',
         'pull.aiRerun': 'Review again',
@@ -3303,7 +3323,12 @@ window.__ModuleLoader__.load({
             const review = await api.remotePullAiReview(input)
             return { ok: true, ...review }
           } catch (error) {
-            return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
+            return {
+              ok: false,
+              error: api.describeError(error, tRef.current),
+              code: error?.code ?? null,
+              details: error?.details ?? null
+            }
           }
         }, [])
 
@@ -3323,7 +3348,12 @@ window.__ModuleLoader__.load({
             }
             return { ok: true, ...review }
           } catch (error) {
-            return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
+            return {
+              ok: false,
+              error: api.describeError(error, tRef.current),
+              code: error?.code ?? null,
+              details: error?.details ?? null
+            }
           }
         }, [resolveProject, refreshStatus])
 
@@ -6643,22 +6673,24 @@ window.__ModuleLoader__.load({
 
       /** PR 的文件与 patch（AI 审阅的输入）。 */
       function remotePullDiff(payload, options) {
-        return call('remote/pull/diff', payload, options)
+        return call('remote/pull/diff', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 60_000 })
       }
 
       /** 调审阅模型给出结构化结论。 */
       function remotePullAiReview(payload, options) {
-        return call('remote/pull/ai-review', payload, options)
+        // 模型调用本身就慢：默认 20s 会让客户端先超时，而宿主还在跑
+        return call('remote/pull/ai-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 240_000 })
       }
 
       /** 深度审阅：宿主拉取 PR head 到临时 worktree，读完整文件后再让模型审。 */
       function remotePullDeepReview(payload, options) {
-        return call('remote/pull/deep-review', payload, options)
+        // 深度审阅 = 拉代码/切分支（最长 5 分钟）+ 读文件 + 调模型（最长 3 分钟），给足 10 分钟
+        return call('remote/pull/deep-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
       }
 
       /** 把 PR 克隆到指定目录（深度审阅前的准备步骤）。 */
       function remotePullCloneForReview(payload, options) {
-        return call('remote/pull/clone-for-review', payload, options)
+        return call('remote/pull/clone-for-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 900_000 })
       }
 
       /** 提交用户确认过的 PR 评论。 */
@@ -9031,7 +9063,7 @@ window.__ModuleLoader__.load({
         const [error, setError] = useState(null)
         const [notice, setNotice] = useState(null)
         // AI 审阅：idle / loading / done(result) / error
-        const [ai, setAi] = useState({ status: 'idle', mode: 'diff', result: null, error: null })
+        const [ai, setAi] = useState({ status: 'idle', mode: 'diff', result: null, error: null, steps: [], logPath: null })
         // 本地没有这个仓库时：{ repoUsed, suggestedName, headBranch, target, customPath, busy, error }
         const [clonePrompt, setClonePrompt] = useState(null)
         // 评论草稿：AI 生成后填入，用户可改，只有点「提交评论」才发出去
@@ -9126,11 +9158,31 @@ window.__ModuleLoader__.load({
           setError(result === null || result === undefined ? '操作失败' : result.error)
         }
 
+        /** 执行步骤列表（宿主回传）：每一步做了什么、耗时、是否失败。 */
+        const renderSteps = (steps, logPath) => {
+          if (!Array.isArray(steps) || steps.length === 0) return null
+          return h('div', { className: 'dgp-ai-steps', 'data-dgp-pull': 'ai-steps' },
+            h('p', { className: 'dgp-settings-label' }, t('pull.aiStepsTitle')),
+            h('ul', { className: 'dgp-step-list' },
+              steps.map((step, index) => h('li', {
+                key: String(index),
+                className: 'dgp-step',
+                'data-level': step.level ?? 'info',
+                'data-step': step.step
+              },
+              h('span', { className: 'dgp-step-time' }, '+' + String(step.at ?? 0) + 'ms'),
+              h('span', { className: 'dgp-step-name' }, step.step),
+              step.detail === '' ? null : h('span', { className: 'dgp-step-detail' }, step.detail)))),
+            logPath === null || logPath === undefined
+              ? null
+              : h('p', { className: 'dgp-settings-hint' }, t('pull.aiLogHint', { path: logPath })))
+        }
+
         /** 跑一次 AI 审阅（宿主负责取 diff 与调模型）。 */
         const runAi = async (mode, prepared = null) => {
           const handler = mode === 'deep' ? source.onDeepReview : source.onAiReview
           if (typeof handler !== 'function') return
-          setAi({ status: 'loading', mode, result: null, error: null })
+          setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null })
           setCommentNotice(null)
           setClonePrompt(null)
           const result = await handler({
@@ -9158,7 +9210,11 @@ window.__ModuleLoader__.load({
             return
           }
           if (result !== null && result !== undefined && result.ok === true) {
-            setAi({ status: 'done', mode, result, error: null })
+            setAi({
+              status: 'done', mode, result, error: null,
+              steps: Array.isArray(result.steps) ? result.steps : [],
+              logPath: result.logPath ?? null
+            })
             setDraft(result.comment ?? '')
             return
           }
@@ -9168,7 +9224,12 @@ window.__ModuleLoader__.load({
             result: null,
             error: result === null || result === undefined ? '审阅失败' : result.error,
             // 只有「没配审阅模型」这种情况值得给快捷入口，其它错误去设置页也没用
-            code: result === null || result === undefined ? null : (result.code ?? null)
+            code: result === null || result === undefined ? null : (result.code ?? null),
+            // 失败也要能看到走到哪一步了
+            steps: result !== null && result !== undefined && result.details !== null && result.details !== undefined
+              && Array.isArray(result.details.steps) ? result.details.steps : [],
+            logPath: result !== null && result !== undefined && result.details !== null && result.details !== undefined
+              ? result.details.logPath ?? null : null
           })
         }
 
@@ -9379,7 +9440,8 @@ window.__ModuleLoader__.load({
                     'data-dgp-pull': 'ai-open-settings',
                     onClick: () => source.onOpenSettings()
                   }, t('pull.aiOpenSettings'))
-                  : null)
+                  : null,
+                renderSteps(ai.steps, ai.logPath))
               : null,
             ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
               ai.mode === 'deep'
@@ -9468,7 +9530,8 @@ window.__ModuleLoader__.load({
                 }),
                 commentNotice === null
                   ? null
-                  : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-notice' }, commentNotice)))),
+                  : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-notice' }, commentNotice)),
+              renderSteps(ai.steps, ai.logPath))),
 
           /* ------------------------------ 审查 ------------------------------ */
           h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'review' },

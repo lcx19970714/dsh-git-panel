@@ -26,7 +26,7 @@ export function PullDetail(props) {
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   // AI 审阅：idle / loading / done(result) / error
-  const [ai, setAi] = useState({ status: 'idle', mode: 'diff', result: null, error: null })
+  const [ai, setAi] = useState({ status: 'idle', mode: 'diff', result: null, error: null, steps: [], logPath: null })
   // 本地没有这个仓库时：{ repoUsed, suggestedName, headBranch, target, customPath, busy, error }
   const [clonePrompt, setClonePrompt] = useState(null)
   // 评论草稿：AI 生成后填入，用户可改，只有点「提交评论」才发出去
@@ -121,11 +121,31 @@ export function PullDetail(props) {
     setError(result === null || result === undefined ? '操作失败' : result.error)
   }
 
+  /** 执行步骤列表（宿主回传）：每一步做了什么、耗时、是否失败。 */
+  const renderSteps = (steps, logPath) => {
+    if (!Array.isArray(steps) || steps.length === 0) return null
+    return h('div', { className: 'dgp-ai-steps', 'data-dgp-pull': 'ai-steps' },
+      h('p', { className: 'dgp-settings-label' }, t('pull.aiStepsTitle')),
+      h('ul', { className: 'dgp-step-list' },
+        steps.map((step, index) => h('li', {
+          key: String(index),
+          className: 'dgp-step',
+          'data-level': step.level ?? 'info',
+          'data-step': step.step
+        },
+        h('span', { className: 'dgp-step-time' }, '+' + String(step.at ?? 0) + 'ms'),
+        h('span', { className: 'dgp-step-name' }, step.step),
+        step.detail === '' ? null : h('span', { className: 'dgp-step-detail' }, step.detail)))),
+      logPath === null || logPath === undefined
+        ? null
+        : h('p', { className: 'dgp-settings-hint' }, t('pull.aiLogHint', { path: logPath })))
+  }
+
   /** 跑一次 AI 审阅（宿主负责取 diff 与调模型）。 */
   const runAi = async (mode, prepared = null) => {
     const handler = mode === 'deep' ? source.onDeepReview : source.onAiReview
     if (typeof handler !== 'function') return
-    setAi({ status: 'loading', mode, result: null, error: null })
+    setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null })
     setCommentNotice(null)
     setClonePrompt(null)
     const result = await handler({
@@ -153,7 +173,11 @@ export function PullDetail(props) {
       return
     }
     if (result !== null && result !== undefined && result.ok === true) {
-      setAi({ status: 'done', mode, result, error: null })
+      setAi({
+        status: 'done', mode, result, error: null,
+        steps: Array.isArray(result.steps) ? result.steps : [],
+        logPath: result.logPath ?? null
+      })
       setDraft(result.comment ?? '')
       return
     }
@@ -163,7 +187,12 @@ export function PullDetail(props) {
       result: null,
       error: result === null || result === undefined ? '审阅失败' : result.error,
       // 只有「没配审阅模型」这种情况值得给快捷入口，其它错误去设置页也没用
-      code: result === null || result === undefined ? null : (result.code ?? null)
+      code: result === null || result === undefined ? null : (result.code ?? null),
+      // 失败也要能看到走到哪一步了
+      steps: result !== null && result !== undefined && result.details !== null && result.details !== undefined
+        && Array.isArray(result.details.steps) ? result.details.steps : [],
+      logPath: result !== null && result !== undefined && result.details !== null && result.details !== undefined
+        ? result.details.logPath ?? null : null
     })
   }
 
@@ -374,7 +403,8 @@ export function PullDetail(props) {
               'data-dgp-pull': 'ai-open-settings',
               onClick: () => source.onOpenSettings()
             }, t('pull.aiOpenSettings'))
-            : null)
+            : null,
+          renderSteps(ai.steps, ai.logPath))
         : null,
       ai.status !== 'done' ? null : h('div', { 'data-dgp-pull': 'ai-result' },
         ai.mode === 'deep'
@@ -463,7 +493,8 @@ export function PullDetail(props) {
           }),
           commentNotice === null
             ? null
-            : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-notice' }, commentNotice)))),
+            : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'comment-notice' }, commentNotice)),
+        renderSteps(ai.steps, ai.logPath))),
 
     /* ------------------------------ 审查 ------------------------------ */
     h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'review' },

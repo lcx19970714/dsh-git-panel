@@ -1044,7 +1044,12 @@ export function Panel(props) {
       const review = await api.remotePullAiReview(input)
       return { ok: true, ...review }
     } catch (error) {
-      return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
+      return {
+        ok: false,
+        error: api.describeError(error, tRef.current),
+        code: error?.code ?? null,
+        details: error?.details ?? null
+      }
     }
   }, [])
 
@@ -1064,7 +1069,12 @@ export function Panel(props) {
       }
       return { ok: true, ...review }
     } catch (error) {
-      return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
+      return {
+        ok: false,
+        error: api.describeError(error, tRef.current),
+        code: error?.code ?? null,
+        details: error?.details ?? null
+      }
     }
   }, [resolveProject, refreshStatus])
 

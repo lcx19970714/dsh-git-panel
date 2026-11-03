@@ -55,8 +55,10 @@ import {
   prepareReviewBranch,
   cloneForReview,
   findLocalRepoFor,
-  originMatches
+  originMatches,
+  headShaOf
 } from './host/git.js'
+import { createReviewLog } from './host/review-log.js'
 import { createRemotes } from './host/remotes/index.js'
 import {
   listModels,
@@ -568,45 +570,71 @@ function createDispatcher(ctx) {
    * 深度审阅：把 PR 的 head 拉到临时裸仓库/worktree，读完整文件后再交给模型。
    * 全程不碰用户工作区；临时目录在 finally 里删除。
    */
-  /** 准备一个能审阅的真实目录：本地已有就切分支，没有就告诉界面需要克隆。 */
-  async function prepareReviewDir(input, signal) {
+  /**
+   * 准备一个能审阅的真实目录：本地已有就切分支，没有就告诉界面需要克隆。
+   * 每一步都写日志（review.log）并回传给界面。
+   */
+  async function prepareReviewDir(input, signal, log) {
     const { accountId, fullName, number, rootPaths, rootPath, branch } = input
-    const source = await remotesOf().reviewSource({ accountId, fullName, number }, { signal })
+    log.info('读取 PR 详情', fullName + ' #' + number)
+    const source = await log.time('读取 PR 详情', fullName + ' #' + number,
+      () => remotesOf().reviewSource({ accountId, fullName, number }, { signal }))
+    log.info('PR 信息', '标题「' + (source.pull.title || '') + '」，head=' + (source.pull.headBranch || '?')
+      + '（' + (source.pull.headRepo || fullName) + '），提交 ' + (source.pull.headSha || '未知').slice(0, 8))
 
     // 1) 界面已经指定了目录（刚克隆完或复用上次的目录）
     if (typeof rootPath === 'string' && rootPath !== '') {
       const repo = await resolveRepo(requireAbsolute(rootPath, 'rootPath'))
       if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
-      return { source, localRoot: normalizeSlashes(repo.repoRoot), branch: typeof branch === 'string' ? branch : null }
+      const localRoot = normalizeSlashes(repo.repoRoot)
+      log.info('使用指定目录', localRoot)
+      return { source, localRoot, branch: typeof branch === 'string' ? branch : null, prepared: null }
     }
 
-    // 2) 变更里已有的仓库：按 origin 找。同仓库 PR 直接用你本机的 origin 切分支，
-    //    只有本地克隆是 base、而 PR 来自 fork 时才需要插件令牌
+    // 2) 变更里已有的仓库
     const paths = Array.isArray(rootPaths) ? rootPaths.map((item) => String(item)) : []
+    log.info('查找本地仓库', '候选 ' + paths.length + ' 个仓库根')
     const headRepo = typeof source.pull.headRepo === 'string' && source.pull.headRepo !== ''
       ? source.pull.headRepo
       : fullName
     const local = await findLocalRepoFor(paths, fullName)
       ?? await findLocalRepoFor(paths, source.repoUsed ?? fullName)
-    if (local === null) return { source, localRoot: null, branch: null }
+    if (local === null) {
+      log.warn('没有本地仓库', '需要用户确认克隆位置（repo=' + (source.repoUsed ?? fullName) + '）')
+      return { source, localRoot: null, branch: null, prepared: null }
+    }
+    log.info('命中本地仓库', local.rootPath)
 
+    // 3) 当前是不是已经在 PR 的提交上？是的话只切分支，不重复 fetch
     const matched = await originMatches(local.rootPath, [fullName, source.repoUsed ?? fullName])
     const sameRepo = headRepo === fullName || matched.includes(headRepo)
+    const current = await log.time('检查当前分支', local.rootPath,
+      () => headShaOf(local.rootPath, { signal }))
+    const prHead = typeof source.pull.headSha === 'string' ? source.pull.headSha : ''
+    const alreadyAtHead = prHead !== '' && current === prHead
+    log.info('分支判断', '本地 HEAD ' + current.slice(0, 8) + '，PR head ' + (prHead === '' ? '未知' : prHead.slice(0, 8))
+      + '，' + (alreadyAtHead ? '已在 PR 提交上：跳过拉取' : '需要拉取'))
     if (!sameRepo) {
-      // 只能靠令牌去 fork 拉：先确认账号读得到 fork 仓库
-      await remotesOf().assertRepoAccess({ accountId, fullName: source.repoUsed ?? fullName }, { signal })
+      log.info('fork PR', 'PR 代码在 ' + (source.repoUsed ?? fullName) + '，预检该仓库读权限')
+      await log.time('预检 fork 仓库权限', source.repoUsed ?? fullName,
+        () => remotesOf().assertRepoAccess({ accountId, fullName: source.repoUsed ?? fullName }, { signal }))
     }
-    const prepared = await prepareReviewBranch(local.rootPath, {
-      sameRepo,
-      headBranch: source.pull.headBranch,
-      url: source.url,
-      remoteRef: source.remoteRef,
-      number,
-      user: source.user,
-      token: source.token,
-      authHint: source.authHint
-    }, { signal })
-    return { source, localRoot: local.rootPath, branch: prepared.branch }
+    const prepared = await log.time(alreadyAtHead ? '切换到 PR 分支' : '拉取并切换到 PR 分支',
+      sameRepo ? 'origin/' + (source.pull.headBranch || '?') : (source.repoUsed ?? fullName),
+      () => prepareReviewBranch(local.rootPath, {
+        sameRepo,
+        alreadyAtHead,
+        headBranch: source.pull.headBranch,
+        url: source.url,
+        remoteRef: source.remoteRef,
+        number,
+        user: source.user,
+        token: source.token,
+        authHint: source.authHint
+      }, { signal }))
+    log.info('分支已就绪', '当前分支 ' + prepared.branch + '，提交 ' + String(prepared.head).slice(0, 8)
+      + (prepared.fetched === false ? '（未重新拉取）' : ''))
+    return { source, localRoot: local.rootPath, branch: prepared.branch, prepared }
   }
 
   async function remotePullDeepReview(request, signal) {
@@ -617,32 +645,58 @@ function createDispatcher(ctx) {
     const accountId = requireString(request.accountId, 'accountId')
     const fullName = requireString(request.fullName, 'fullName')
     const number = request.number
-    const prepared = await prepareReviewDir({ accountId, fullName, number, rootPaths: request.rootPaths, rootPath: request.rootPath, branch: request.branch }, signal)
+    const log = createReviewLog({ logger: ctx.logger }, fullName + '#' + number)
+    log.info('开始深度审阅', '模型 ' + settings.reviewModel.provider + '/' + settings.reviewModel.model
+      + '，本地仓库候选 ' + (Array.isArray(request.rootPaths) ? request.rootPaths.length : 0) + ' 个')
 
-    // 3) 本地没有：让界面弹框确认拉到哪里
-    if (prepared.localRoot === null) {
-      const repoUsed = prepared.source.repoUsed ?? fullName
-      return {
-        needsClone: true,
-        repoUsed,
-        headBranch: prepared.source.pull.headBranch,
-        suggestedName: String(repoUsed).split('/').pop(),
-        url: prepared.source.url
+    try {
+      const prepared = await prepareReviewDir({
+        accountId, fullName, number,
+        rootPaths: request.rootPaths,
+        rootPath: request.rootPath,
+        branch: request.branch
+      }, signal, log)
+
+      if (prepared.localRoot === null) {
+        log.warn('等待确认克隆位置', 'repo=' + (prepared.source.repoUsed ?? fullName))
+        return {
+          needsClone: true,
+          repoUsed: prepared.source.repoUsed ?? fullName,
+          headBranch: prepared.source.pull.headBranch,
+          suggestedName: String(prepared.source.repoUsed ?? fullName).split('/').pop(),
+          url: prepared.source.url,
+          steps: log.steps,
+          logPath: log.logPath
+        }
       }
-    }
 
-    const diff = await remotesOf().pullDiff({ accountId, fullName, number }, { signal })
-    return deepReview({
-      llm: llmService,
-      pair: settings.reviewModel,
-      source: prepared.source,
-      pull: prepared.source.pull,
-      files: diff.files,
-      filesTruncated: diff.truncated,
-      localRoot: prepared.localRoot,
-      branch: prepared.branch,
-      signal
-    })
+      log.info('读取 PR 文件列表', fullName + ' #' + number)
+      const diff = await log.time('读取 PR 文件列表', '最多 300 个文件',
+        () => remotesOf().pullDiff({ accountId, fullName, number }, { signal }))
+      log.info('文件列表', diff.files.length + ' 个文件' + (diff.truncated ? '（平台只返回部分，已标记 truncated）' : ''))
+
+      const review = await log.time('调用审阅模型', '读取完整文件 + 模型 ' + settings.reviewModel.model,
+        () => deepReview({
+          llm: llmService,
+          pair: settings.reviewModel,
+          source: prepared.source,
+          pull: prepared.source.pull,
+          files: diff.files,
+          filesTruncated: diff.truncated,
+          localRoot: prepared.localRoot,
+          branch: prepared.branch,
+          signal
+        }))
+      log.info('完成', '读取完整文件 ' + review.filesRead + ' 个，问题 ' + review.findings.length + ' 条')
+      return { ...review, steps: log.steps, logPath: log.logPath }
+    } catch (error) {
+      log.error('失败', (error instanceof Error ? error.message : String(error)))
+      // 把步骤与日志路径挂到错误上，界面能显示完整过程
+      if (error instanceof GitError) {
+        error.details = { ...(error.details ?? {}), steps: log.steps, logPath: log.logPath }
+      }
+      throw error
+    }
   }
 
   /** 克隆到用户确认的目录，并切到 PR 分支。 */
@@ -651,20 +705,40 @@ function createDispatcher(ctx) {
     const fullName = requireString(request.fullName, 'fullName')
     const number = request.number
     const targetDir = requireAbsolute(request.targetDir, 'targetDir')
-    const source = await remotesOf().reviewSource({ accountId, fullName, number }, { signal })
-    // 克隆用的是插件令牌：fork PR 要先确认账号读得到那个仓库
-    if (source.repoUsed !== fullName) {
-      await remotesOf().assertRepoAccess({ accountId, fullName: source.repoUsed }, { signal })
+    const log = createReviewLog({ logger: ctx.logger }, fullName + '#' + number)
+    log.info('开始克隆（深度审阅准备）', '目标目录 ' + targetDir)
+    try {
+      const source = await log.time('读取 PR 详情', fullName + ' #' + number,
+        () => remotesOf().reviewSource({ accountId, fullName, number }, { signal }))
+      // 克隆用的是插件令牌：fork PR 要先确认账号读得到那个仓库
+      if (source.repoUsed !== fullName) {
+        log.info('fork PR', '预检 ' + source.repoUsed + ' 的读权限')
+        await remotesOf().assertRepoAccess({ accountId, fullName: source.repoUsed }, { signal })
+      }
+      const cloned = await log.time('克隆并切换分支', 'origin/' + (source.pull.headBranch || '?') + ' → ' + targetDir,
+        () => cloneForReview(targetDir, {
+          url: source.url,
+          remoteRef: source.remoteRef,
+          number,
+          branch: source.pull.headBranch,
+          user: source.user,
+          token: source.token
+        }, { signal }))
+      log.info('克隆完成', cloned.path + '（分支 ' + cloned.branch + '）')
+      return {
+        rootPath: normalizeSlashes(cloned.path),
+        branch: cloned.branch,
+        head: cloned.head,
+        steps: log.steps,
+        logPath: log.logPath
+      }
+    } catch (error) {
+      log.error('克隆失败', error instanceof Error ? error.message : String(error))
+      if (error instanceof GitError) {
+        error.details = { ...(error.details ?? {}), steps: log.steps, logPath: log.logPath }
+      }
+      throw error
     }
-    const cloned = await cloneForReview(targetDir, {
-      url: source.url,
-      remoteRef: source.remoteRef,
-      number,
-      branch: source.pull.headBranch,
-      user: source.user,
-      token: source.token
-    }, { signal })
-    return { rootPath: normalizeSlashes(cloned.path), branch: cloned.branch, head: cloned.head }
   }
 
   /** 提交评论：内容由用户在面板里确认/编辑，这里只负责发出去。 */

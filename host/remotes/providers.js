@@ -154,6 +154,14 @@ const github = {
       state: typeof item.state === 'string' ? item.state : '',
       body: typeof item.body === 'string' ? item.body : '',
       submittedAt: typeof item.submitted_at === 'string' ? item.submitted_at : ''
+    }),
+    // 评论列表（GET 与 POST 用同一个路径）
+    normalizeComment: (item) => ({
+      id: Number.isFinite(item.id) ? item.id : null,
+      author: typeof item.user?.login === 'string' ? item.user.login : '',
+      body: typeof item.body === 'string' ? item.body : '',
+      createdAt: typeof item.created_at === 'string' ? item.created_at : '',
+      url: typeof item.html_url === 'string' ? item.html_url : ''
     })
   }
 }
@@ -209,7 +217,14 @@ const gitee = {
     // Gitee 允许把 PR 标记为「测试通过」，这是它的合并门禁之一
     testPath: '/test',
     normalizePull: (item) => pullMeta(item, gitee),
-    normalizeReview: null
+    normalizeReview: null,
+    normalizeComment: (item) => ({
+      id: Number.isFinite(item.id) ? item.id : null,
+      author: typeof item.user?.login === 'string' ? item.user.login : '',
+      body: typeof item.body === 'string' ? item.body : '',
+      createdAt: typeof item.created_at === 'string' ? item.created_at : '',
+      url: typeof item.html_url === 'string' ? item.html_url : ''
+    })
   }
 }
 
@@ -225,7 +240,7 @@ const REQUIRED_PROVIDER_KEYS = [
   'normalizeRepo', 'normalizeIssue', 'normalizeDetail'
 ]
 const REQUIRED_PULL_KEYS = [
-  'verdicts', 'mergeMethods', 'mergeDeletesBranch', 'normalizePull'
+  'verdicts', 'mergeMethods', 'mergeDeletesBranch', 'normalizePull', 'normalizeComment'
 ]
 
 for (const provider of Object.values(PROVIDERS)) {

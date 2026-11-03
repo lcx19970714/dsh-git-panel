@@ -264,6 +264,12 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 - `sessionController.create / prompt` 是「(参数, signal)」两个实参，必须传 AbortSignal；
 - 提示词里带**代码目录绝对路径**：工作区路径与 PR 代码目录可能不是同一个。
 
+**PR 评论约定**：PR 详情（`remote/pull`）会一并读评论列表：
+GitHub 走 `GET /issues/{n}/comments`、Gitee 走 `GET /pulls/{n}/comments`（与发表评论同路径）。
+读失败不拖垮详情，但会带上 `commentsUnavailable` 原因，界面明确显示。
+发表评论是 `remote/pull/comment`，内容以界面评论框里的文本为准（AI 草稿只是「填入评论框」，
+不直接提交）。
+
 **AI 审阅约定**：`remote/pull/ai-review` 由宿主取 `pulls/{n}/files` 的 patch，拼成
 PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 JSON（summary / verdict / findings[] / comment）。
 

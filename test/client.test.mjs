@@ -230,6 +230,9 @@ function createFakeCtx(registrations) {
       },
       openTabIn(sessionId, kind, options) {
         registrations.openedTabs.push({ sessionId, kind, options })
+      },
+      openTab(kind, options) {
+        registrations.openedTabs.push({ kind, options })
       }
     },
     shortcuts: {
@@ -531,6 +534,47 @@ test('样式表定义了标题栏按钮的类', () => {
   const styles = fakeDocument.appended.filter((node) => node.tagName === 'STYLE')
   assert(styles[0].textContent.includes('.dgp-headerbtn'), '缺少 .dgp-headerbtn 样式')
 })
+test('左侧栏入口：注册到 sidebar.footer.action，点击打开当前会话的 git 页签', () => {
+  const entry = registrations.slots.find((slot) => slot.registration.name === 'sidebar.footer.action')
+  assert(entry !== undefined, '应注册 sidebar.footer.action')
+  eq(entry.registration.id, 'git-dock', '入口 id')
+  eq(entry.registration.order, 20, '入口顺序')
+  eq(entry.registration.label(), 'T:entry.title', 'label 走字典（代码坞）')
+
+  const injected = entry.registration.inject()
+  eq(typeof injected.openPanel, 'function', '入口应注入 openPanel')
+
+  // 宽栏：图标 + 文案
+  const wide = fakeReact.render(fakeReact.createElement(entry.component, {
+    wide: true,
+    t: (key) => 'T:' + key,
+    openPanel: injected.openPanel
+  }))
+  eq(wide.type, 'button', '应是 button')
+  eq(wide.props['data-dgp-dock'], 'git', 'data-dgp-dock')
+  eq(wide.props['data-wide'], 'true', '宽栏标记')
+  assert(textOf(wide).includes('T:entry.title'), '宽栏要显示文案：' + textOf(wide))
+  eq(collect(wide, (node) => node.$$host === true && node.type === 'svg').length, 1, '应有一个图标')
+  const stops = collect(wide, (node) => node.$$host === true && node.type === 'stop')
+  assert(stops.length >= 2, '彩色图标要有渐变色标，实际 ' + stops.length)
+
+  eq(typeof wide.props.onClick, 'function', '按钮要有 onClick')
+  const before = registrations.openedTabs.length
+  injected.openPanel()
+  eq(registrations.openedTabs.length, before + 1, '点击应打开一次页签')
+  const opened = registrations.openedTabs[registrations.openedTabs.length - 1]
+  eq(opened, { kind: 'git', options: undefined }, '不带 sessionId：由 sidebarRight 解析当前会话')
+
+  // 图标条（56px）：只有图标，没有文案
+  const rail = fakeReact.render(fakeReact.createElement(entry.component, {
+    wide: false,
+    t: (key) => 'T:' + key,
+    openPanel: injected.openPanel
+  }))
+  eq(rail.props['data-wide'], undefined, '图标条不标宽栏')
+  assert(!textOf(rail).includes('T:entry.title'), '图标条不显示文案：' + textOf(rail))
+})
+
 console.log('')
 if (failures.length > 0) {
   console.error(failures.length + ' failed, ' + passed + ' passed')
@@ -540,3 +584,4 @@ if (failures.length > 0) {
   process.exit(1)
 }
 console.log(passed + ' passed')
+

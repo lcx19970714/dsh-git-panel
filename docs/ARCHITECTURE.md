@@ -281,6 +281,16 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 不给你代码。要拿到代码用「拉取当前分支最新代码」（`branch/pull`）：`fetch` + `merge --ff-only @{u}`，
 只允许快进；分叉、无上游、工作区改动会冲突时直接报错，插件不自动产生合并提交、也不自动 stash。
 
+**客户端入口（两条路，同一面板）**：
+
+| 入口 | 槽位 | 作用域 | 点击行为 |
+|---|---|---|---|
+| 会话标题栏按钮 | `conversation.session.header.utilities` | session | `sidebarRight.openTabIn(sessionId, 'git')` |
+| 左侧栏底部「代码坞」 | `sidebar.footer.action` | root | `sidebarRight.openTab('git')`（自己解析当前挂载会话） |
+
+左侧栏入口在侧栏收起（56px 图标条）时只显示彩色图标，展开时显示图标 + 「代码坞」；
+没有已挂载的会话时 `openTab` 会抛错，入口按钮自己标红点并在 tooltip 说明原因，不静默失败。
+
 **版本号按钮的语义（两件事不混）**：工具条右侧的版本号 chip 是**插件自身版本**（`v<package.json version>`），
 点击检查插件是否有新版本（`plugin/update` → GitHub 最新 release）：已是最新给 info、有新版本给 warn 且可点开
 release 页、失败给 error 并说清原因。

@@ -17,6 +17,7 @@ import { ensureStyles } from './styles.js'
 import { NS, zh, en } from './i18n.js'
 import { GitPanelSurface } from './components/GitPanelSurface.js'
 import { GitHeaderAction } from './components/HeaderAction.js'
+import { SidebarGitEntry } from './components/SidebarGitEntry.js'
 
 const PLUGIN_ID = 'dsh-git-panel'
 const TAB_KIND = 'git'
@@ -82,6 +83,20 @@ function applyRegistrations(ctx) {
     locale: NS,
     inject: () => ({ openPanel: (sessionId) => ctx.sidebarRight.openTabIn(sessionId, TAB_KIND) })
   }, GitHeaderAction)), PLUGIN_ID + ': header utility')
+
+  /* ------------------- 左侧栏入口（常驻「代码坞」按钮） ------------------- */
+  // 位置：左侧栏底部、设置按钮旁边（root 作用域，侧栏收起时只剩图标）。
+  // 点击打开「当前挂载会话」的 Git 页签；openTab 不传 sessionId，由 sidebarRight 自己解析。
+  ctx.effect(() => ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action',
+    id: 'git-dock',
+    order: 20,
+    locale: NS,
+    label: () => t('entry.title'),
+    inject: () => ({
+      openPanel: () => ctx.sidebarRight.openTab(TAB_KIND)
+    })
+  }, SidebarGitEntry)), PLUGIN_ID + ': sidebar footer entry')
 
   /* ------------------- 会话右侧栏 tab 类型（面板本体） ------------------- */
   // Git 变动与「当前会话所在项目」强绑定，所以只挂在 session 作用域的右侧栏：

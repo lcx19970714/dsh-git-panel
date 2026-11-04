@@ -316,6 +316,36 @@ export const CSS = `
 /* ===================== 4. 左列：分组与行 ===================== */
 .dgp-level { margin: 0; padding: 0; list-style: none; }
 .dgp-item { margin: 0; padding: 0; }
+/* 左侧栏底部入口：宽栏时图标 + 文案，56px 图标条时只有图标 */
+.dgp-dockbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin: 0 2px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  cursor: pointer;
+  position: relative;
+}
+.dgp-dockbtn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dgp-dockbtn:focus-visible { outline: var(--dsw-focus-ring-width) solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.dgp-dockbtn > svg { flex: none; }
+.dgp-dockbtn-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dgp-dockbtn[data-wide="false"] { justify-content: center; width: 36px; padding: 0; }
+.dgp-dockbtn-failed {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-error-primary);
+}
 /* 仓库行：高亮框在整个行上（仓库名 + 分支按钮），分支按钮贴在框内右侧 */
 .dgp-repo-wrap {
   border-radius: var(--dsw-radius-xs);

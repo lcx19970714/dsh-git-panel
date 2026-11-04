@@ -318,14 +318,18 @@ export const CSS = `
 .dgp-item { margin: 0; padding: 0; }
 /* 左侧栏底部入口：宽栏时图标 + 文案，56px 图标条时只有图标 */
 .dgp-dockbtn {
-  display: inline-flex;
+  display: flex;
+  flex: 1 1 auto;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
-  height: 32px;
-  margin: 0 2px;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  margin: 0;
   padding: 0 8px;
   border: 0;
-  border-radius: var(--dsw-radius-sm);
+  border-radius: var(--dsw-radius-md);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
@@ -336,7 +340,7 @@ export const CSS = `
 .dgp-dockbtn:focus-visible { outline: var(--dsw-focus-ring-width) solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .dgp-dockbtn > svg { flex: none; }
 .dgp-dockbtn-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dgp-dockbtn[data-wide="false"] { justify-content: center; width: 36px; padding: 0; }
+.dgp-dockbtn[data-wide="false"] { flex: none; justify-content: center; width: 36px; height: 36px; padding: 0; }
 .dgp-dockbtn-failed {
   position: absolute;
   top: 3px;

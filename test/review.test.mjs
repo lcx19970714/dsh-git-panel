@@ -24,7 +24,7 @@ async function test(name, fn) {
 
 /* ---------------- 假 llm ---------------- */
 
-function fakeLlm(reply) {
+function fakeLlm(reply, finish = { kind: 'stop' }) {
   const calls = []
   return {
     calls,
@@ -41,7 +41,7 @@ function fakeLlm(reply) {
             return (async function* emit() {
               const text = typeof reply === 'function' ? reply() : reply
               yield { type: 'text-delta', text }
-              yield { type: 'finish', reason: null }
+              yield { type: 'finish', reason: finish }
             })()
           }
         }
@@ -165,6 +165,24 @@ await test('generateReview：模型输出不合规时报错，不返回半成品
   await assert.rejects(
     () => generateReview(llm.service, { provider: 'p1', model: 'm1' }, { pull: { title: 'T' }, files: [] }),
     (error) => error.code === 'bad-model-output'
+  )
+})
+
+await test('generateReview：被 max-tokens 截断时报 model-truncated，不退化成「JSON 不合法」', async () => {
+  const llm = fakeLlm('{"summary":"这次改动', { kind: 'max-tokens' })
+  await assert.rejects(
+    () => generateReview(llm.service, { provider: 'p1', model: 'm1' }, { pull: { title: 'T' }, files: [] }),
+    (error) => error.code === 'model-truncated'
+      && /8192/.test(error.message)
+      && /共 \d+ 字符/.test(error.message)
+  )
+})
+
+await test('generateReview：结束原因缺失时报 model-failed，不把半截输出当成功', async () => {
+  const llm = fakeLlm(JSON.stringify(validReview), null)
+  await assert.rejects(
+    () => generateReview(llm.service, { provider: 'p1', model: 'm1' }, { pull: { title: 'T' }, files: [] }),
+    (error) => error.code === 'model-failed' && /结束原因/.test(error.message)
   )
 })
 

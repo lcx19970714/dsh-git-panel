@@ -16,6 +16,7 @@ import { homedir } from 'node:os'
 import path from 'node:path'
 
 import { GitError } from './git.js'
+import { callModel } from './llm-call.js'
 
 const SETTINGS_FILE = 'settings.json'
 const DIFF_PROMPT_LIMIT = 60_000
@@ -132,73 +133,21 @@ export async function generateCommitMessage(llm, pair, diffText, options = {}) {
     ? options.timeoutMs
     : DEFAULT_TIMEOUT_MS
 
-  const controller = new AbortController()
-  let timedOut = false
-  const timer = setTimeout(() => {
-    timedOut = true
-    controller.abort()
-  }, timeoutMs)
-  const forward = () => controller.abort()
-  if (options.signal !== undefined) {
-    if (options.signal.aborted === true) {
-      clearTimeout(timer)
-      throw new GitError('aborted', '操作已取消')
-    }
-    options.signal.addEventListener('abort', forward, { once: true })
-  }
+  const { text } = await callModel({
+    llm,
+    pair,
+    system: SYSTEM_PROMPT,
+    prompt: input,
+    purpose: 'dsh-git-panel/commit-message',
+    maxTokens: MAX_OUTPUT_TOKENS,
+    timeoutMs,
+    signal: options.signal,
+    lowestEffort: true
+  })
 
-  let text = ''
-  let failure = null
-  try {
-    const call = await llm.prepareCall(
-      { provider: pair.provider, model: pair.model, maxTokens: MAX_OUTPUT_TOKENS },
-      controller.signal,
-      (controls, info) => {
-        // 提交说明不需要深思：有可用档位就取最低一档，把 token 留给正文
-        const effort = info?.reasoning?.efforts?.[0]?.id
-        return effort === undefined ? controls : { ...controls, reasoningEffort: effort }
-      }
-    )
-
-    const stream = call.stream({
-      ...call.config,
-      messages: [{ role: 'user', content: [{ type: 'text', text: input }] }],
-      system: SYSTEM_PROMPT,
-      purpose: 'dsh-git-panel/commit-message',
-      signal: controller.signal
-    })
-    for await (const chunk of stream) {
-      if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') {
-        text += chunk.text
-      } else if (chunk?.type === 'finish') {
-        const kind = chunk.reason === null || chunk.reason === undefined ? null : chunk.reason.kind
-        if (kind === 'error' || kind === 'aborted') {
-          failure = chunk.reason.failure === undefined || chunk.reason.failure === null
-            ? kind
-            : messageOf(chunk.reason.failure)
-        }
-      }
-    }
-  } catch (error) {
-    if (timedOut) {
-      throw new GitError('timeout', `模型 ${Math.round(timeoutMs / 1000)} 秒内没有返回（${target.ref}）`)
-    }
-    if (options.signal !== undefined && options.signal.aborted === true) {
-      throw new GitError('aborted', '操作已取消')
-    }
-    if (error instanceof GitError) throw error
-    throw new GitError('model-failed', `模型调用失败（${target.ref}）：${messageOf(error)}`)
-  } finally {
-    clearTimeout(timer)
-    if (options.signal !== undefined) options.signal.removeEventListener('abort', forward)
-  }
-
-  if (failure !== null) {
-    throw new GitError('model-failed', `模型返回了错误（${target.ref}）：${failure}`)
-  }
   const message = text.trim()
   if (message === '') {
-    throw new GitError('model-failed', `模型没有返回任何文本（${target.ref}），可能被输出上限截断或该模型不支持此用法`)
+    throw new GitError('model-failed', `模型没有返回任何文本（${target.ref}），该模型可能不支持这种用法`)
   }
   return { message, model: target.ref, providerLabel: target.providerLabel, modelLabel: target.modelLabel }
 }

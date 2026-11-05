@@ -382,7 +382,7 @@ test('创建 PR 的本地信息：远端地址识别、远端分支、是否已�
   assert.equal(commits[0].subject, 'feat: add b')
 })
 
-test('生成 PR 文案：严格 JSON，非法输出直接报错', async () => {
+test('生成 PR 文案：严格 JSON，非法输出直接报错，且错误里指向「末尾」而不是开头', async () => {
   const { parsePullText } = await import('../host/pr-text.js')
   const valid = JSON.stringify({ title: 'feat: X', body: '## 变更摘要\n- a' })
   assert.deepEqual(parsePullText(valid), { title: 'feat: X', body: '## 变更摘要\n- a' })
@@ -390,6 +390,57 @@ test('生成 PR 文案：严格 JSON，非法输出直接报错', async () => {
     await assert.rejects(() => Promise.resolve().then(() => parsePullText(bad)),
       (error) => error.code === 'bad-model-output', '应拒绝：' + bad)
   }
+  // 被截断的 JSON：开头完全合法，问题一定在末尾 —— 报错必须指到那里
+  const truncated = '{"title":"feat: X","body":"## 变更摘要\\n\\n' + '很长的一段正文，'.repeat(30)
+  const error = await Promise.resolve()
+    .then(() => parsePullText(truncated))
+    .then(() => null, (caught) => caught)
+  assert.equal(error.code, 'bad-model-output')
+  assert.match(error.message, /共 \d+ 字符/, '要说清输出有多长：' + error.message)
+  assert.match(error.message, /末尾/, '要打印末尾（断点在哪），不是打印开头：' + error.message)
+})
+
+test('生成 PR 文案：上限 4096 且压低推理档位（长正文不会被 1024 砍断）', async () => {
+  const prText = await import('../host/pr-text.js')
+  const { service, seen } = fakeLlm({
+    chunks: [
+      { type: 'text-delta', text: '{"title":"feat: X","body":"## 变更摘要\\n- a"}' },
+      { type: 'finish', reason: { kind: 'stop' } }
+    ]
+  })
+  const result = await prText.generatePullText({
+    llm: service,
+    pair: { provider: 'p1', model: 'm1' },
+    input: { base: 'dev', head: 'feat/x', commits: [{ subject: 'a' }], diffText: '+x', stat: ' 1 file' }
+  })
+  assert.equal(result.title, 'feat: X')
+  assert.ok(seen.calls[0].maxTokens >= 4096, 'PR 正文要比提交说明留更多预算，实际：' + seen.calls[0].maxTokens)
+  assert.equal(seen.options.reasoningEffort, 'low', '推理档位取最低一档，把预算留给正文')
+})
+
+test('生成 PR 文案：被 max-tokens 截断时报 model-truncated，而不是「不是合法 JSON」', async () => {
+  const prText = await import('../host/pr-text.js')
+  const { service } = fakeLlm({
+    chunks: [
+      {
+        type: 'text-delta',
+        text: '{"title":"feat: 重构","body":"## 变更摘要\\n\\n- **AI 运维模块**：把'
+          + '原先以「服务器检查」为中心的运维模块改造成终端会话架构，后端新增终端会话、会话存储'
+          + '、命令片段（snippets）、凭据管理等能力，SSH 连接层与 AI 对话（chat）随之改为'
+          + '基于会话的执行路径，前端运维页也重做了入口与状态展示，并补充了 Vue 技能文档'
+      },
+      { type: 'finish', reason: { kind: 'max-tokens' } }
+    ]
+  })
+  const error = await prText.generatePullText({
+    llm: service,
+    pair: { provider: 'p1', model: 'm1' },
+    input: { base: 'dev', head: 'feat/x', commits: [], diffText: '', stat: '' }
+  }).then(() => null, (caught) => caught)
+  assert.equal(error.code, 'model-truncated', '真实原因是预算不够，不是模型输出格式不对')
+  assert.match(error.message, /4096/, '要说清是哪个上限：' + error.message)
+  assert.match(error.message, /截断/)
+  assert.match(error.message, /末尾/, '要带上断点片段，方便判定是正文太长还是提示词问题：' + error.message)
 })
 
 test('深度审阅的准备：已在 PR 提交上时只切分支，不再 fetch', async () => {
@@ -993,6 +1044,94 @@ test('status：1.2s 内重复请求命中缓存（内容一致）', async () => 
   const third = await callOk('status', { rootPath: FIXTURE })
   assert.deepEqual(third, first, '清缓存后重新查询结果应一致')
   assert.equal(third.counts.total, first.counts.total)
+})
+
+test('status.pushed：远端一致=true、本地有新提交=false、没有 origin=null', async () => {
+  // 没有远端：无从判断，不能误报「要推送」
+  const plain = makeRepo(path.join(tempDir('dgp-pushed-none-'), 'repo'))
+  plugin.clearStatusCache()
+  const noRemote = await callOk('status', { rootPath: plain })
+  assert.equal(noRemote.pushed, null, '没有 origin 时 pushed 是 null')
+
+  // 建一个 bare 远端并推一次：远端跟踪引用由 push 更新，此时应判定「已推」
+  const remoteDir = path.join(tempDir('dgp-pushed-remote-'), 'origin.git')
+  mkdirSync(remoteDir, { recursive: true })
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main'], { cwd: remoteDir, stdio: 'pipe' })
+  const work = makeRepo(path.join(tempDir('dgp-pushed-work-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: work, stdio: 'pipe' })
+  git('remote', 'add', 'origin', remoteDir)
+  git('push', '-q', 'origin', 'main')
+
+  plugin.clearStatusCache()
+  const justPushed = await callOk('status', { rootPath: work })
+  assert.equal(justPushed.pushed, true, '刚推过：远端与 HEAD 一致')
+
+  // 本地再提交一笔：远端就旧了
+  writeFileSync(path.join(work, 'hello.txt'), 'local commit\n')
+  git('commit', '-qam', 'local commit')
+  plugin.clearStatusCache()
+  const ahead = await callOk('status', { rootPath: work })
+  assert.equal(ahead.pushed, false, '本地有新提交：要推')
+
+  // 新建的分支远端根本没有，同样要推（这正是「创建分支后」要提示的场景）
+  git('checkout', '-q', '-b', 'feature/local')
+  plugin.clearStatusCache()
+  const localOnly = await callOk('status', { rootPath: work })
+  assert.equal(localOnly.pushed, false, '远端没有这条分支：要推')
+  assert.equal(localOnly.branch, 'feature/local')
+})
+
+test('branch/push：推到 origin 并设好上游；重复推没事；非快进 / 没远端给可操作错误', async () => {
+  const remoteDir = path.join(tempDir('dgp-push-remote-'), 'origin.git')
+  mkdirSync(remoteDir, { recursive: true })
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main'], { cwd: remoteDir, stdio: 'pipe' })
+  const work = makeRepo(path.join(tempDir('dgp-push-work-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: work, stdio: 'pipe' })
+  git('remote', 'add', 'origin', remoteDir)
+
+  const pushed = await callOk('branch/push', { rootPath: work })
+  assert.equal(pushed.branch, 'main')
+  assert.equal(pushed.upstream, 'origin/main', '推送要顺手把上游设好，以后不用再带参数')
+  const remoteSha = execFileSync('git', ['rev-parse', '--verify', 'main'], { cwd: remoteDir, stdio: 'pipe' })
+    .toString('utf8').trim()
+  assert.equal(remoteSha.length, 40, '远端真的拿到提交了')
+
+  // 没有新提交时再推一次：git 会说 everything up-to-date，这不是错误
+  const again = await callOk('branch/push', { rootPath: work })
+  assert.equal(again.upstream, 'origin/main')
+
+  // 别人先推了 → 本地这次推送是非快进，必须给出可操作的原因
+  const other = path.join(tempDir('dgp-push-other-'), 'clone')
+  execFileSync('git', ['clone', '-q', remoteDir, other], { stdio: 'pipe' })
+  const otherGit = (...args) => execFileSync('git', args, { cwd: other, stdio: 'pipe' })
+  otherGit('config', 'user.email', 'other@example.com')
+  otherGit('config', 'user.name', 'Other')
+  writeFileSync(path.join(other, 'hello.txt'), 'other\n')
+  otherGit('commit', '-qam', 'other commit')
+  otherGit('push', '-q', 'origin', 'main')
+
+  writeFileSync(path.join(work, 'hello.txt'), 'mine\n')
+  git('commit', '-qam', 'my commit')
+  const rejected = await callRoute('branch/push', { rootPath: work })
+  assert.equal(rejected.ok, false)
+  assert.equal(rejected.error.code, 'not-fast-forward')
+  assert.match(rejected.error.message, /拉取当前分支最新代码/, '要告诉用户下一步点哪')
+
+  // 没有远端时不能假装推成功
+  const plain = makeRepo(path.join(tempDir('dgp-push-noremote-'), 'repo'))
+  const noRemote = await callRoute('branch/push', { rootPath: plain })
+  assert.equal(noRemote.error.code, 'no-remote')
+})
+
+test('缺参错误的文案要带端点名：一眼看出是哪次调用缺字段', async () => {
+  const result = await callRoute('pr/generate', { rootPath: FIXTURE })
+  assert.equal(result.ok, false)
+  assert.equal(result.error.code, 'bad-request')
+  assert.match(result.error.message, /^\[pr\/generate\] 缺少参数 base/, '实际：' + result.error.message)
+
+  const createPull = await callRoute('pr/create', { rootPath: FIXTURE, base: '' })
+  assert.equal(createPull.ok, false)
+  assert.match(createPull.error.message, /^\[pr\/create\]/, '实际：' + createPull.error.message)
 })
 
 test('status：非仓库 / 不存在 → 结构化错误', async () => {
@@ -1793,28 +1932,238 @@ test('branches/list 与 branch/switch：列出本地分支、切换后当前分�
   assert.equal(bad.error.code, 'bad-branch')
 })
 
-test('branch/create：从当前 HEAD 建分支并切过去；重名与非法名字拒绝', async () => {
-  const dir = makeRepo(path.join(tempDir('dgp-branch-create-'), 'repo'))
-  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
-  const before = git('rev-parse', '--short', 'HEAD').toString('utf8').trim()
+/* ---------------------------------------------- 创建分支（携带未提交改动） */
 
-  const created = await callOk('branch/create', { rootPath: dir, name: 'topic' })
-  assert.equal(created.branch, 'topic', '创建后应停在新分支上')
-  assert.equal(created.head, before, '新分支应指向创建时的 HEAD，而不是另起一个提交')
-  assert.equal(git('branch', '--show-current').toString('utf8').trim(), 'topic')
+/** 在 dir 里执行 git，返回去空白后的 stdout。 */
+function gitOf(dir) {
+  const run = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' }).toString('utf8')
+  return run
+}
 
-  const listed = await callOk('branches/list', { rootPath: dir })
-  assert.equal(listed.branches.find((branch) => branch.name === 'topic').current, true)
-  assert.equal(listed.branches.find((branch) => branch.name === 'main').current, false)
+/** 建一个「main 与 dev 在 hello.txt 上分叉」的仓库：返 {dir, git, devSha}。 */
+function divergedRepo(prefix) {
+  const dir = makeRepo(path.join(tempDir(prefix), 'repo'))
+  const git = gitOf(dir)
+  git('checkout', '-q', '-b', 'dev')
+  writeFileSync(path.join(dir, 'hello.txt'), 'dev\n')
+  writeFileSync(path.join(dir, 'dev-only.txt'), 'dev only\n')
+  git('add', '-A')
+  git('commit', '-q', '-m', 'dev change')
+  git('checkout', '-q', 'main')
+  return { dir, git, devSha: git('rev-parse', 'dev').trim() }
+}
 
-  const duplicate = await callRoute('branch/create', { rootPath: dir, name: 'main' })
-  assert.equal(duplicate.ok, false, '已有分支不能被新建覆盖')
-  assert.equal(git('branch', '--show-current').toString('utf8').trim(), 'topic', '失败后仍停在原分支')
+test('branch/create：从当前 HEAD 建并切换，未提交改动原样跟随（不 stash、不提交）', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-create-follow-'), 'repo'))
+  const git = gitOf(dir)
+  // 能脏的都脏上：未暂存修改 / 已暂存修改 / 未暂存删除 / 已暂存新文件 / 未跟踪文件
+  writeFileSync(path.join(dir, 'again.txt'), 'base\n')
+  writeFileSync(path.join(dir, 'bye.txt'), 'bye\n')
+  git('add', '-A')
+  git('commit', '-q', '-m', 'add again and bye')
+  writeFileSync(path.join(dir, 'hello.txt'), 'local edit\n')
+  writeFileSync(path.join(dir, 'again.txt'), 'staged edit\n')
+  git('add', 'again.txt')
+  writeFileSync(path.join(dir, 'staged-new.txt'), 'new\n')
+  git('add', 'staged-new.txt')
+  writeFileSync(path.join(dir, 'untracked.txt'), 'untracked\n')
+  rmSync(path.join(dir, 'bye.txt'))
 
-  const bad = await callRoute('branch/create', { rootPath: dir, name: 'has space' })
-  assert.equal(bad.ok, false, '非法分支名必须拒绝')
-  assert.equal(bad.error.code, 'bad-branch')
+  const beforeHead = git('rev-parse', 'HEAD').trim()
+  const beforeStatus = git('status', '--porcelain=v1')
+  const beforeCached = git('diff', '--cached', '--stat')
+  const beforeWork = git('diff', '--stat')
+
+  const created = await callOk('branch/create', {
+    rootPath: dir, name: 'feature/x', base: 'HEAD', checkout: true
+  })
+
+  assert.equal(created.branch, 'feature/x', '创建后应停在新分支上')
+  assert.equal(created.switched, true)
+  assert.equal(created.previousBranch, 'main')
+  assert.equal(created.base.kind, 'head')
+  assert.deepEqual(created.carried, { total: 5, staged: 2, unstaged: 2, untracked: 1, conflicted: 0 })
+  assert.equal(git('branch', '--show-current').trim(), 'feature/x')
+  assert.equal(git('rev-parse', 'HEAD').trim(), beforeHead, '新分支指向原 HEAD，不产生新提交')
+  assert.equal(git('status', '--porcelain=v1'), beforeStatus, 'status 必须逐字节一致')
+  assert.equal(git('diff', '--cached', '--stat'), beforeCached, '暂存区必须一致')
+  assert.equal(git('diff', '--stat'), beforeWork, '工作区必须一致')
+  assert.equal(git('stash', 'list'), '', '不应产生 stash（从 HEAD 建根本不需要）')
 })
+
+test('branch/create：checkout=false 只建分支，HEAD 与工作区都不动', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-create-only-'), 'repo'))
+  const git = gitOf(dir)
+  writeFileSync(path.join(dir, 'hello.txt'), 'dirty\n')
+
+  const created = await callOk('branch/create', {
+    rootPath: dir, name: 'only/ref', base: 'HEAD', checkout: false
+  })
+
+  assert.equal(created.switched, false)
+  assert.equal(created.branch, 'main', '不切换，仍停在 main')
+  assert.equal(git('branch', '--show-current').trim(), 'main')
+  assert.equal(git('status', '--porcelain=v1'), ' M hello.txt\n', '工作区不动')
+  assert.equal(git('rev-parse', 'only/ref').trim(), git('rev-parse', 'main').trim(), '分支指向 HEAD')
+})
+
+test('branch/create：跨基准无重叠时由 git 把改动带过去，且不设上游', async () => {
+  const { dir, git, devSha } = divergedRepo('dgp-create-move-')
+  writeFileSync(path.join(dir, 'local-only.txt'), 'mine\n')   // 与 dev 的差异无交集
+
+  const created = await callOk('branch/create', {
+    rootPath: dir, name: 'feature/from-dev', base: 'dev', checkout: true
+  })
+
+  assert.equal(created.base.kind, 'local')
+  assert.equal(git('rev-parse', 'HEAD').trim(), devSha, 'HEAD 应落在 base 上')
+  assert.equal(git('status', '--porcelain=v1'), '?? local-only.txt\n', '改动跟着过去了')
+  // --no-track：跨基准创建不把 dev 设成上游（否则 push.default=simple 会卡住）
+  let upstream = null
+  try {
+    upstream = execFileSync('git', ['rev-parse', '--abbrev-ref', 'feature/from-dev@{upstream}'], {
+      cwd: dir, stdio: 'pipe'
+    }).toString('utf8').trim()
+  } catch {
+    upstream = null
+  }
+  assert.equal(upstream, null, '跨基准创建不应设置上游')
+})
+
+test('branch/create：跨基准撞车时拒绝、列出文件、什么都不改', async () => {
+  const { dir, git } = divergedRepo('dgp-create-block-')
+  writeFileSync(path.join(dir, 'hello.txt'), 'local edit\n')
+  writeFileSync(path.join(dir, 'dev-only.txt'), 'untracked collision\n')
+  const beforeStatus = git('status', '--porcelain=v1')
+
+  const blocked = await callRoute('branch/create', {
+    rootPath: dir, name: 'feature/from-dev', base: 'dev', checkout: true
+  })
+
+  assert.equal(blocked.ok, false)
+  assert.equal(blocked.error.code, 'would-overwrite')
+  assert.deepEqual(blocked.error.details.tracked, ['hello.txt'], '已跟踪的撞车文件')
+  assert.deepEqual(blocked.error.details.untracked, ['dev-only.txt'], '未跟踪的撞车文件')
+  assert.equal(blocked.error.details.base, 'dev')
+  assert.match(blocked.error.message, /改为从当前分支创建/, '要给出零风险出口')
+  assert.equal(git('status', '--porcelain=v1'), beforeStatus, '拒绝时仓库状态必须原样')
+  assert.equal(git('branch', '--show-current').trim(), 'main')
+  assert.equal(git('stash', 'list'), '', '不应产生 stash')
+})
+
+test('branch/create：撞车后的两个出口都能成功（从当前分支 / 只建分支）', async () => {
+  const { dir, git, devSha } = divergedRepo('dgp-create-exits-')
+  writeFileSync(path.join(dir, 'hello.txt'), 'local edit\n')
+
+  // 出口一：改为从当前分支创建 —— 改动零风险跟随
+  const fromHead = await callOk('branch/create', {
+    rootPath: dir, name: 'feature/here', base: 'HEAD', checkout: true
+  })
+  assert.equal(fromHead.branch, 'feature/here')
+  assert.equal(git('status', '--porcelain=v1'), ' M hello.txt\n', '改动跟到新分支且未提交')
+  git('checkout', '-q', 'main')
+
+  // 出口二：只建分支（不切换）—— 分支落在 dev 上，工作区不动
+  const only = await callOk('branch/create', {
+    rootPath: dir, name: 'feature/there', base: 'dev', checkout: false
+  })
+  assert.equal(only.switched, false)
+  assert.equal(git('branch', '--show-current').trim(), 'main')
+  assert.equal(git('rev-parse', 'feature/there').trim(), devSha, '分支指向 base')
+  assert.equal(git('status', '--porcelain=v1'), ' M hello.txt\n', '工作区不动')
+})
+
+test('branch/create：合并进行中 checkout 被拒（in-progress），只建分支可用', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-create-merge-'), 'repo'))
+  const git = gitOf(dir)
+  git('checkout', '-q', '-b', 'side')
+  writeFileSync(path.join(dir, 'hello.txt'), 'side\n')
+  git('commit', '-qam', 'side')
+  git('checkout', '-q', 'main')
+  writeFileSync(path.join(dir, 'hello.txt'), 'main\n')
+  git('commit', '-qam', 'main')
+  assert.throws(() => git('merge', 'side'), '需要制造冲突')
+
+  const failed = await callRoute('branch/create', {
+    rootPath: dir, name: 'during-merge', base: 'HEAD', checkout: true
+  })
+  assert.equal(failed.ok, false)
+  assert.equal(failed.error.code, 'in-progress')
+  assert.match(failed.error.message, /合并/)
+
+  const only = await callOk('branch/create', {
+    rootPath: dir, name: 'during-merge', base: 'HEAD', checkout: false
+  })
+  assert.equal(only.switched, false, '只建分支不受合并限制')
+  assert.equal(existsSync(path.join(dir, '.git', 'MERGE_HEAD')), true, '不应打断合并')
+})
+
+test('branch/create：空仓库只能创建并切换（unborn）', async () => {
+  const dir = path.join(tempDir('dgp-create-unborn-'), 'repo')
+  mkdirSync(dir, { recursive: true })
+  const git = gitOf(dir)
+  git('init', '-q', '-b', 'main')
+  git('config', 'user.email', 'test@example.com')
+  git('config', 'user.name', 'Test User')
+
+  const failed = await callRoute('branch/create', {
+    rootPath: dir, name: 'first', base: 'HEAD', checkout: false
+  })
+  assert.equal(failed.ok, false, '空仓库里 git branch 没有可指向的对象')
+  assert.equal(failed.error.code, 'unborn')
+
+  const created = await callOk('branch/create', { rootPath: dir, name: 'first', base: 'HEAD', checkout: true })
+  assert.equal(created.branch, 'first')
+  assert.equal(created.head, null, '还没有提交，head 为 null')
+})
+
+test('branch/create：入参缺失 / 重名 / 非法名 / base 不存在 分别报错', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-create-errors-'), 'repo'))
+  const git = gitOf(dir)
+
+  for (const field of ['name', 'base', 'checkout']) {
+    const payload = { rootPath: dir, name: 'x', base: 'HEAD', checkout: true }
+    delete payload[field]
+    const missing = await callRoute('branch/create', payload)
+    assert.equal(missing.ok, false, `缺 ${field} 必须拒绝`)
+    assert.equal(missing.error.code, 'bad-request')
+  }
+  const badCheckout = await callRoute('branch/create', { rootPath: dir, name: 'x', base: 'HEAD', checkout: 'yes' })
+  assert.equal(badCheckout.error.code, 'bad-request', 'checkout 必须是布尔值')
+
+  const duplicate = await callRoute('branch/create', { rootPath: dir, name: 'main', base: 'HEAD', checkout: true })
+  assert.equal(duplicate.error.code, 'branch-exists', '已有分支不能被新建覆盖')
+  assert.equal(git('branch', '--show-current').trim(), 'main', '失败后仍停在原分支')
+
+  const badName = await callRoute('branch/create', { rootPath: dir, name: 'has space', base: 'HEAD', checkout: true })
+  assert.equal(badName.error.code, 'bad-branch')
+
+  const badBase = await callRoute('branch/create', { rootPath: dir, name: 'x', base: 'origin/nope', checkout: true })
+  assert.equal(badBase.error.code, 'base-not-found')
+  assert.match(badBase.error.message, /origin\/nope/)
+})
+
+test('branches/list：一并返回 state（HEAD / 进行中操作 / 脏计数）', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-branches-state-'), 'repo'))
+  const git = gitOf(dir)
+  writeFileSync(path.join(dir, 'hello.txt'), 'dirty\n')
+  writeFileSync(path.join(dir, 'untracked.txt'), 'u\n')
+
+  const clean = await callOk('branches/list', { rootPath: dir })
+  assert.equal(clean.state.unborn, false)
+  assert.equal(clean.state.detached, false)
+  assert.equal(clean.state.inProgress, null)
+  assert.equal(typeof clean.state.head, 'string')
+  assert.deepEqual(clean.state.dirty, { total: 2, staged: 0, unstaged: 1, untracked: 1, conflicted: 0 })
+  assert.equal(clean.current, 'main')
+
+  // 游离 HEAD：current 为 null、detached 为 true
+  git('checkout', '-q', '--detach', 'HEAD')
+  const detached = await callOk('branches/list', { rootPath: dir })
+  assert.equal(detached.state.detached, true)
+  assert.equal(detached.current, null)
+})
+
 
 test('branch/switch：改动会被覆盖时由 git 拒绝，错误原样上抛且不丢改动', async () => {
   const dir = makeRepo(path.join(tempDir('dgp-branch-dirty-'), 'repo'))
@@ -1830,6 +2179,283 @@ test('branch/switch：改动会被覆盖时由 git 拒绝，错误原样上抛�
   assert.match(failed.error.message, /overwritten|local changes/i, '要带 git 的原话：' + failed.error.message)
   // 与 VS Code 的默认行为一致：不自动 stash、不 force，改动还在原处
   assert.equal(readFileSync(path.join(dir, 'hello.txt'), 'utf8'), 'dirty\n', '未提交的改动不能被悄悄丢掉')
+})
+
+test('branch/delete：删除非当前分支成功；当前分支 / 不存在 / 未合并（及 force）分别给明确错误码', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-branch-delete-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  git('branch', 'topic')
+
+  // 成功：删掉一个已合并、非当前的分支
+  const deleted = await callOk('branch/delete', { rootPath: dir, name: 'topic' })
+  assert.deepEqual(deleted, { name: 'topic', deleted: true, forced: false })
+  assert.equal(git('branch', '--list', 'topic').toString('utf8').trim(), '', '分支应真的没了')
+
+  // 当前分支不能删
+  const current = await callFail('branch/delete', { rootPath: dir, name: 'main' })
+  assert.equal(current.code, 'current-branch')
+  assert.match(current.message, /当前分支不能删除/)
+
+  // 不存在的分支有独立错误码（而不是一段 git 原文）
+  const missing = await callFail('branch/delete', { rootPath: dir, name: 'no-such-branch' })
+  assert.equal(missing.code, 'branch-not-found')
+
+  // 非法名字由 git check-ref-format 判定
+  const bad = await callFail('branch/delete', { rootPath: dir, name: 'has space' })
+  assert.equal(bad.code, 'bad-branch')
+
+  // 未合并分支：默认 -d 拒绝，并提示可用强制删除
+  git('switch', '-q', '-c', 'unmerged')
+  writeFileSync(path.join(dir, 'unmerged.txt'), 'x\n')
+  git('add', '-A')
+  git('commit', '-qm', 'unmerged work')
+  git('switch', '-q', 'main')
+
+  const unmerged = await callFail('branch/delete', { rootPath: dir, name: 'unmerged' })
+  assert.equal(unmerged.code, 'branch-unmerged')
+  assert.match(unmerged.message, /强制删除/, '要提示可以用强制删除：' + unmerged.message)
+  assert.equal(git('branch', '--list', 'unmerged').toString('utf8').trim(), 'unmerged', '默认删除失败后分支必须还在')
+
+  // force=true 才用 -D
+  const forced = await callOk('branch/delete', { rootPath: dir, name: 'unmerged', force: true })
+  assert.deepEqual(forced, { name: 'unmerged', deleted: true, forced: true })
+  assert.equal(git('branch', '--list', 'unmerged').toString('utf8').trim(), '', 'force 时应真的删掉')
+})
+
+test('mergeBranches：本地+远端合成，当前/默认/排序/领先落后/远端更新/上游丢失都算对', async () => {
+  const { mergeBranches } = await import('../host/branches.js')
+  const merged = mergeBranches({
+    remote: {
+      branches: [
+        { name: 'main', sha: 'sha-main', protected: false },
+        { name: 'dev', sha: 'sha-dev-new', protected: true },
+        { name: 'feature/x', sha: 'sha-fx', protected: false },
+        { name: 'docs', sha: 'sha-docs', protected: false }
+      ],
+      truncated: false
+    },
+    tracking: [
+      { name: 'main', sha: 'sha-main' },
+      { name: 'dev', sha: 'sha-dev-old' },
+      { name: 'feature/x', sha: 'sha-fx' }
+    ],
+    local: {
+      branches: [
+        { name: 'dev', current: true, upstream: 'origin/dev', ahead: 2, behind: 1, upstreamGone: false },
+        { name: 'main', current: false, upstream: 'origin/main', ahead: 0, behind: 0, upstreamGone: false },
+        { name: 'feature/x', current: false, upstream: 'origin/feature/x', ahead: 0, behind: 0, upstreamGone: false },
+        { name: 'local-only', current: false, upstream: null, ahead: 0, behind: 0, upstreamGone: false },
+        { name: 'stale', current: false, upstream: 'origin/stale-remote', ahead: 0, behind: 0, upstreamGone: true }
+      ],
+      current: 'dev',
+      detached: false
+    },
+    defaultBranch: 'main'
+  })
+
+  assert.equal(merged.remoteKnown, true)
+  assert.equal(merged.localKnown, true)
+  assert.equal(merged.truncated, false)
+  assert.deepEqual(
+    merged.branches.map((branch) => branch.name),
+    ['dev', 'main', 'feature/x', 'local-only', 'stale', 'docs'],
+    '排序：当前 → 默认 → 本地+远端 → 仅本地 → 仅远端'
+  )
+
+  const byName = new Map(merged.branches.map((branch) => [branch.name, branch]))
+  const dev = byName.get('dev')
+  assert.equal(dev.current, true, '当前分支以 HEAD（local.current）为准')
+  assert.equal(dev.default, false)
+  assert.equal(dev.local, true)
+  assert.equal(dev.remote, true)
+  assert.equal(dev.protected, true, 'protected 只认远端给的标记')
+  assert.equal(dev.remoteSha, 'sha-dev-new')
+  assert.equal(dev.upstream, 'origin/dev')
+  assert.equal(dev.ahead, 2)
+  assert.equal(dev.behind, 1)
+  assert.equal(dev.upstreamMissing, false, '上游还在远端名单里')
+  assert.equal(dev.remoteUpdated, true, '远端 sha 与本地 origin/dev 跟踪引用不同 = 还没 fetch')
+
+  const main = byName.get('main')
+  assert.equal(main.default, true)
+  assert.equal(main.current, false)
+  assert.equal(main.remoteUpdated, false, '跟踪引用与远端 sha 一致')
+
+  const feature = byName.get('feature/x')
+  assert.equal(feature.local, true)
+  assert.equal(feature.remote, true)
+  assert.equal(feature.protected, false)
+  assert.equal(feature.remoteUpdated, false)
+
+  const localOnly = byName.get('local-only')
+  assert.equal(localOnly.local, true)
+  assert.equal(localOnly.remote, false, '远端已知但没有这个名字 → 确定没有')
+  assert.equal(localOnly.remoteSha, null)
+  assert.equal(localOnly.upstream, null)
+  assert.equal(localOnly.upstreamMissing, false)
+
+  const stale = byName.get('stale')
+  assert.equal(stale.remote, false)
+  assert.equal(stale.upstreamGone, true, '本地 upstream:track 的 gone 原样沿用')
+  assert.equal(stale.upstreamMissing, true, '上游分支名不在远端名单里 = 远端已删')
+
+  const docs = byName.get('docs')
+  assert.equal(docs.local, false)
+  assert.equal(docs.remote, true)
+  assert.equal(docs.ahead, 0)
+  assert.equal(docs.upstream, null)
+  assert.equal(docs.remoteUpdated, false)
+
+  assert.deepEqual(merged.counts, { total: 6, local: 5, remoteOnly: 1, localOnly: 2 })
+})
+
+test('mergeBranches：远端没读到时只有本地行，remote 是 null（未知）而不是 false', async () => {
+  const { mergeBranches } = await import('../host/branches.js')
+  const merged = mergeBranches({
+    remote: null,
+    tracking: [],
+    local: {
+      branches: [
+        { name: 'main', current: true, upstream: 'origin/main', ahead: 3, behind: 0, upstreamGone: false },
+        { name: 'topic', current: false, upstream: null, ahead: 0, behind: 0, upstreamGone: false }
+      ],
+      current: 'main',
+      detached: false
+    },
+    defaultBranch: ''
+  })
+
+  assert.equal(merged.remoteKnown, false)
+  assert.equal(merged.localKnown, true)
+  assert.equal(merged.truncated, false)
+  assert.deepEqual(merged.branches.map((branch) => branch.name), ['main', 'topic'])
+  for (const branch of merged.branches) {
+    assert.equal(branch.remote, null, '远端未知时为 null，而不是 false')
+    assert.equal(branch.remoteSha, null)
+    assert.equal(branch.upstreamMissing, false, '远端未知时无法判断上游是否丢失')
+    assert.equal(branch.remoteUpdated, false)
+    assert.equal(branch.protected, false)
+  }
+  assert.deepEqual(merged.counts, { total: 2, local: 2, remoteOnly: 0, localOnly: 0 },
+    '远端未知时不算「仅远程」，也不把 remote=null 算成「仅本地」')
+})
+
+test('mergeBranches：本地没克隆时只有远端行，truncated 透传，本地状态全空', async () => {
+  const { mergeBranches } = await import('../host/branches.js')
+  const merged = mergeBranches({
+    remote: {
+      branches: [
+        { name: 'dev', sha: 'sha-dev', protected: false },
+        { name: 'main', sha: 'sha-main', protected: true }
+      ],
+      truncated: true
+    },
+    tracking: [],
+    local: null,
+    defaultBranch: 'main'
+  })
+
+  assert.equal(merged.localKnown, false)
+  assert.equal(merged.remoteKnown, true)
+  assert.equal(merged.truncated, true, '远端分页到上限时 truncated 照实返回')
+  assert.deepEqual(merged.branches.map((branch) => [branch.name, branch.default]),
+    [['main', true], ['dev', false]], '默认分支排最前')
+  for (const branch of merged.branches) {
+    assert.equal(branch.local, false)
+    assert.equal(branch.current, false, '没有本地仓库就不可能选中当前分支')
+    assert.equal(branch.remote, true)
+    assert.equal(branch.upstream, null)
+    assert.equal(branch.ahead, 0)
+    assert.equal(branch.behind, 0)
+  }
+  assert.equal(merged.branches.find((branch) => branch.name === 'main').protected, true)
+  assert.deepEqual(merged.counts, { total: 2, local: 0, remoteOnly: 2, localOnly: 0 })
+})
+
+test('mergeBranches：游离 HEAD 时没有任何行是当前分支（即使旧快照里 current 还是 true）', async () => {
+  const { mergeBranches } = await import('../host/branches.js')
+  const merged = mergeBranches({
+    remote: { branches: [{ name: 'main', sha: 's1', protected: false }], truncated: false },
+    tracking: [],
+    local: {
+      branches: [{ name: 'main', current: true, upstream: null, ahead: 0, behind: 0, upstreamGone: false }],
+      current: 'main',
+      detached: true
+    },
+    defaultBranch: 'main'
+  })
+  assert.equal(merged.branches.length, 1)
+  assert.equal(merged.branches[0].current, false, '游离 HEAD 不属于任何分支')
+  assert.equal(merged.branches[0].default, true)
+  assert.equal(merged.branches[0].local, true)
+})
+
+test('mergeBranches：listBranches 里「仅远端」的合成条目不能被算成本地分支', async () => {
+  const { mergeBranches } = await import('../host/branches.js')
+  const merged = mergeBranches({
+    remote: {
+      branches: [{ name: 'main', sha: 's1', protected: false }, { name: 'feat', sha: 's2', protected: false }],
+      truncated: false
+    },
+    tracking: [{ name: 'feat', sha: 's2' }],
+    // listBranches 会把「只有远端」的分支也合成一条（local:false），这里模拟那个返回形状
+    local: {
+      branches: [
+        { name: 'main', local: true, current: true, remote: 'origin', upstream: 'origin/main', ahead: 0, behind: 0, upstreamGone: false },
+        { name: 'feat', local: false, current: false, remote: 'origin', upstream: null, ahead: 0, behind: 0, upstreamGone: false }
+      ],
+      current: 'main',
+      detached: false
+    },
+    defaultBranch: 'main'
+  })
+  const feat = merged.branches.find((branch) => branch.name === 'feat')
+  assert.equal(feat.local, false, '仅远端的条目不能被算成本地分支')
+  assert.equal(feat.remote, true)
+  assert.equal(feat.current, false)
+  assert.equal(merged.counts.local, 1, '本地分支数只算真正的本地分支')
+  assert.equal(merged.counts.remoteOnly, 1)
+  assert.equal(merged.counts.localOnly, 0)
+})
+
+test('remote/branches：远端读不到时只记 failures，本地分支照常合成（端点仍是成功信封）', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-remote-branches-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  git('remote', 'add', 'origin', 'https://github.com/alice/app.git')
+  git('branch', 'topic')
+
+  // 没有账号 / 没有网络：远端那段必然失败，但端点必须成功返回本地视图
+  const value = await callOk('remote/branches', {
+    accountId: 'github:nobody',
+    fullName: 'alice/app',
+    rootPaths: [dir]
+  })
+  assert.equal(value.accountId, 'github:nobody')
+  assert.equal(value.fullName, 'alice/app')
+  assert.equal(value.remoteKnown, false, '远端读不到 → remoteKnown=false')
+  assert.equal(value.localKnown, true, '本地仓库命中 → localKnown=true')
+  assert.equal(value.provider, 'github', '远端失败时 provider 用 accountId 前缀')
+  assert.equal(value.htmlUrl, '')
+  assert.equal(value.defaultBranch, '')
+  assert.ok(eqPath(value.local.rootPath, dir), '要带上命中的本地仓库根：' + value.local.rootPath)
+  assert.equal(value.local.current, 'main')
+  assert.equal(value.local.detached, false)
+  assert.ok(
+    value.failures.some((item) => item.section === 'remote'),
+    '远端失败要记进 failures：' + JSON.stringify(value.failures)
+  )
+  assert.ok(value.failures.every((item) => typeof item.message === 'string' && item.message !== ''))
+
+  const main = value.branches.find((branch) => branch.name === 'main')
+  assert.equal(main.current, true)
+  assert.equal(main.remote, null, '远端未知时 remote 是 null')
+  assert.equal(value.branches.find((branch) => branch.name === 'topic').local, true)
+  assert.equal(value.branches.length, 2)
+  assert.deepEqual(value.counts, { total: 2, local: 2, remoteOnly: 0, localOnly: 0 })
+
+  // 入参缺失仍然是 bad-request（只有取数失败才被兜住）
+  const missing = await callFail('remote/branches', { fullName: 'alice/app' })
+  assert.equal(missing.code, 'bad-request')
 })
 
 test('roots/hide 与 roots/unhide：隐藏只改列表标记，仓库本身不动；项目本身不能隐藏', async () => {
@@ -2060,6 +2686,19 @@ test('models.generateCommitMessage：模型没吐文本时抛 model-failed', asy
   await assert.rejects(
     () => models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff'),
     (error) => error.code === 'model-failed'
+  )
+})
+
+test('models.generateCommitMessage：被 max-tokens 截断时报 model-truncated，而不是「没有文本」', async () => {
+  const { service } = fakeLlm({
+    chunks: [
+      { type: 'text-delta', text: 'feat: 半截' },
+      { type: 'finish', reason: { kind: 'max-tokens' } }
+    ]
+  })
+  await assert.rejects(
+    () => models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff'),
+    (error) => error.code === 'model-truncated' && /1024/.test(error.message)
   )
 })
 

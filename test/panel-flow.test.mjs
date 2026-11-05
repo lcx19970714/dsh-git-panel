@@ -309,7 +309,7 @@ function createReconciler() {
       return out
     }
     if (typeof node !== 'object' || node.$$el !== true) {
-      throw new Error('无法渲染的节点: ' + String(node))
+      throw new Error('无法渲染的节点: ' + String(node) + ' @' + position + ' keys=' + Object.keys(node).join(','))
     }
     if (node.type === Fragment) {
       const out = []
@@ -1105,6 +1105,8 @@ function statusThree() {
     upstream: 'origin/main',
     ahead: 1,
     behind: 0,
+    // 默认已推到远端：只有专门测「还没推」的用例才覆盖它
+    pushed: true,
     files: [
       file({ path: 'util.ts', status: 'M', staged: true, adds: 2, dels: 0 }),
       file({ path: 'app.js', status: 'M', unstaged: true, adds: 3, dels: 1 }),
@@ -1162,7 +1164,33 @@ function resolveOk(roots, projectRoot) {
 }
 
 function sayOk(value) { return { ok: true, value } }
-function sayFail(code, message) { return { ok: false, error: { code, message, details: {} } } }
+function sayFail(code, message, details) {
+  return { ok: false, error: { code, message, details: details ?? {} } }
+}
+
+/**
+ * branches/list 的标准回包。
+ *
+ * 契约要求：`{branches, current, state}`。分支菜单的创建区完全依赖 `state`
+ * （脏计数 / 进行中操作 / 是否 unborn），所以每个用例都必须给出来 —— 缺了就是违约，
+ * 而不是「让界面自己兜底」。
+ */
+function branchesOk(branches, overrides) {
+  const currentBranch = branches.find((branch) => branch.current === true)
+  const patch = overrides ?? {}
+  return {
+    branches,
+    current: patch.current !== undefined ? patch.current : (currentBranch === undefined ? null : currentBranch.name),
+    state: {
+      head: 'aaa1111',
+      detached: false,
+      unborn: false,
+      inProgress: null,
+      dirty: { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 },
+      ...(patch.state ?? {})
+    }
+  }
+}
 
 /** 工具条上的「远端」页签按钮（变更 / 文件 / 远端 的第三个）。 */
 function remoteTab(panel) {
@@ -1800,12 +1828,10 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
         return resolveOk([{ ...ROOT, branch: resolvedBranch }], PROJECT)
       },
       status: () => sayOk(statusThree()),
-      'branches/list': () => sayOk({
-        branches: [
-          { name: 'main', local: true, current: resolvedBranch === 'main', remote: 'origin', upstream: 'origin/main', ahead: 1, behind: 0 },
-          { name: 'feature', local: true, current: resolvedBranch === 'feature', remote: null, upstream: null, ahead: 0, behind: 0 }
-        ]
-      }),
+      'branches/list': () => sayOk(branchesOk([
+        { name: 'main', local: true, current: resolvedBranch === 'main', remote: 'origin', upstream: 'origin/main', ahead: 1, behind: 0 },
+        { name: 'feature', local: true, current: resolvedBranch === 'feature', remote: null, upstream: null, ahead: 0, behind: 0 }
+      ])),
       'branch/switch': (payload) => {
         switches.push(payload)
         resolvedBranch = payload.name
@@ -1850,7 +1876,7 @@ test('用例 1B：点仓库行的分支名可以切换分支', async () => {
   })
 })
 
-test('用例 1C：分支菜单底部输入名字后创建并切过去', async () => {
+test('用例 1C：分支菜单输入名字后按当前 HEAD 创建并切过去（改动跟随）', async () => {
   const created = []
   let resolveCalls = 0
   await withPanel({
@@ -1860,12 +1886,21 @@ test('用例 1C：分支菜单底部输入名字后创建并切过去', async ()
         return resolveOk([ROOT], PROJECT)
       },
       status: () => sayOk(statusThree()),
-      'branches/list': () => sayOk({
-        branches: [{ name: 'main', current: true }]
-      }),
+      'branches/list': () => sayOk(branchesOk([
+        { name: 'main', local: true, current: true, remote: 'origin', upstream: 'origin/main', ahead: 0, behind: 0 },
+        { name: 'feature', local: true, current: false, remote: 'origin', upstream: null, ahead: 0, behind: 0 }
+      ], { state: { dirty: { total: 3, staged: 1, unstaged: 1, untracked: 1, conflicted: 0 } } })),
       'branch/create': (payload) => {
         created.push(payload)
-        return sayOk({ branch: payload.name, head: 'bbb2222' })
+        return sayOk({
+          branch: payload.name,
+          head: 'bbb2222',
+          previousBranch: 'main',
+          previousHead: 'aaa1111',
+          base: { ref: payload.base, kind: 'head', sha: 'aaa1111' },
+          switched: payload.checkout,
+          carried: { total: 3, staged: 1, unstaged: 1, untracked: 1, conflicted: 0 }
+        })
       }
     }
   }, async (panel) => {
@@ -1878,6 +1913,23 @@ test('用例 1C：分支菜单底部输入名字后创建并切过去', async ()
     assert(form !== null, '分支菜单底部应有创建表单')
     const submit = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-create-submit') === 'true')
     eq(attr(submit, 'disabled'), true, '没填名字时不能创建')
+    eq(textOf(submit), '创建', '勾着「创建后切换」时按钮就是「创建」')
+
+    // 脏工作区要如实显示改动计数（这是「改动会不会跟过去」的现场证据）
+    const dirty = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-dirty') === 'dirty')
+    assert(dirty !== null, '脏工作区应显示改动计数')
+    assert(textOf(dirty).includes('3 处改动'), '要写清有几处改动：' + textOf(dirty))
+
+    // 起点默认是当前分支，且可以切成别的分支 / 远端分支
+    const base = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-base') !== undefined)
+    eq(base.props.value, 'HEAD', '默认从当前 HEAD 创建')
+    const baseValues = findAll(base, (node) => isHost(node) && node.type === 'option').map((node) => attr(node, 'value'))
+    eq(baseValues, ['HEAD', 'feature', 'origin/main', 'origin/feature'], '起点候选：HEAD + 其它本地分支 + 远端分支')
+    const baseLabels = findAll(base, (node) => isHost(node) && node.type === 'option').map((node) => textOf(node))
+    eq(baseLabels, ['当前分支 main', 'feature（本地）', 'origin/main（远端）', 'origin/feature（远端）'],
+      '选项要写清本地 / 远端：只写 origin/x 对不熟 git 的人等于天书')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-base-note') !== undefined), null,
+      '起点是当前分支时不需要额外解释（默认路径不加仪式）')
 
     const input = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-name') === 'true')
     input.props.onChange({ target: { value: '  topic  ' } })
@@ -1889,9 +1941,198 @@ test('用例 1C：分支菜单底部输入名字后创建并切过去', async ()
       .props.onSubmit({ preventDefault() {} })
     await panel.flush()
     eq(created.length, 1, '应调用一次 branch/create')
-    eq(created[0], { rootPath: PROJECT, name: 'topic' }, '名字要去掉首尾空白')
+    eq(created[0], { rootPath: PROJECT, name: 'topic', base: 'HEAD', checkout: true }, '名字去空白、默认从 HEAD 建并切换')
     eq(panel.all((node) => isHost(node) && hasClass(node, 'dgp-menu')).length, 0, '创建后菜单应关闭')
     assert(resolveCalls > before, '创建后要重新解析根，行上的分支名才会换成新的')
+    const note = panel.one((node) => isHost(node) && attr(node, 'data-update-note') !== undefined)
+    assert(note !== null && textOf(note).includes('3 处改动已跟随'), '要有「改动已跟随、未提交」的确认：' + (note === null ? '(无提示)' : textOf(note)))
+  })
+})
+
+test('用例 1C2：只建分支（取消勾选「创建后切换」）不发切换语义，按钮文案跟着变', async () => {
+  const created = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'branches/list': () => sayOk(branchesOk([
+        { name: 'main', local: true, current: true, remote: 'origin', upstream: 'origin/main', ahead: 0, behind: 0 },
+        { name: 'dev', local: true, current: false, remote: 'origin', upstream: null, ahead: 0, behind: 0 }
+      ], { state: { dirty: { total: 1, staged: 0, unstaged: 1, untracked: 0, conflicted: 0 } } })),
+      'branch/create': (payload) => {
+        created.push(payload)
+        return sayOk({
+          branch: payload.name,
+          head: 'aaa1111',
+          previousBranch: 'main',
+          previousHead: 'aaa1111',
+          base: { ref: payload.base, kind: 'local', sha: 'ccc3333' },
+          switched: false,
+          carried: { total: 1, staged: 0, unstaged: 1, untracked: 0, conflicted: 0 }
+        })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined))
+    await panel.flush()
+
+    const input = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-name') === 'true')
+    input.props.onChange({ target: { value: 'only' } })
+    await panel.flush()
+
+    // 换成别的起点：界面要用一句人话说明「新分支从哪开始、改动会怎样」
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-base') !== undefined)
+      .props.onChange({ target: { value: 'dev' } })
+    await panel.flush()
+    const baseNote = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-base-note') === 'dev')
+    assert(baseNote !== null, '换成别的起点后要解释这句话')
+    assert(textOf(baseNote).includes('dev') && textOf(baseNote).includes('1 处改动'),
+      '要写清起点是哪、改动会怎么处理：' + textOf(baseNote))
+    const check = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-checkout') !== undefined)
+    eq(check.props.checked, true, '默认勾着「创建后切换」')
+    check.props.onChange({ target: { checked: false } })
+    await panel.flush()
+
+    const submit = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-create-submit') === 'true')
+    eq(textOf(submit), '只建分支', '不切换时按钮要说清只建分支')
+
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-create') === 'true')
+      .props.onSubmit({ preventDefault() {} })
+    await panel.flush()
+    eq(created.length, 1)
+    eq(created[0], { rootPath: PROJECT, name: 'only', base: 'dev', checkout: false }, '要把基准与不切换都发给宿主')
+    const note = panel.one((node) => isHost(node) && attr(node, 'data-update-note') !== undefined)
+    assert(note !== null && textOf(note).includes('未切换'), '只建分支的提示要说明没切过去：' + (note === null ? '(无提示)' : textOf(note)))
+  })
+})
+
+test('用例 1C3：跨基准撞车时给出两个零风险出口，各自带着正确参数重试', async () => {
+  const created = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'branches/list': () => sayOk(branchesOk([
+        { name: 'main', local: true, current: true, remote: 'origin', upstream: 'origin/main', ahead: 0, behind: 0 },
+        { name: 'dev', local: true, current: false, remote: 'origin', upstream: null, ahead: 0, behind: 0 }
+      ], { state: { dirty: { total: 2, staged: 0, unstaged: 2, untracked: 0, conflicted: 0 } } })),
+      'branch/create': (payload) => {
+        created.push(payload)
+        if (payload.base === 'dev') {
+          return sayFail('would-overwrite',
+            '有 2 个文件的改动与 dev 的差异重叠，git 会拒绝这次切换：\n  a.ts\n  b.ts\n可以：改为从当前分支创建（改动零风险跟随），或者只建分支不切换。',
+            { base: 'dev', tracked: ['a.ts', 'b.ts'], untracked: [] })
+        }
+        return sayOk({
+          branch: payload.name,
+          head: 'aaa1111',
+          previousBranch: 'main',
+          previousHead: 'aaa1111',
+          base: { ref: payload.base, kind: 'head', sha: 'aaa1111' },
+          switched: true,
+          carried: { total: 2, staged: 0, unstaged: 2, untracked: 0, conflicted: 0 }
+        })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined))
+    await panel.flush()
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-name') === 'true')
+      .props.onChange({ target: { value: 'feat' } })
+    await panel.flush()
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-base') !== undefined)
+      .props.onChange({ target: { value: 'dev' } })
+    await panel.flush()
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-create') === 'true')
+      .props.onSubmit({ preventDefault() {} })
+    await panel.flush()
+
+    // 撞车不是「失败」：菜单还开着，而且给出文件清单与两个出口
+    const blocked = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-blocked') === 'true')
+    assert(blocked !== null, '撞车时要显示提示块而不是普通错误')
+    assert(textOf(blocked).includes('a.ts'), '要列出撞车文件：' + textOf(blocked))
+    const fromHead = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-from-head') === 'true')
+    const only = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-only') === 'true')
+    assert(fromHead !== null && only !== null, '必须提供两个出口')
+    assert(!textOf(panel.one((node) => isHost(node) && hasClass(node, 'dgp-menu'))).includes('失败：'), '撞车不应再叠一条普通错误')
+
+    // 出口一：改为从当前分支创建 → base 变成 HEAD，改动零风险跟随
+    click(fromHead)
+    await panel.flush()
+    eq(created.length, 2)
+    eq(created[1], { rootPath: PROJECT, name: 'feat', base: 'HEAD', checkout: true }, '出口一改的是基准')
+    eq(panel.all((node) => isHost(node) && hasClass(node, 'dgp-menu')).length, 0, '成功后菜单关闭')
+  })
+})
+
+test('用例 1C4：合并进行中只能「只建分支」，勾选框禁用并解释原因', async () => {
+  const created = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'branches/list': () => sayOk(branchesOk(
+        [{ name: 'main', local: true, current: true, remote: null, upstream: null, ahead: 0, behind: 0 }],
+        { state: { inProgress: 'merge' } }
+      )),
+      'branch/create': (payload) => {
+        created.push(payload)
+        return sayOk({
+          branch: payload.name,
+          head: 'aaa1111',
+          previousBranch: 'main',
+          previousHead: 'aaa1111',
+          base: { ref: payload.base, kind: 'head', sha: 'aaa1111' },
+          switched: false,
+          carried: { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 }
+        })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined))
+    await panel.flush()
+
+    const check = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-checkout') !== undefined)
+    eq(check.props.checked, false, '合并中不应默认勾着必然失败的切换')
+    eq(check.props.disabled, true, '合并中切换勾选框要禁用')
+    const hint = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-dirty') === 'in-progress')
+    assert(hint !== null, '要解释为什么不能切换')
+    assert(textOf(hint).includes('合并进行中'), '文案要说明是合并在进行：' + textOf(hint))
+
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-name') === 'true')
+      .props.onChange({ target: { value: 'during-merge' } })
+    await panel.flush()
+    panel.one((node) => isHost(node) && isHost(node) && attr(node, 'data-dgp-branch-create') === 'true')
+      .props.onSubmit({ preventDefault() {} })
+    await panel.flush()
+    eq(created.length, 1)
+    eq(created[0], { rootPath: PROJECT, name: 'during-merge', base: 'HEAD', checkout: false }, '只能只建分支')
+  })
+})
+
+test('用例 1C5：输入的名字是已有远端分支时提示该把基准选成它', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'branches/list': () => sayOk(branchesOk([
+        { name: 'main', local: true, current: true, remote: 'origin', upstream: 'origin/main', ahead: 0, behind: 0 },
+        { name: 'topic', local: false, current: false, remote: 'origin', upstream: null, ahead: 0, behind: 0 }
+      ]))
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch') !== undefined))
+    await panel.flush()
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-name') === 'true')
+      .props.onChange({ target: { value: 'topic' } })
+    await panel.flush()
+    const hint = panel.one((node) => isHost(node) && attr(node, 'data-dgp-branch-same-remote') === 'origin/topic')
+    assert(hint !== null, '同名远端分支要提示，否则用户会以为建的是「远端那个分支的本地副本」')
+    assert(textOf(hint).includes('origin/topic'), '提示里要带远端 ref：' + textOf(hint))
   })
 })
 
@@ -2435,12 +2676,10 @@ test('用例 1O：分支菜单区分本地与仅远程，可跟踪远程分支�
   const fetches = []
   const tracks = []
   let listCalls = 0
-  const branchesPayload = {
-    branches: [
-      { name: 'main', local: true, current: true, remote: 'origin', upstream: 'origin/main', ahead: 0, behind: 2 },
-      { name: 'feat', local: false, current: false, remote: 'origin', upstream: null, ahead: 0, behind: 0 }
-    ]
-  }
+  const branchesPayload = branchesOk([
+    { name: 'main', local: true, current: true, remote: 'origin', upstream: 'origin/main', ahead: 0, behind: 2 },
+    { name: 'feat', local: false, current: false, remote: 'origin', upstream: null, ahead: 0, behind: 0 }
+  ])
   await withPanel({
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
@@ -2501,12 +2740,20 @@ test('用例 1P：粘贴带引号的路径/分支名会自动去掉引号', asyn
         addedRoots.push(payload)
         return resolveOk([ROOT], PROJECT)
       },
-      'branches/list': () => sayOk({
-        branches: [{ name: 'main', local: true, current: true, remote: null, ahead: 0, behind: 0 }]
-      }),
+      'branches/list': () => sayOk(branchesOk([
+        { name: 'main', local: true, current: true, remote: null, ahead: 0, behind: 0 }
+      ])),
       'branch/create': (payload) => {
         createdBranches.push(payload)
-        return sayOk({ branch: payload.name, head: 'aaa1111' })
+        return sayOk({
+          branch: payload.name,
+          head: 'aaa1111',
+          previousBranch: 'main',
+          previousHead: 'aaa1111',
+          base: { ref: payload.base, kind: 'head', sha: 'aaa1111' },
+          switched: payload.checkout,
+          carried: { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 }
+        })
       }
     }
   }, async (panel) => {
@@ -3002,10 +3249,7 @@ test('用例 1V：变更页签创建 PR：选目标分支、生成标题描述�
           repo: { provider: 'github', fullName: 'alice/app' },
           head: 'feat/x',
           bases: ['dev', 'main'],
-          accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
-          pushed: true,
-          ahead: 2,
-          behind: 0
+          accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }]
         })
       },
       'pr/generate': (payload) => {
@@ -3065,6 +3309,199 @@ test('用例 1V：变更页签创建 PR：选目标分支、生成标题描述�
     await panel.flush()
     eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'base').props.value, 'main',
       '下次默认记住上次选择的目标分支')
+  })
+})
+
+test('用例 1V2：分支没推到远端时，提示只在左侧出现一处，表单只说明创建为什么点不了', async () => {
+  await withPanel({
+    storage: createFakeStorage(),
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed: false }),
+      // pr/prepare 不再返回 pushed：推没推上去只认 status
+      'pr/prepare': () => sayOk({
+        repo: { provider: 'github', fullName: 'alice/app' },
+        head: 'feat/x',
+        bases: ['main'],
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }]
+      })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'create-pr'))
+    await panel.flush()
+
+    // 同一句话只出现在一个地方：左栏那条常驻提示。表单不再复制第二份。
+    const hints = panel.all((node) => isHost(node) && attr(node, 'data-dgp-push') === 'true')
+    eq(hints.length, 1, '同一屏只应出现一处推送提示，实际 ' + hints.length + ' 处')
+    assert(textOf(hints[0]).includes('还只在你电脑上'), '左栏那条要继续说人话：' + textOf(hints[0]))
+    eq(textOf(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-command') === 'true')),
+      'git push -u origin feat/x', '命令要带真实分支名')
+
+    // 表单里只留「创建按钮为什么是灰的」这一句
+    const blocked = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'blocked')
+    assert(blocked !== null, '表单要说明创建按钮为什么不可用')
+    assert(textOf(blocked).includes('还没推送到远端'), '原因要说清楚：' + textOf(blocked))
+    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'create'), 'disabled'), true,
+      '没推送前不能创建 PR')
+  })
+})
+
+test('用例 1V6：左侧推送完后，表单不用重新 prepare 就能创建（pushed 只有 status 一个来源）', async () => {
+  let pushed = false
+  const prepared = []
+  await withPanel({
+    storage: createFakeStorage(),
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed }),
+      'branch/push': () => {
+        pushed = true
+        return sayOk({ branch: 'feat/x', head: 'abc1234', upstream: 'origin/feat/x', output: '' })
+      },
+      'pr/prepare': (payload) => {
+        prepared.push(payload)
+        return sayOk({
+          repo: { provider: 'github', fullName: 'alice/app' },
+          head: 'feat/x',
+          bases: ['main'],
+          accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }]
+        })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'create-pr'))
+    await panel.flush()
+    eq(prepared.length, 1, '打开表单要问一次宿主')
+
+    // 先填标题，排除「标题为空」这个禁用原因
+    panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'title')
+      .props.onChange({ target: { value: 'feat: x' } })
+    await panel.flush()
+    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'create'), 'disabled'), true,
+      '还没推送：创建按钮应该是灰的')
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-run') === 'true'))
+    await panel.flush()
+
+    eq(prepared.length, 1, '推送后不需要再 prepare 一次表单')
+    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'create'), 'disabled'), false,
+      '推完 status 一刷新，创建按钮自己就亮了')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'blocked'), null,
+      '原因说明也应随之消失')
+  })
+})
+
+test('用例 1V3：变更页签常驻提示「这条分支还没推到远端」，推完自动消失', async () => {
+  let pushed = false
+  await withPanel({
+    storage: createFakeStorage(),
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const hint = panel.one((node) => isHost(node) && attr(node, 'data-dgp-push') === 'true')
+    assert(hint !== null, '分支没推到远端时应在变更页签常驻提示（创建完分支就能看到）')
+    assert(textOf(hint).includes('还只在你电脑上'), '要用大白话，不用「未推送」这类词：' + textOf(hint))
+    eq(textOf(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-command') === 'true')),
+      'git push -u origin feat/x', '命令要带当前分支名，点一下即可全选')
+    assert(textOf(hint).includes('推完这里会自动消失'), '要告诉用户推完会怎样：' + textOf(hint))
+
+    // 在终端里推完之后：下一次 status 刷新（这里用工具条「立即刷新」触发）提示就该消失
+    pushed = true
+    await refreshViaMenu(panel)
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push') === 'true'), null,
+      '推上去之后不应再提示')
+  })
+})
+
+test('用例 1V4：提示块里直接点「推送到远端」就推完了，不让用户去终端敲命令', async () => {
+  let pushed = false
+  const pushes = []
+  await withPanel({
+    storage: createFakeStorage(),
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed }),
+      'branch/push': (payload) => {
+        pushes.push(payload)
+        pushed = true
+        return sayOk({ branch: 'feat/x', head: 'abc1234', upstream: 'origin/feat/x', output: '' })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const run = panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-run') === 'true')
+    assert(run !== null, '提示块里必须有推送按钮')
+    eq(textOf(run), '推送到远端')
+
+    click(run)
+    await panel.flush()
+    eq(pushes.length, 1, '应调用一次 branch/push')
+    eq(pushes[0], { rootPath: PROJECT }, '只推当前仓库的当前分支')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push') === 'true'), null,
+      '推成功后提示应立刻消失')
+    const note = panel.one((node) => isHost(node) && attr(node, 'data-update-note') !== undefined)
+    assert(note !== null && textOf(note).includes('已推送'), '要有推送成功的确认：' + (note === null ? '(无)' : textOf(note)))
+  })
+})
+
+test('用例 1V5：推送失败时把真实原因留在提示块里（不弹窗、不吞、可重试）', async () => {
+  await withPanel({
+    storage: createFakeStorage(),
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed: false }),
+      'branch/push': () => sayFail('git-auth-failed', '远端拒绝了这次推送：这台机器上没有可用的 git 凭据。')
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-run') === 'true'))
+    await panel.flush()
+    const error = panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-error') === 'true')
+    assert(error !== null, '失败原因要显示在提示块里')
+    assert(textOf(error).includes('凭据'), '要显示宿主给的真实原因：' + textOf(error))
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push') === 'true') !== null,
+      '失败后提示块还在，按钮可重试')
+  })
+})
+
+test('用例 1V7：没有可作目标的远端分支时，生成与创建都不可点、也不会发出缺 base 的请求', async () => {
+  const generated = []
+  await withPanel({
+    storage: createFakeStorage(),
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed: true }),
+      // 极端但真实的情形：pr/prepare 没给出任何目标分支候选（例如远端只有源分支）
+      'pr/prepare': () => sayOk({
+        repo: { provider: 'github', fullName: 'alice/app' },
+        head: 'feat/x',
+        bases: [],
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }]
+      }),
+      'pr/generate': (payload) => {
+        generated.push(payload)
+        return sayOk({ title: 't', body: 'b', commits: 0 })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'create-pr'))
+    await panel.flush()
+
+    const generate = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'generate')
+    const create = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'create')
+    eq(attr(generate, 'disabled'), true, '没有目标分支时「生成」必须禁用（否则就是那次「缺少参数 base」）')
+    eq(attr(create, 'disabled'), true, '没有目标分支时「创建」必须禁用')
+
+    // 就算绕过禁用态直接触发，也不该发出注定被宿主拒绝的请求
+    generate.props.onClick()
+    await panel.flush()
+    eq(generated.length, 0, '不应发出缺 base 的请求')
   })
 })
 
@@ -4665,6 +5102,10 @@ for (const item of cases) {
       failed += 1
       console.log('  FAIL  ' + item.name)
       console.log('        ' + (error && error.message ? error.message : String(error)))
+      // 渲染类失败只有一句「无法渲染的节点」时根本没法定位：需要堆栈就开这个开关
+      if (process.env.DGP_TEST_STACK === '1' && error && typeof error.stack === 'string') {
+        console.log(String(error.stack).split('\n').slice(1, 7).join('\n'))
+      }
     }
   }
 }

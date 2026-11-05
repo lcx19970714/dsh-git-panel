@@ -3,7 +3,10 @@
  *
  * 交互顺序按用户真实操作：
  *   仓库与源分支（只读）→ 目标分支（记住上次）→ 生成标题与描述 → 自己改 → 创建 PR
- * 未推送时给出明确阻断（先 git push），不假装能创建。
+ *
+ * 「分支还没推到远端」的完整解释和推送动作只有一处：左栏的 PushHint，
+ * 打开本表单时它就在同一屏里。表单只回答「创建按钮为什么是灰的」，不重复那块内容。
+ * `pushed` 取宿主的 `status.pushed`（唯一事实源），不再从 pr/prepare 另拿一份快照。
  */
 import { h } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
@@ -12,6 +15,7 @@ export function CreatePullForm(props) {
   const source = props
   const t = source.t
   const form = source.form
+  const pushed = source.pushed === true
   if (form === null || form === undefined) return null
 
   const header = h('div', { className: 'dgp-detail-top' },
@@ -64,6 +68,15 @@ export function CreatePullForm(props) {
 
   const baseOptions = Array.isArray(form.bases) ? form.bases : []
   const accountOptions = Array.isArray(form.accounts) ? form.accounts : []
+  /**
+   * 目标分支是「生成」和「创建」共同的前置条件，两处用同一把锁。
+   *
+   * 只判断 `=== ''` 是不够的：`pr/prepare` 没给出候选目标分支时，客户端把
+   * `bases[0]`（undefined）当成 base，而 `{ base: undefined }` 序列化后这个字段会**整个消失**，
+   * 宿主只会回一句「缺少参数 base」——那次请求连模型都没调，却看起来像功能坏了。
+   * 所以这里用「非空字符串」这一个判据，把没有目标分支的表单变成两个按钮都点不了。
+   */
+  const baseReady = typeof form.base === 'string' && form.base !== ''
 
   return h('div', { className: 'dgp-detail dgp-pr-form', 'data-dgp-pr': 'form' },
     header,
@@ -94,10 +107,6 @@ export function CreatePullForm(props) {
       }, baseOptions.map((branch) => h('option', { key: branch, value: branch }, branch))),
       h('span', { className: 'dgp-settings-hint' }, t('pr.baseHint'))),
 
-    form.pushed !== true
-      ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pr': 'not-pushed' }, t('pr.notPushed'))
-      : null,
-
     h('div', { className: 'dgp-pr-row' },
       h('span', { className: 'dgp-settings-label' }, t('pr.subject')),
       h('button', {
@@ -105,7 +114,7 @@ export function CreatePullForm(props) {
         className: 'dgp-btn',
         'data-size': 'sm',
         'data-dgp-pr': 'generate',
-        disabled: form.generating === true || form.creating === true,
+        disabled: form.generating === true || form.creating === true || baseReady !== true,
         onClick: () => source.onGenerate()
       }, t(form.generating === true ? 'pr.generating' : 'pr.generate'))),
     h('input', {
@@ -132,8 +141,11 @@ export function CreatePullForm(props) {
         'data-size': 'sm',
         'data-variant': 'primary',
         'data-dgp-pr': 'create',
-        disabled: form.creating === true || form.pushed !== true || form.title.trim() === '' || form.base === '',
+        disabled: form.creating === true || pushed !== true || form.title.trim() === '' || baseReady !== true,
         onClick: () => source.onCreate()
       }, t(form.creating === true ? 'pr.creating' : 'pr.create')),
+      pushed
+        ? null
+        : h('span', { className: 'dgp-detail-failure', 'data-dgp-pr': 'blocked' }, t('pr.blockedNotPushed')),
       form.notice === null ? null : h('span', { className: 'dgp-detail-notice', 'data-dgp-pr': 'notice' }, form.notice)))
 }

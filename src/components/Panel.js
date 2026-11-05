@@ -25,6 +25,7 @@ import { FileEditor } from './FileEditor.js'
 import { EmptyState, LoadingState, InlineNote } from './States.js'
 import { CommitBox } from './CommitBox.js'
 import { CreatePullForm } from './CreatePullForm.js'
+import { PushHint } from './PushHint.js'
 import { PullStatusCard } from './PullStatusCard.js'
 import { SettingsView } from './SettingsView.js'
 import { RemotePane } from './RemotePane.js'
@@ -98,6 +99,12 @@ export function Panel(props) {
   // 右侧详情：选中的仓库与它的数据
   const [remoteSelection, setRemoteSelection] = useState(null)
   const [remoteDetail, setRemoteDetail] = useState(null)
+  // 选中仓库的分支全貌：{ loading, error, data }（data 来自 remote/branches）
+  const [remoteBranches, setRemoteBranches] = useState(null)
+  const remoteBranchesRef = useRef(null)
+  remoteBranchesRef.current = remoteBranches
+  // 分支数据是「按仓库」的：记住上次拉的是哪个 fullName，避免切页签/关 PR 时重复请求
+  const branchSelectionRef = useRef(null)
   const remoteReposRef = useRef([])
   remoteReposRef.current = remoteRepos
   // 面板内打开的 PR：{ number } + 它的详情
@@ -200,11 +207,18 @@ export function Panel(props) {
   /** 生成中的已等待毫秒数：每 200ms 刷新一次，让用户看得见它在跑。 */
   const [generateElapsed, setGenerateElapsed] = useState(0)
   const [commitNote, setCommitNote] = useState(null)
+  /** 推送当前分支的状态：{ busy, error }。error 直接显示在「还只在你电脑上」提示块里。 */
+  const [pushState, setPushState] = useState({ busy: false, error: null })
+  const pushStateRef = useRef(pushState)
+  pushStateRef.current = pushState
   const [showSettings, setShowSettings] = useState(false)
   /**
    * 创建 PR 表单（右侧面板）：
    * { loading, error, repo, head, bases, accounts, accountId, base, title, body, bodyHeight,
-   *   pushed, generating, creating, created, notice }
+   *   generating, creating, created, notice }
+   *
+   * 这里没有 pushed：「分支推没推上去」属于仓库状态，唯一来源是 status.pushed。
+   * 表单另存一份快照只会有两个后果 —— 同一屏出现两块同样的提示、以及推送后两边对不上。
    */
   const [pullForm, setPullForm] = useState(null)
   /** 当前分支的 PR 状态卡：{ loading, error, data } */
@@ -312,6 +326,8 @@ export function Panel(props) {
     // 换根 = 换了一批文件：草稿（按相对路径存）不再有意义
     setDrafts(new Map())
     setSaveState({ busy: false, savedAt: 0, error: null, conflict: null })
+    // 推送错误属于上一个仓库：换根就清掉，别让它挂在另一个仓库的提示块里
+    setPushState({ busy: false, error: null })
     if (activeRoot === null || activeRoot.isGit === false) {
       setStatusLoading(false)
       return undefined
@@ -766,7 +782,7 @@ export function Panel(props) {
   /** 打开创建 PR 表单：先向宿主要仓库/账号/分支信息。 */
   const openCreatePull = useCallback(async () => {
     if (activeRoot === null || activeRoot.isGit !== true) return
-    setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', pushed: false, generating: false, creating: false, created: null, notice: null })
+    setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', generating: false, creating: false, created: null, notice: null })
     try {
       const prepared = await api.prPrepare({ rootPath: activeRoot.path })
       const remembered = readPrefs().pullTargets?.[pullTargetKey(prepared.repo)] ?? ''
@@ -783,14 +799,13 @@ export function Panel(props) {
         title: '',
         body: '',
         bodyHeight: '160px',
-        pushed: prepared.pushed === true,
         generating: false,
         creating: false,
         created: null,
         notice: null
       })
     } catch (error) {
-      setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', pushed: false, generating: false, creating: false, created: null, notice: null })
+      setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', generating: false, creating: false, created: null, notice: null })
     }
   }, [activeRoot])
 
@@ -810,6 +825,9 @@ export function Panel(props) {
   /** 用模型生成标题与描述（失败就地显示原因）。 */
   const generatePullText = useCallback(async () => {
     if (pullForm === null || activeRoot === null) return
+    // 没有目标分支就不发请求：`{ base: undefined }` 序列化后字段会整个消失，
+    // 宿主只会回一句「缺少参数 base」，看起来像生成功能坏了，其实模型根本没被调用。
+    if (typeof pullForm.base !== 'string' || pullForm.base === '') return
     setPullForm({ ...pullForm, generating: true, error: null, notice: null })
     try {
       const generated = await api.prGenerate({ rootPath: activeRoot.path, base: pullForm.base })
@@ -830,6 +848,9 @@ export function Panel(props) {
   /** 创建 PR：成功后记住目标分支，供下次默认。 */
   const createPull = useCallback(async () => {
     if (pullForm === null || activeRoot === null) return
+    // 同 generatePullText：没有目标分支（或还没准备出 repo）时不发这个注定被拒的请求
+    if (typeof pullForm.base !== 'string' || pullForm.base === '') return
+    if (pullForm.repo === null) return
     setPullForm({ ...pullForm, creating: true, error: null, notice: null })
     try {
       const created = await api.prCreate({
@@ -1043,16 +1064,51 @@ export function Panel(props) {
     await refreshStatus()
   }, [resolveProject, refreshStatus])
 
-  /** 创建分支后直接切过去：宿主一次做完 `git switch -c`，面板只负责刷新。 */
-  const createBranch = useCallback(async (root, name) => {
+  /**
+   * 创建分支（可携带未提交改动）。
+   *
+   * 宿主在动手前会把「能不能建」全部判定完，所以失败时仓库一定没被改过 ——
+   * 界面可以放心地把 `would-overwrite` 当成「换个选择再试一次」，而不是「出事了」。
+   * 这里把错误码与 details 透传出去（`api.describeError` 只保留一句话，撞车文件清单会丢），
+   * RepoList 才能据此摆出两个零风险出口。
+   */
+  const createBranch = useCallback(async (root, request) => {
+    let value
     try {
-      await api.createBranch({ rootPath: root.path, name })
+      value = await api.createBranch({ rootPath: root.path, ...request })
     } catch (error) {
-      throw new Error(api.describeError(error, tRef.current))
+      const wrapped = new Error(api.describeError(error, tRef.current))
+      wrapped.code = error === null || error === undefined ? 'internal' : error.code
+      wrapped.details = error === null || error === undefined ? {} : error.details
+      throw wrapped
     }
+    setToolbarNote(buildBranchCreatedNote(value, tRef.current))
+    // 建/切分支会改 HEAD（可能还改了工作区）：行尾分支名与 status 都要重读
     await resolveProject()
     await refreshStatus()
+    return value
   }, [resolveProject, refreshStatus])
+
+  /**
+   * 推送当前分支（`branch/push`）。成功就刷新 status —— 「还只在你电脑上」那条提示
+   * 由 `status.pushed` 驱动，刷新后自己消失；失败把原因留在提示块里，不弹窗。
+   * 正在推送时用 ref 挡住重复点击（state 要等下一遍渲染才生效）。
+   */
+  const pushBranchNow = useCallback(async () => {
+    const root = activeRootRef.current
+    if (root === null || root.isGit !== true || pushStateRef.current.busy === true) return null
+    setPushState({ busy: true, error: null })
+    try {
+      const value = await api.pushBranch({ rootPath: root.path })
+      setPushState({ busy: false, error: null })
+      setToolbarNote({ tone: 'info', text: tRef.current('push.done', { branch: value.branch }) })
+      await refreshStatus()
+      return value
+    } catch (error) {
+      setPushState({ busy: false, error: api.describeError(error, tRef.current) })
+      return null
+    }
+  }, [refreshStatus])
 
   const loadDir = useCallback(async (relPath, signal) => {
     const root = browseRootRef.current
@@ -1126,9 +1182,39 @@ export function Panel(props) {
     }
   }, [])
 
-  /** 读一个 PR 的详情（含平台能力与审查记录）。 */
-  const loadPullDetail = useCallback(async (selection) => {
+  /**
+   * 读选中远端仓库的分支全貌：远端分支走平台 API，本地同名分支状态由宿主在
+   * rootPaths 里按 origin 匹配到本地仓库后读出来，合成一条列表返回。
+   * 刷新时保留上一份数据：列表不会先消失再出现。
+   */
+  const loadRemoteBranches = useCallback(async (selection) => {
     if (selection === null) {
+      setRemoteBranches(null)
+      return
+    }
+    setRemoteBranches((previous) => ({
+      loading: true,
+      error: null,
+      data: previous === null ? null : previous.data
+    }))
+    try {
+      const data = await api.remoteBranches({
+        accountId: selection.accountId,
+        fullName: selection.fullName,
+        rootPaths: allGitRoots.map((root) => root.path)
+      })
+      setRemoteBranches({ loading: false, error: null, data })
+    } catch (error) {
+      setRemoteBranches((previous) => ({
+        loading: false,
+        error: error instanceof Error ? error.message : String(error),
+        data: previous === null ? null : previous.data
+      }))
+    }
+  }, [allGitRoots])
+
+  /** 读一个 PR 的详情（含平台能力与审查记录）。 */
+  const loadPullDetail = useCallback(async (selection) => {    if (selection === null) {
       setPullDetail(null)
       return
     }
@@ -1216,6 +1302,118 @@ export function Panel(props) {
     openPullWith(selection)
     await loadPullDetail(selection)
   }, [linkedPull, setMode, loadPullDetail, openPullWith])
+
+  /* --------------------------- 远端仓库详情 · 分支 --------------------------- */
+
+  /**
+   * 选中仓库变了才重拉分支：
+   *  - 从 PR 详情关回仓库详情时，选中没变，不重复请求；
+   *  - 切到别的仓库（或从 PR 卡片跳进来）时，按 fullName 重新拉一次；
+   *  - 切回远端页签不自动刷新（分支有「刷新 / 获取远程更新」按钮，拉网络不该偷偷发生）。
+   */
+  useEffect(() => {
+    if (mode !== MODE.remote) return
+    if (remoteSelection === null) {
+      branchSelectionRef.current = null
+      setRemoteBranches(null)
+      return
+    }
+    if (openPull !== null) return
+    if (branchSelectionRef.current === remoteSelection.fullName) return
+    branchSelectionRef.current = remoteSelection.fullName
+    // 换了仓库：先把上一个仓库的分支清掉，避免新数据回来前右侧挂着别人的分支
+    setRemoteBranches(null)
+    loadRemoteBranches(remoteSelection)
+  }, [mode, openPull, remoteSelection, loadRemoteBranches])
+
+  /** 分支操作统一返回 { ok, error, code }：组件据 code 判断要不要露出「强制删除」。 */
+  const branchFailure = useCallback((error) => ({
+    ok: false,
+    error: api.describeError(error, tRef.current),
+    code: error !== null && error !== undefined && typeof error.code === 'string' ? error.code : null
+  }), [])
+
+  /** 本地没有克隆时，本地分支操作明确报出来，不做无声失败。 */
+  const noLocalRepoFailure = useCallback(() => ({
+    ok: false,
+    error: tRef.current('branch.noLocalOps'),
+    code: 'no-local-repo'
+  }), [])
+
+  /** 切换分支：本地已有该分支才能切；成功后重新解析根并刷新 status（储存库行的分支名要跟着变）。 */
+  const switchRemoteBranch = useCallback(async (branch) => {
+    const rootPath = localRootPathOfBranches(remoteBranchesRef.current)
+    if (rootPath === null) return noLocalRepoFailure()
+    try {
+      await api.switchBranch({ rootPath, name: branch.name })
+    } catch (error) {
+      return branchFailure(error)
+    }
+    await resolveProject()
+    await refreshStatus()
+    if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
+    return { ok: true }
+  }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+
+  /** 远端独有的分支：在本地建跟踪分支并切过去（与储存库分支菜单里的行为一致）。 */
+  const trackRemoteBranch = useCallback(async (branch) => {
+    const rootPath = localRootPathOfBranches(remoteBranchesRef.current)
+    if (rootPath === null) return noLocalRepoFailure()
+    try {
+      await api.trackBranch({ rootPath, remote: 'origin', name: branch.name })
+    } catch (error) {
+      return branchFailure(error)
+    }
+    await resolveProject()
+    await refreshStatus()
+    if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
+    return { ok: true }
+  }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+
+  /** 删除本地分支（force 只会在用户点「强制删除」时传 true）。 */
+  const deleteLocalBranchAt = useCallback(async (branch, force) => {
+    const rootPath = localRootPathOfBranches(remoteBranchesRef.current)
+    if (rootPath === null) return noLocalRepoFailure()
+    try {
+      await api.deleteLocalBranch({ rootPath, name: branch.name, force: force === true })
+    } catch (error) {
+      return branchFailure(error)
+    }
+    await resolveProject()
+    await refreshStatus()
+    if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
+    return { ok: true }
+  }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+
+  /** 删除远端分支：它是破坏性操作，界面已二次确认过；成功后只重读分支列表。 */
+  const deleteRemoteBranchAt = useCallback(async (branch) => {
+    if (remoteSelection === null) return { ok: false, error: tRef.current('branch.noLocalOps'), code: null }
+    try {
+      await api.deleteRemoteBranch({
+        accountId: remoteSelection.accountId,
+        fullName: remoteSelection.fullName,
+        name: branch.name
+      })
+    } catch (error) {
+      return branchFailure(error)
+    }
+    await loadRemoteBranches(remoteSelection)
+    return { ok: true }
+  }, [remoteSelection, loadRemoteBranches, branchFailure])
+
+  /** 「获取远程更新」：git fetch --prune（只更新远端跟踪引用，不动工作区/本地分支），然后重读列表。 */
+  const fetchRepoBranches = useCallback(async () => {
+    const rootPath = localRootPathOfBranches(remoteBranchesRef.current)
+    if (rootPath === null) return noLocalRepoFailure()
+    try {
+      await api.fetchRemote({ rootPath })
+    } catch (error) {
+      return branchFailure(error)
+    }
+    await refreshStatus()
+    if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
+    return { ok: true }
+  }, [refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
 
 
   /** 审查：统一把失败包成 { ok:false, error }，界面就地显示。 */
@@ -1381,6 +1579,9 @@ export function Panel(props) {
         branch: result.headBranch === '' ? '' : result.headBranch
       }))
       await loadRemoteDetail({ accountId: input.accountId, fullName: input.fullName })
+      // 合并可以顺带删掉源分支：回到详情时分支区要重读，不能留着已删除的那一行
+      branchSelectionRef.current = null
+      setRemoteBranches(null)
       // 合并后未合并数量会变，角标要跟着刷新
       await loadPullCounts(input.accountId, remoteReposRef.current)
       // closed:true 让 PullDetail 不要在被卸载后再写自己的提示
@@ -1401,7 +1602,9 @@ export function Panel(props) {
     const selection = { accountId: repo.accountId, fullName: repo.fullName, name: repo.name }
     setRemoteSelection(selection)
     loadRemoteDetail(selection)
-  }, [loadRemoteDetail])
+    // 点的是已经选中的仓库 = 手动刷新：分支数据按 fullName 去重，这里显式再读一次
+    if (branchSelectionRef.current === selection.fullName) loadRemoteBranches(selection)
+  }, [loadRemoteDetail, loadRemoteBranches])
 
   const openExternal = useCallback((url) => {
     const result = openExternalUrl(url)
@@ -1481,6 +1684,9 @@ export function Panel(props) {
         targetName: targetName ?? ''
       })
       setCloneState(null)
+      // 项目里多了这个仓库：下次回到远端页签时分支区要重新判断「本地有没有克隆」
+      branchSelectionRef.current = null
+      setRemoteBranches(null)
       await resolveProject()
       await refreshStatus()
       setMode(MODE.changes)
@@ -1636,6 +1842,20 @@ function buildUpstreamNote(value, t) {
   if (value.behind > 0) return { tone: 'warn', text: t('update.behind', { count: value.behind, upstream }) }
   if (value.ahead > 0) return { tone: 'info', text: t('update.ahead', { count: value.ahead, upstream }) }
   return { tone: 'info', text: t('update.upToDate', { upstream }) }
+}
+
+/**
+ * 创建分支后的那句话。
+ *
+ * 用户最不确定的就是「我的改动去哪了」，所以这里必须把三种结局分开说：
+ * 切过去并带走了改动 / 切过去但本来就没有改动 / 只建了分支没切换（改动留在原处）。
+ */
+function buildBranchCreatedNote(value, t) {
+  if (value.switched !== true) return { tone: 'info', text: t('branch.createdOnly', { name: value.branch }) }
+  if (value.carried.total > 0) {
+    return { tone: 'info', text: t('branch.createdFollow', { name: value.branch, total: value.carried.total }) }
+  }
+  return { tone: 'info', text: t('branch.created', { name: value.branch }) }
 }
 
 
@@ -1897,6 +2117,20 @@ function buildUpstreamNote(value, t) {
             t
           })
           : null,
+        /**
+         * 当前分支的最新提交不在远端时，常驻一行「要不要推送」的提示 —— 带按钮，点了就推。
+         * 只认 `pushed === false`：没有 origin / 游离 HEAD 时宿主给的是 null（无从判断），不提示。
+         * 推完之后 status 刷新（这里点了按钮就刷、也会轮询），`pushed` 变 true，提示自己消失。
+         */
+        status !== null && status.pushed === false
+          ? h(PushHint, {
+            branch: status.branch,
+            t,
+            onPush: pushBranchNow,
+            busy: pushState.busy,
+            error: pushState.error
+          })
+          : null,
         h(CommitBox, {
           message: commitMessage,
           stagedCount,
@@ -1957,6 +2191,9 @@ function buildUpstreamNote(value, t) {
       onGenerate: generatePullText,
       onCreate: createPull,
       onOpenUrl: openExternal,
+      // 推没推上去只认 status.pushed：推完 refreshStatus 一刷新，创建按钮自己就亮了，
+      // 不需要「表单里再推一次」这条独立通路
+      pushed: status !== null && status.pushed === true,
       t
     })
   } else if (mode === MODE.remote && openPull !== null) {
@@ -1991,6 +2228,14 @@ function buildUpstreamNote(value, t) {
     rightPane = h(RemoteDetail, {
       selection: remoteSelection,
       detail: remoteDetail,
+      // 分支区：数据 + 各类操作都走 Panel，组件只做交互与错误呈现
+      branchState: remoteBranches,
+      onReloadBranches: () => loadRemoteBranches(remoteSelection),
+      onFetchBranches: fetchRepoBranches,
+      onSwitchBranch: switchRemoteBranch,
+      onTrackBranch: trackRemoteBranch,
+      onDeleteLocalBranch: deleteLocalBranchAt,
+      onDeleteRemoteBranch: deleteRemoteBranchAt,
       onRetry: () => loadRemoteDetail(remoteSelection),
       onClone: (selection) => cloneRepo({
         accountId: selection.accountId,
@@ -2271,4 +2516,16 @@ function buildUpstreamNote(value, t) {
     : null,
   content,
   moreMenu)
+}
+
+/**
+ * remote/branches 的状态 → 本地仓库根。
+ * 没有本地克隆（或还没读到）时返回 null：分支区的本地操作一律以它为前提。
+ */
+function localRootPathOfBranches(state) {
+  if (state === null || state === undefined) return null
+  if (state.data === null || state.data === undefined) return null
+  const local = state.data.local
+  if (local === null || local === undefined) return null
+  return typeof local.rootPath === 'string' && local.rootPath !== '' ? local.rootPath : null
 }

@@ -138,7 +138,16 @@ export const CSS = `
   background: var(--dsw-alias-state-business-primary);
   color: var(--dsw-alias-label-primary-inverted);
 }
-.dgp-btn[data-variant="primary"]:hover:not(:disabled) { filter: brightness(1.06); }
+/* 主按钮 hover 必须在这里再声明一次底色：
+   通用规则 .dgp-btn:hover:not(:disabled) 的权重 (0,3,0) 高于
+   .dgp-btn[data-variant="primary"] 的 (0,2,0)，只写 filter 的话底色会被那条通用规则
+   换成中性 hover 层，而文字仍是反色 —— 日间是白字压浅层、夜间是黑字压深层，
+   两边都会变成「指针一移上去按钮就消失」。底色和文字必须成对声明，
+   hover、禁用、日间、夜间才对齐。 */
+.dgp-btn[data-variant="primary"]:hover:not(:disabled) {
+  background: var(--dsw-alias-state-business-primary);
+  filter: brightness(1.06);
+}
 .dgp-btn[data-variant="ghost"] { background: 0 0; }
 .dgp-btn[data-variant="ghost"]:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
 .dgp-btn[data-variant="danger"] { background: 0 0; color: var(--dsw-alias-state-error-primary); }
@@ -259,14 +268,15 @@ export const CSS = `
   background: var(--dsw-alias-bg-module-platform);
 }
 
-/* 分支菜单底部：输入名字后创建并切过去 */
+/* 分支菜单底部：创建区（名字 + 创建基准 + 是否切换 + 现状提示 + 撞车出口） */
 .dgp-branch-create {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 4px;
   padding: 4px 4px 2px;
 }
-.dgp-branch-create > .dgp-input {
+.dgp-branch-create-row { display: flex; align-items: center; gap: 4px; }
+.dgp-branch-create-row > .dgp-input {
   flex: 1 1 auto;
   min-width: 0;
   height: 24px;
@@ -274,7 +284,34 @@ export const CSS = `
   font-family: var(--ds-font-family-code);
   font-size: 11px;
 }
-.dgp-branch-create > .dgp-btn { flex: none; }
+.dgp-branch-create-row > .dgp-btn { flex: none; }
+/* 基准选择与「创建后切换」同排：两者都是「怎么建」的参数，放一起才读得通 */
+.dgp-branch-create-opts { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dgp-branch-base-label { flex: none; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dgp-branch-base {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+}
+.dgp-branch-check {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dgp-branch-check > input { margin: 0; }
+.dgp-branch-check:has(> input:disabled) { opacity: .5; cursor: default; }
+/* 撞车：不是错误条，而是「换个选择」的提示块 */
+.dgp-branch-blocked { display: flex; flex-direction: column; gap: 4px; }
+.dgp-branch-blocked .dgp-branch-hint { white-space: pre-line; }
+.dgp-branch-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px; }
 .dgp-addform { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 8px; }
 .dgp-addform-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .dgp-list {
@@ -1317,6 +1354,43 @@ export const CSS = `
 .dgp-pull-verdict[data-state="APPROVED"] { color: var(--dsw-alias-state-success-primary); }
 .dgp-pull-verdict[data-state="CHANGES_REQUESTED"] { color: var(--dsw-alias-state-error-primary); }
 .dgp-detail-notice { margin: 0; color: var(--dsw-alias-state-success-primary); font-size: 11px; }
+/* 「还没推到远端」的提示：变更页签常驻一条 + 创建 PR 表单里阻断用同一条（PushHint）。
+   面板自己不做 push，所以必须把命令摆出来；命令用 user-select: all —— 点一下就能整条复制。 */
+.dgp-push-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 8px 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--dsw-alias-state-warn-label);
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dgp-push-hint-title { margin: 0; font-size: 11px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.dgp-push-hint-why { margin: 0; font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
+.dgp-push-hint-after { margin: 0; font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-tertiary); }
+/* 命令与「推送到远端」按钮同排：按钮是主路径，命令是失败时能照抄排查的退路 */
+.dgp-push-hint-action { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dgp-push-hint-error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-state-error-primary);
+  white-space: pre-line;
+}
+.dgp-command {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0 6px;
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-xs);
+  user-select: all;
+}
 /* 远端仓库详情（右侧） */
 .dgp-detail { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 12px 14px; overflow: auto; }
 .dgp-detail-top { display: flex; align-items: flex-start; gap: 10px; }
@@ -1326,7 +1400,6 @@ export const CSS = `
 .dgp-detail-desc { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.6; }
 .dgp-detail-meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .dgp-detail-failure { margin: 0; color: var(--dsw-alias-state-warn-label); font-size: 11px; }
-.dgp-detail-code { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: var(--dsw-radius-xs); background: var(--dsw-alias-bg-module-platform); }
 .dgp-detail-section { display: flex; flex-direction: column; gap: 4px; }
 .dgp-detail-head { display: flex; align-items: center; gap: 8px; }
 .dgp-detail-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }
@@ -1370,6 +1443,102 @@ export const CSS = `
 }
 .dgp-detail-item > .dgp-detail-meta > .dgp-detail-author { color: var(--dsw-alias-label-secondary); }
 .dgp-detail-meta { flex: none; }
+
+/* ── 远端仓库详情 · 分支区（本地/远端/当前/默认/领先落后/上游状态） ── */
+.dgp-branch-section { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dgp-branch-head { display: flex; align-items: center; gap: 8px; }
+.dgp-branch-title { flex: none; font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.dgp-branch-summary { flex: 1 1 auto; min-width: 0; color: var(--dsw-alias-label-tertiary); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dgp-branch-head-actions { display: flex; flex: none; gap: 2px; }
+/* 只补高度与收缩规则，边框/底色沿用 .dgp-input */
+.dgp-branch-filter { flex: none; height: 24px; }
+.dgp-branch-status { display: flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+.dgp-branch-status[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
+.dgp-branch-status[data-tone="warn"] { color: var(--dsw-alias-state-warn-label); }
+/* 多行状态/错误/提示容器 */
+.dgp-branch-statuses { display: flex; flex-direction: column; gap: 2px; }
+.dgp-branch-list { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
+/* 行与行尾「⋯」并排；删除确认整行换到下一行（flex-basis 100%） */
+.dgp-branch-item { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; border-radius: var(--dsw-radius-xs); }
+.dgp-branch-item[data-current="true"] { background: var(--dsw-alias-bg-module-platform); }
+.dgp-branch-item[data-busy="true"] { opacity: .6; }
+.dgp-branch-row {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 26px;
+  padding: 3px 4px;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dgp-branch-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dgp-branch-row:disabled { cursor: default; }
+.dgp-branch-row:disabled:hover { background: transparent; }
+.dgp-branch-row:focus-visible, .dgp-branch-more:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -1px;
+}
+.dgp-branch-ico { flex: none; color: var(--dsw-alias-label-tertiary); }
+.dgp-branch-ico[data-current="true"] { color: var(--dsw-alias-state-business-primary); }
+.dgp-branch-name { flex: 1 1 auto; min-width: 0; color: var(--dsw-alias-label-primary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dgp-branch-tags { display: flex; flex: none; align-items: center; gap: 3px; }
+.dgp-branch-tag {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xs);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+}
+.dgp-branch-tag[data-active="true"] {
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
+}
+.dgp-branch-track { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+/* 20×20 图标按钮：视觉同 .dgp-iconbtn，但独立类名便于分支行内定位 */
+.dgp-branch-more {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1;
+  cursor: pointer;
+}
+.dgp-branch-more svg { width: 14px; height: 14px; }
+.dgp-branch-more:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
+.dgp-branch-more:disabled { opacity: .4; cursor: default; }
+.dgp-branch-confirm {
+  display: flex;
+  flex: 1 0 100%;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+.dgp-branch-confirm-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.dgp-branch-confirm-text { color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.5; }
+.dgp-branch-hint { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; }
+/* 提示分两档：中性（改动计数 / 同名远端）用 tertiary，需要用户换个选择的（进行中 / 撞车）用 warn */
+.dgp-branch-hint[data-tone="warn"] { color: var(--dsw-alias-state-warn-label); }
+.dgp-branch-empty { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 
 .dgp-remote-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
 

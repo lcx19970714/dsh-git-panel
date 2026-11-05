@@ -240,9 +240,27 @@ export function unhideRoot(payload, options) {
   return call('roots/unhide', payload, options)
 }
 
-/** 列出本地分支。 */
+/** 列出本地分支 + 分支菜单需要的仓库现状（`state`：HEAD / 进行中操作 / 脏计数）。 */
 export function listBranches(payload, options) {
   return call('branches/list', payload, options)
+}
+
+/**
+ * 远端仓库的分支全貌：远端分支（平台 API）+ 本地同名分支状态（rootPaths 里 origin
+ * 匹配到的本地仓库），合成一条列表。远端/本地任一侧失败只记在 failures 里。
+ */
+export function remoteBranches(payload, options) {
+  return call('remote/branches', payload, options)
+}
+
+/** 删除本地分支（force 只在用户确认「强制删除」后用）。 */
+export function deleteLocalBranch(payload, options) {
+  return call('branch/delete', payload, options)
+}
+
+/** 删除远端分支（破坏性，界面上必须二次确认）。 */
+export function deleteRemoteBranch(payload, options) {
+  return call('remote/branch/delete', payload, options)
 }
 
 /** 把「仅远程」的分支建成本地跟踪分支并切过去。 */
@@ -255,9 +273,25 @@ export function switchBranch(payload, options) {
   return call('branch/switch', payload, options)
 }
 
-/** 从当前 HEAD 创建分支并立刻切过去。 */
+/**
+ * 创建分支：`base` 是创建基准、`checkout` 决定建完是否切过去。
+ *
+ * 基准是当前 HEAD 时未提交改动原样跟随（git 只写 ref 与 HEAD，不碰工作区）；
+ * 跨基准撞车时宿主报 `would-overwrite`（details 里有文件清单，且仓库没被改动），
+ * 界面据此换成「从当前分支创建」或「只建分支」再试一次。
+ */
 export function createBranch(payload, options) {
   return call('branch/create', payload, options)
+}
+
+/**
+ * 推送当前分支到 origin（`git push --set-upstream origin <当前分支>`，用本机 git 凭据）。
+ *
+ * 网络写操作：超时给到 5 分钟。认证失败（`git-auth-failed`）与「远端有你没有的提交」
+ * （`not-fast-forward`）都带可操作原因，界面直接显示宿主原文。
+ */
+export function pushBranch(payload, options) {
+  return call('branch/push', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
 }
 
 /** 提交：有暂存只提交暂存，没有则先全部暂存。 */

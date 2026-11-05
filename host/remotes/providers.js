@@ -49,6 +49,18 @@ function repoMeta(item) {
   }
 }
 
+/**
+ * 分支归一化。两家的字段形状一致（name / commit.sha / protected），
+ * 因此共用同一份实现；脏条目（没有 name）由调用方过滤。
+ */
+function branchMeta(item) {
+  return {
+    name: String(item.name ?? ''),
+    sha: typeof item.commit?.sha === 'string' ? item.commit.sha : '',
+    protected: item.protected === true
+  }
+}
+
 function issueMeta(item) {
   return {
     number: Number.isFinite(item.number) ? item.number : null,
@@ -116,6 +128,10 @@ const github = {
   reposPath: (page) => '/user/repos?per_page=' + PAGE_SIZE + '&page=' + page
     + '&sort=updated&affiliation=owner,collaborator,organization_member',
   repoPath: (fullName) => '/repos/' + fullName,
+  // 分支列表：返回相对仓库的路径，调用方拼 apiBase + repoPath(fullName)
+  branchesPath: (page) => '/branches?per_page=' + PAGE_SIZE + '&page=' + page,
+  // 删分支：GitHub 删的是 ref，分支名整段编码（'/' → '%2F'），否则会被当成多级 ref
+  branchDeletePath: (name) => '/git/refs/heads/' + encodeURIComponent(name),
   pullPath: (number) => '/pulls/' + number,
   pullListPath: (pageSize) => '/pulls?state=open&per_page=' + pageSize,
   issueListPath: (pageSize) => '/issues?state=open&per_page=' + pageSize,
@@ -142,6 +158,7 @@ const github = {
     : '/repos/' + fullName + '/pulls?state=open&per_page=1'),
   normalizeRepo: repoMeta,
   normalizeIssue: issueMeta,
+  normalizeBranch: branchMeta,
   normalizeDetail: (item, fullName) => ({
     ...baseMeta(item, fullName, github),
     issuesUrl: (typeof item.html_url === 'string' ? item.html_url : github.web + '/' + fullName) + '/issues',
@@ -197,6 +214,10 @@ const gitee = {
   userPath: () => '/user',
   reposPath: (page) => '/user/repos?per_page=' + PAGE_SIZE + '&page=' + page + '&sort=updated',
   repoPath: (fullName) => '/repos/' + fullName,
+  // 分支列表：与 GitHub 同构，相对仓库路径；翻页参数由调用方补
+  branchesPath: (page) => '/branches?per_page=' + PAGE_SIZE + '&page=' + page,
+  // 删分支：Gitee 的分支接口直接吃分支名，同样整段编码
+  branchDeletePath: (name) => '/branches/' + encodeURIComponent(name),
   pullPath: (number) => '/pulls/' + number,
   pullListPath: (pageSize) => '/pulls?state=open&per_page=' + pageSize,
   issueListPath: (pageSize) => '/issues?state=open&per_page=' + pageSize,
@@ -233,6 +254,7 @@ const gitee = {
     + (kind === 'issues' ? '/issues?state=open&per_page=1' : '/pulls?state=open&per_page=1'),
   normalizeRepo: repoMeta,
   normalizeIssue: issueMeta,
+  normalizeBranch: branchMeta,
   normalizeDetail: (item, fullName) => ({
     ...baseMeta(item, fullName, gitee),
     issuesUrl: (typeof item.html_url === 'string' ? item.html_url : gitee.web + '/' + fullName) + '/issues',
@@ -276,9 +298,10 @@ export const PROVIDER_IDS = Object.freeze(['github', 'gitee'])
 
 const REQUIRED_PROVIDER_KEYS = [
   'id', 'label', 'web', 'apiBase', 'tokenUrl', 'headers', 'authorize',
-  'userPath', 'reposPath', 'repoPath', 'pullPath', 'pullListPath', 'issueListPath',
+  'userPath', 'reposPath', 'repoPath', 'branchesPath', 'branchDeletePath',
+  'pullPath', 'pullListPath', 'issueListPath',
   'filesPath', 'commentPath', 'commitsPath', 'countsPath', 'gitUrl', 'reviewRepo', 'reviewRef', 'requiresForkAccess', 'pullLookup',
-  'normalizeRepo', 'normalizeIssue', 'normalizeDetail'
+  'normalizeRepo', 'normalizeIssue', 'normalizeBranch', 'normalizeDetail'
 ]
 const REQUIRED_PULL_KEYS = [
   'verdicts', 'mergeMethods', 'mergeDeletesBranch', 'normalizePull', 'normalizeComment', 'normalizeCommit'

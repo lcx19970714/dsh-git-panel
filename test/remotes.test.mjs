@@ -1256,6 +1256,270 @@ await test('克隆：地址既不是 http(s) 也不是本地路径时拒绝', as
   )
 })
 
+/* ------------------------------ 远端分支 ------------------------------- */
+
+const SHA_A = 'a'.repeat(40)
+const SHA_B = 'b'.repeat(40)
+
+await test('远端分支：GitHub 归一 name/commit.sha/protected，默认分支与 htmlUrl 取仓库详情，空名条目被过滤', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/api\.github\.com\/repos\/alice\/app\/branches\?per_page=100&page=1$/, {
+      json: [
+        { name: 'main', commit: { sha: SHA_A }, protected: true },
+        { name: 'feat/remote', commit: { sha: SHA_B } },
+        { commit: { sha: SHA_B } }, // 脏条目：没有 name → 丢弃
+        { name: 'nocommit', protected: 'yes' } // 字段类型不对 → 按缺省值处理
+      ]
+    }],
+    [/api\.github\.com\/repos\/alice\/app$/, {
+      json: { full_name: 'alice/app', default_branch: 'main', html_url: 'https://github.com/alice/app' }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'gh_tok' })
+
+  const result = await remotes.remoteBranches({ accountId: 'github:alice', fullName: 'alice/app' })
+  assert.equal(result.fullName, 'alice/app')
+  assert.equal(result.provider, 'github')
+  assert.equal(result.defaultBranch, 'main', '默认分支来自仓库详情')
+  assert.equal(result.htmlUrl, 'https://github.com/alice/app')
+  assert.equal(result.truncated, false)
+  assert.deepEqual(result.branches, [
+    { name: 'main', sha: SHA_A, protected: true },
+    { name: 'feat/remote', sha: SHA_B, protected: false },
+    { name: 'nocommit', sha: '', protected: false }
+  ])
+
+  // GitHub 的令牌只放请求头，不进 URL
+  const branchCalls = fetchImpl.calls.filter((call) => call.url.includes('/branches?'))
+  assert.equal(branchCalls.length, 1)
+  assert.equal(branchCalls[0].url, 'https://api.github.com/repos/alice/app/branches?per_page=100&page=1')
+  assert.equal(branchCalls[0].options.headers.Authorization, 'Bearer gh_tok')
+})
+
+await test('远端分支：Gitee 的列表同形状，token 挂在 query 上；缺 html_url 时按平台 Web 地址拼', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/branches\?per_page=100&page=1/, {
+      json: [{ name: 'master', commit: { sha: SHA_A }, protected: false }]
+    }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\?/, {
+      json: { full_name: 'bob/tool', default_branch: 'master' }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 'gitee_tok' })
+
+  const result = await remotes.remoteBranches({ accountId: 'gitee:bob', fullName: 'bob/tool' })
+  assert.equal(result.provider, 'gitee')
+  assert.equal(result.defaultBranch, 'master')
+  assert.equal(result.htmlUrl, 'https://gitee.com/bob/tool', '详情没给 html_url 时用 web + fullName 组')
+  assert.deepEqual(result.branches, [{ name: 'master', sha: SHA_A, protected: false }])
+
+  const branchCall = fetchImpl.calls.find((call) => call.url.includes('/branches?'))
+  assert.match(branchCall.url, /access_token=gitee_tok/, 'Gitee 的 token 必须在 query 上：' + branchCall.url)
+  assert.equal(branchCall.options.headers.Authorization, undefined, 'Gitee 不走 Authorization 头')
+})
+
+await test('远端分支：最后一页不满 100 就停，不标 truncated', async () => {
+  const credentials = fakeCredentials()
+  const pageCalls = []
+  const pageOf = (url) => Number.parseInt(/[?&]page=(\d+)/.exec(url)[1], 10)
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/api\.github\.com\/repos\/alice\/app\/branches\?/, (url) => {
+      pageCalls.push(url)
+      const page = pageOf(url)
+      const count = page === 1 ? 100 : 3
+      return {
+        json: Array.from({ length: count }, (_, index) => ({
+          name: 'p' + page + '-' + index, commit: { sha: SHA_A }
+        }))
+      }
+    }],
+    [/api\.github\.com\/repos\/alice\/app$/, {
+      json: { full_name: 'alice/app', default_branch: 'main', html_url: 'https://github.com/alice/app' }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+
+  const result = await remotes.remoteBranches({ accountId: 'github:alice', fullName: 'alice/app' })
+  assert.equal(result.branches.length, 103, '两页合计 103 个分支')
+  assert.equal(result.truncated, false, '没有翻到上限不能声称截断')
+  assert.equal(pageCalls.length, 2, '第二页不满 100 就停止，不再请求第三页')
+})
+
+await test('远端分支：翻满 10 页仍是满页时标 truncated，不再请求第 11 页；仓库详情只读一次', async () => {
+  const credentials = fakeCredentials()
+  const pageCalls = []
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/api\.github\.com\/repos\/alice\/big\/branches\?/, (url) => {
+      pageCalls.push(url)
+      const page = Number.parseInt(/[?&]page=(\d+)/.exec(url)[1], 10)
+      return {
+        json: Array.from({ length: 100 }, (_, index) => ({
+          name: 'p' + page + '-' + index, commit: { sha: SHA_A }
+        }))
+      }
+    }],
+    [/api\.github\.com\/repos\/alice\/big$/, {
+      json: { full_name: 'alice/big', default_branch: 'main', html_url: 'https://github.com/alice/big' }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+
+  const result = await remotes.remoteBranches({ accountId: 'github:alice', fullName: 'alice/big' })
+  assert.equal(result.branches.length, 1000, '10 页 × 100')
+  assert.equal(result.truncated, true, '到上限要标记，界面才能提示只显示前 1000 个')
+  assert.equal(pageCalls.length, 10, '最多 10 页')
+  assert.equal(new Set(result.branches.map((branch) => branch.name)).size, 1000, '不能重复累加')
+  assert.equal(
+    fetchImpl.calls.filter((call) => /\/repos\/alice\/big$/.test(call.url)).length,
+    1,
+    '仓库详情只读一次'
+  )
+})
+
+await test('删远端分支：默认分支在本地拦下（code default-branch），不发 DELETE；非法分支名直接 bad-request', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/api\.github\.com\/repos\/alice\/app$/, {
+      json: { full_name: 'alice/app', default_branch: 'main', html_url: 'https://github.com/alice/app' }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+  const base = { accountId: 'github:alice', fullName: 'alice/app' }
+
+  await assert.rejects(
+    () => remotes.deleteRemoteBranch({ ...base, name: 'main' }),
+    (error) => error.code === 'default-branch' && /main/.test(error.message)
+  )
+  await assert.rejects(
+    () => remotes.deleteRemoteBranch({ ...base, name: '' }),
+    (error) => error.code === 'bad-request'
+  )
+  await assert.rejects(
+    () => remotes.deleteRemoteBranch({ ...base, name: 'bad\nname' }),
+    (error) => error.code === 'bad-request'
+  )
+  assert.equal(
+    fetchImpl.calls.some((call) => call.options.method === 'DELETE'),
+    false,
+    '被本地拦下的删除不能发出 DELETE 请求'
+  )
+  assert.equal(fetchImpl.calls.length, 2, '只有「取用户」和「读仓库详情」两次 GET')
+})
+
+await test('删远端分支：GitHub 走 DELETE /git/refs/heads/<整段编码>，空响应算成功', async () => {
+  const credentials = fakeCredentials()
+  const deletes = []
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/git\/refs\/heads\//, (url, options) => {
+      deletes.push({ url, options })
+      return { status: 204, empty: true }
+    }],
+    [/api\.github\.com\/repos\/alice\/app$/, {
+      json: { full_name: 'alice/app', default_branch: 'main', html_url: 'https://github.com/alice/app' }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 'gh_tok' })
+
+  const result = await remotes.deleteRemoteBranch({
+    accountId: 'github:alice', fullName: 'alice/app', name: 'feature/remote'
+  })
+  assert.deepEqual(result, { name: 'feature/remote', deleted: true })
+  assert.equal(deletes.length, 1)
+  assert.equal(deletes[0].options.method, 'DELETE')
+  // 分支名里的 '/' 必须整段编码，否则 GitHub 会当成多级 ref 找不到
+  assert.equal(deletes[0].url, 'https://api.github.com/repos/alice/app/git/refs/heads/feature%2Fremote')
+  assert.equal(deletes[0].options.headers.Authorization, 'Bearer gh_tok', '删除也走 Authorization 头')
+})
+
+await test('删远端分支：Gitee 走 DELETE /branches/<编码>，token 在 query 上', async () => {
+  const credentials = fakeCredentials()
+  const deletes = []
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/branches\/feature%2Fremote\?/, (url, options) => {
+      deletes.push({ url, options })
+      return { json: {} }
+    }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\?/, {
+      json: { full_name: 'bob/tool', default_branch: 'master' }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 'gitee_tok' })
+
+  const result = await remotes.deleteRemoteBranch({
+    accountId: 'gitee:bob', fullName: 'bob/tool', name: 'feature/remote'
+  })
+  assert.deepEqual(result, { name: 'feature/remote', deleted: true })
+  assert.equal(deletes.length, 1)
+  assert.equal(deletes[0].options.method, 'DELETE')
+  assert.equal(
+    deletes[0].url,
+    'https://gitee.com/api/v5/repos/bob/tool/branches/feature%2Fremote?access_token=gitee_tok',
+    'Gitee 的删除走分支接口且必须带 access_token'
+  )
+})
+
+await test('删远端分支：403/422 且消息含 protected/受保护 → protected-branch，其它错误原样上抛', async () => {
+  // GitHub：422 + protected
+  const githubCreds = fakeCredentials()
+  const githubFetch = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/git\/refs\/heads\/locked$/, { status: 422, json: { message: "Branch 'locked' is protected" } }],
+    [/api\.github\.com\/repos\/alice\/app$/, { json: { full_name: 'alice/app', default_branch: 'main' } }]
+  ])
+  const githubRemotes = createRemotes({ credentials: githubCreds, fetchImpl: githubFetch })
+  await githubRemotes.addAccount({ provider: 'github', token: 't' })
+  await assert.rejects(
+    () => githubRemotes.deleteRemoteBranch({ accountId: 'github:alice', fullName: 'alice/app', name: 'locked' }),
+    (error) => error.code === 'protected-branch' && /locked/.test(error.message)
+  )
+
+  // Gitee：403 + 受保护
+  const giteeCreds = fakeCredentials()
+  const giteeFetch = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\/branches\/locked\?/, {
+      status: 403, json: { message: '受保护的分支不允许删除' }
+    }],
+    [/gitee\.com\/api\/v5\/repos\/bob\/tool\?/, { json: { full_name: 'bob/tool', default_branch: 'master' } }]
+  ])
+  const giteeRemotes = createRemotes({ credentials: giteeCreds, fetchImpl: giteeFetch })
+  await giteeRemotes.addAccount({ provider: 'gitee', token: 't' })
+  await assert.rejects(
+    () => giteeRemotes.deleteRemoteBranch({ accountId: 'gitee:bob', fullName: 'bob/tool', name: 'locked' }),
+    (error) => error.code === 'protected-branch'
+  )
+
+  // 403 但和 protected 无关：保持原来的 remote-auth-failed，不被顺手改写
+  const plainCreds = fakeCredentials()
+  const plainFetch = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/git\/refs\/heads\/other$/, { status: 403, json: { message: 'Resource not accessible' } }],
+    [/api\.github\.com\/repos\/alice\/app$/, { json: { full_name: 'alice/app', default_branch: 'main' } }]
+  ])
+  const plainRemotes = createRemotes({ credentials: plainCreds, fetchImpl: plainFetch })
+  await plainRemotes.addAccount({ provider: 'github', token: 't' })
+  await assert.rejects(
+    () => plainRemotes.deleteRemoteBranch({ accountId: 'github:alice', fullName: 'alice/app', name: 'other' }),
+    (error) => error.code === 'remote-auth-failed'
+  )
+})
+
 console.log('')
 console.log('remotes：' + current.passed + ' passed, ' + current.failed + ' failed')
 if (current.failed > 0) process.exit(1)

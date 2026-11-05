@@ -26,6 +26,75 @@ import { MenuItem, MenuLabel, PopupMenu } from '../ui/Menu.js'
 import { AddRootForm } from './AddRootForm.js'
 import { stripWrappingQuotes } from '../util/paths.js'
 
+/**
+ * 分支菜单的初始状态。
+ *
+ * 打开菜单与「根操作失败后重开菜单」共用这一份：字段集合（尤其 `state` / `base` /
+ * `checkout` / `blocked`）只在这里定义一次，不至于两处各写一遍慢慢长歪。
+ */
+function emptyBranchMenu(root, rect) {
+  return {
+    root,
+    rect,
+    list: [],
+    current: null,      // branches/list 的 current：当前分支名（游离 HEAD 时为 null）
+    state: null,        // branches/list 的 state：head / detached / unborn / inProgress / dirty
+    loading: true,
+    switching: null,
+    creating: false,
+    fetching: false,
+    pulling: false,
+    name: '',
+    base: 'HEAD',       // 创建基准；'HEAD' = 从当前 HEAD 建（零风险路径）
+    checkout: true,     // 建完是否立刻切过去
+    blocked: null,      // 撞车说明（would-overwrite 的 message），非空时只给两个出口
+    error: null
+  }
+}
+
+/**
+ * 「从哪开新分支」的候选：当前分支 + 其它本地分支 + 远端分支。
+ *
+ * 数据全部来自 `branches/list`，所以切换它不需要任何额外请求。
+ * 选项带上「（本地）/（远端）」后缀：只写 `origin/dev` 对不熟 git 的人等于天书。
+ */
+function baseOptionsOf(branches, current, translate) {
+  const options = [{ ref: 'HEAD', label: translate('branch.baseHead', { branch: current ?? translate('root.noBranch') }) }]
+  const seen = new Set(['HEAD'])
+  // 先本地分支、再远端引用：本地分支是更常用的起点，混在一起会把列表打散
+  for (const branch of branches) {
+    if (branch.local !== true || branch.current === true || seen.has(branch.name)) continue
+    seen.add(branch.name)
+    options.push({ ref: branch.name, label: translate('branch.baseLocalOption', { name: branch.name }) })
+  }
+  for (const branch of branches) {
+    if (typeof branch.remote !== 'string' || branch.remote === '') continue
+    const ref = branch.remote + '/' + branch.name
+    if (seen.has(ref)) continue
+    seen.add(ref)
+    options.push({ ref, label: translate('branch.baseRemoteOption', { ref }) })
+  }
+  return options
+}
+
+/** 输入的名字恰好是一个「仅远端」分支时，返回 `origin/x`（提示用，不改变默认行为）。 */
+function sameRemoteOf(branches, name) {
+  if (name === '') return null
+  for (const branch of branches) {
+    if (branch.name !== name || branch.local === true) continue
+    if (typeof branch.remote === 'string' && branch.remote !== '') return branch.remote + '/' + name
+  }
+  return null
+}
+
+/** 进行中的多步操作 → 文案 key。 */
+const PROGRESS_KEYS = {
+  merge: 'branch.progressMerge',
+  rebase: 'branch.progressRebase',
+  'cherry-pick': 'branch.progressCherryPick',
+  revert: 'branch.progressRevert'
+}
+
 export function RepoList(props) {
   const source = props
   const translate = source.t
@@ -47,33 +116,34 @@ export function RepoList(props) {
   const closeForm = () => setFormOpen(false)
   const closeBranches = () => setBranchMenu(null)
 
-  /** 隐藏 / 取消隐藏 / 移除：都从分支菜单触发，执行后关掉菜单。 */
+  /** 隐藏 / 取消隐藏 / 移除：都从分支菜单触发，执行后关掉菜单；失败就把菜单重开在最上面报错。 */
   const runRootAction = (handler, root) => {
     if (typeof source[handler] !== 'function') return
     closeBranches()
     Promise.resolve(source[handler](root)).catch((error) => {
       setBranchMenu({
-        root,
-        rect: null,
-        list: [],
+        ...emptyBranchMenu(root, null),
         loading: false,
-        switching: null,
-        creating: false,
-        fetching: false,
-        pulling: false,
-        name: '',
         error: error && error.message ? error.message : String(error)
       })
     })
   }
 
   const loadBranches = (root, rect) => {
-    setBranchMenu({ root, rect, list: [], loading: true, switching: null, creating: false, fetching: false, name: '', error: null })
+    setBranchMenu(emptyBranchMenu(root, rect))
     Promise.resolve(source.onLoadBranches(root))
       .then((value) => {
         setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
           ? previous
-          : { ...previous, list: value.branches, loading: false }))
+          : {
+            ...previous,
+            list: value.branches,
+            current: value.current,
+            state: value.state,
+            loading: false,
+            // 合并 / 变基进行中 git 不允许切分支：默认就落在「只建分支」上，不摆一个必然失败的勾选
+            checkout: value.state.inProgress === null
+          }))
       })
       .catch((error) => {
         setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
@@ -112,12 +182,19 @@ export function RepoList(props) {
   /** 拉取远程更新（git fetch）后重读分支列表：别人新推的分支这时才会出现。 */
   const fetchRemote = (menu) => {
     if (typeof source.onFetchBranches !== 'function') return
-    setBranchMenu({ ...menu, fetching: true, error: null })
+    setBranchMenu({ ...menu, fetching: true, error: null, blocked: null })
     Promise.resolve(source.onFetchBranches(menu.root))
       .then((value) => {
         setBranchMenu((previous) => (previous === null
           ? previous
-          : { ...previous, fetching: false, list: value.branches, loading: false }))
+          : {
+            ...previous,
+            fetching: false,
+            list: value.branches,
+            current: value.current,
+            state: value.state,
+            loading: false
+          }))
       })
       .catch((error) => {
         setBranchMenu((previous) => (previous === null
@@ -139,20 +216,55 @@ export function RepoList(props) {
   }
 
   const changeCreateName = (value) => {
-    setBranchMenu((previous) => (previous === null ? previous : { ...previous, name: value, error: null }))
+    setBranchMenu((previous) => (previous === null
+      ? previous
+      : { ...previous, name: value, error: null, blocked: null }))
   }
 
-  const createBranch = (menu) => {
+  const changeBase = (value) => {
+    setBranchMenu((previous) => (previous === null
+      ? previous
+      : { ...previous, base: value, error: null, blocked: null }))
+  }
+
+  const changeCheckout = (value) => {
+    setBranchMenu((previous) => (previous === null
+      ? previous
+      : { ...previous, checkout: value, error: null, blocked: null }))
+  }
+
+  /**
+   * 创建分支：默认从当前 HEAD 建并切过去。
+   *
+   * `overrides` 是撞车后两个出口用的（改为从当前分支创建 / 只建分支），
+   * 它们都是「同一件事换个参数重试一次」，所以共用这一条路径。
+   */
+  const runCreate = (menu, overrides = {}) => {
     const name = stripWrappingQuotes(menu.name)
     if (name === '' || menu.creating === true || menu.switching !== null) return
-    setBranchMenu({ ...menu, name, creating: true, error: null })
-    Promise.resolve(source.onCreateBranch(menu.root, name))
+    const base = overrides.base ?? menu.base
+    const checkout = overrides.checkout ?? menu.checkout
+    setBranchMenu({
+      ...menu,
+      ...overrides,
+      name,
+      creating: true,
+      error: null,
+      blocked: null
+    })
+    Promise.resolve(source.onCreateBranch(menu.root, { name, base, checkout }))
       .then(() => setBranchMenu(null))
-      .catch((error) => {
-        setBranchMenu((previous) => (previous === null
-          ? previous
-          : { ...previous, creating: false, error: error && error.message ? error.message : String(error) }))
-      })
+      .catch((error) => setBranchMenu((previous) => (previous === null
+        ? previous
+        : {
+          ...previous,
+          creating: false,
+          error: error && error.message ? error.message : String(error),
+          // 撞车不是「失败」而是「需要换个选择」：单独呈现，并给出两个零风险出口
+          blocked: error !== null && error !== undefined && error.code === 'would-overwrite'
+            ? (error && error.message ? error.message : String(error))
+            : null
+        })))
   }
 
   const menuBranches = branchMenu === null ? [] : branchMenu.list
@@ -171,6 +283,34 @@ export function RepoList(props) {
 
   const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true || branchMenu.fetching === true)
   const createName = branchMenu === null ? '' : stripWrappingQuotes(branchMenu.name)
+  /**
+   * 创建区的现状提示。三件事各自独立，所以分开渲染而不是拼一坨：
+   *  · 有合并 / 变基在跑 → git 不允许切分支，只能只建分支；
+   *  · 工作区脏 → 说清有多少改动会跟着走（base=HEAD 时这是零风险路径）；
+   *  · 输入的名字恰好是已有远端分支 → 提示要跟踪该选哪个基准。
+   */
+  const branchState = branchMenu === null ? null : branchMenu.state
+  const inProgress = branchState === null ? null : branchState.inProgress
+  const progressKey = inProgress === null ? null : PROGRESS_KEYS[inProgress]
+  const sameRemote = branchMenu === null ? null : sameRemoteOf(branchMenu.list, createName)
+  const baseOptions = branchMenu === null ? [] : baseOptionsOf(branchMenu.list, branchMenu.current, translate)
+  const dirtyHint = branchState === null || branchState.dirty.total === 0
+    ? null
+    : translate('branch.dirtyHint', {
+      branch: branchMenu.current ?? translate('root.noBranch'),
+      total: branchState.dirty.total,
+      staged: branchState.dirty.staged
+    })
+  /**
+   * 选了「不是当前分支」当起点时，用一句人话说明后果。
+   * 这个下拉框对不熟 git 的人很难自解释，只靠 tooltip 不够 —— 选项一改就把话说出来。
+   */
+  const baseIsHead = branchMenu === null || branchMenu.base === 'HEAD'
+  const baseNote = baseIsHead
+    ? null
+    : (branchState !== null && branchState.dirty.total > 0
+      ? translate('branch.baseNoteDirty', { base: branchMenu.base, total: branchState.dirty.total })
+      : translate('branch.baseNoteClean', { base: branchMenu.base }))
   const branchMenuNode = branchMenu === null
     ? null
     : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 240 },
@@ -216,41 +356,108 @@ export function RepoList(props) {
         'data-dgp-branch-create': 'true',
         onSubmit: (event) => {
           event.preventDefault()
-          createBranch(branchMenu)
+          runCreate(branchMenu)
         }
       },
-      h('input', {
-        className: 'dgp-input',
-        'data-dgp-branch-name': 'true',
-        value: branchMenu.name,
-        placeholder: translate('branch.createPlaceholder'),
-        spellCheck: false,
-        disabled: menuBusy,
-        onChange: (event) => changeCreateName(event.target.value),
-        onKeyDown: (event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault()
-            event.stopPropagation()
-            closeBranches()
+      h('div', { className: 'dgp-branch-create-row' },
+        h('input', {
+          className: 'dgp-input',
+          'data-dgp-branch-name': 'true',
+          value: branchMenu.name,
+          placeholder: translate('branch.createPlaceholder'),
+          spellCheck: false,
+          disabled: menuBusy,
+          onChange: (event) => changeCreateName(event.target.value),
+          onKeyDown: (event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              event.stopPropagation()
+              closeBranches()
+            }
           }
-        }
-      }),
-      h('button', {
-        type: 'submit',
-        className: 'dgp-btn',
-        'data-size': 'sm',
-        'data-variant': 'primary',
-        'data-dgp-branch-create-submit': 'true',
-        disabled: menuBusy || createName === '',
-        title: translate('branch.create')
-      }, translate('branch.create'))),
+        }),
+        h('button', {
+          type: 'submit',
+          className: 'dgp-btn',
+          'data-size': 'sm',
+          'data-variant': 'primary',
+          'data-dgp-branch-create-submit': 'true',
+          disabled: menuBusy || createName === '',
+          title: translate(branchMenu.checkout ? 'branch.create' : 'branch.createOnly')
+        }, translate(branchMenu.checkout ? 'branch.create' : 'branch.createOnly'))),
+      h('div', { className: 'dgp-branch-create-opts' },
+        h('span', { className: 'dgp-branch-base-label' }, translate('branch.baseLabel')),
+        h('select', {
+          className: 'dgp-input dgp-branch-base',
+          'data-dgp-branch-base': 'true',
+          value: branchMenu.base,
+          disabled: menuBusy,
+          title: translate('branch.baseHint'),
+          onChange: (event) => changeBase(event.target.value)
+        }, baseOptions.map((option) => h('option', { key: option.ref, value: option.ref }, option.label))),
+        h('label', { className: 'dgp-branch-check', title: translate('branch.checkoutHint') },
+          h('input', {
+            type: 'checkbox',
+            'data-dgp-branch-checkout': 'true',
+            checked: branchMenu.checkout,
+            disabled: menuBusy || inProgress !== null,
+            onChange: (event) => changeCheckout(event.target.checked)
+          }),
+          translate('branch.checkoutLabel'))),
+      baseNote === null
+        ? null
+        : h('p', {
+          className: 'dgp-branch-hint',
+          'data-dgp-branch-base-note': branchMenu.base
+        }, baseNote),
+      progressKey === null
+        ? null
+        : h('p', {
+          className: 'dgp-branch-hint',
+          'data-dgp-branch-dirty': 'in-progress',
+          'data-tone': 'warn'
+        }, translate('branch.inProgressHint', {
+          kind: translate(progressKey),
+          action: translate('branch.createOnlyAction')
+        })),
+      dirtyHint === null
+        ? null
+        : h('p', { className: 'dgp-branch-hint', 'data-dgp-branch-dirty': 'dirty' }, dirtyHint),
+      sameRemote === null
+        ? null
+        : h('p', {
+          className: 'dgp-branch-hint',
+          'data-dgp-branch-same-remote': sameRemote
+        }, translate('branch.sameRemoteHint', { ref: sameRemote })),
+      // 撞车 = 「需要换个选择」，不是失败：说清冲突文件，并只给两个零风险出口
+      branchMenu.blocked === null
+        ? null
+        : h('div', { className: 'dgp-branch-blocked', 'data-dgp-branch-blocked': 'true' },
+          h('p', { className: 'dgp-branch-hint', 'data-tone': 'warn' }, branchMenu.blocked),
+          h('div', { className: 'dgp-branch-actions' },
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-dgp-branch-from-head': 'true',
+              disabled: menuBusy,
+              onClick: () => runCreate(branchMenu, { base: 'HEAD', checkout: true })
+            }, translate('branch.fromHead')),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-dgp-branch-only': 'true',
+              disabled: menuBusy,
+              onClick: () => runCreate(branchMenu, { checkout: false })
+            }, translate('branch.createOnlyAction'))))),
       branchMenu.switching === null
         ? null
         : h(MenuLabel, null, translate('branch.switching', { name: branchMenu.switching })),
       branchMenu.creating !== true
         ? null
-        : h(MenuLabel, null, translate('branch.creating', { name: createName })),
-      branchMenu.error === null
+        : h(MenuLabel, null, translate(branchMenu.checkout ? 'branch.creating' : 'branch.creatingOnly', { name: createName })),
+      branchMenu.error === null || branchMenu.blocked !== null
         ? null
         : h(MenuLabel, null, translate('branch.failed', { message: branchMenu.error })),
       branchMenu.root.kind === 'primary'

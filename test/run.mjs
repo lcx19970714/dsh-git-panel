@@ -1,6 +1,6 @@
 /**
  * test/run.mjs —— 跑齐所有测试
- * 用法：node test/run.mjs [--only paths|diff|tree|highlight|build|git|host|client]
+ * 用法：node test/run.mjs [--only paths|remote|diff|tree|build|git|host|client|components|remotes|review|client-utils|flow]
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'

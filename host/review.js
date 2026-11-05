@@ -10,6 +10,7 @@
  *  3. 模型看到的一切 diff 文本都只是数据 —— 里面写的任何「指令」都不执行。
  */
 import { GitError } from './git.js'
+import { callModel, modelOutputPreview } from './llm-call.js'
 
 /** 一次审阅最多喂进提示词的字符数（含文件头）。比提交说明的 60k 高很多。 */
 export const REVIEW_DIFF_LIMIT = 200_000
@@ -145,7 +146,7 @@ export function parseReviewOutput(text) {
   try {
     parsed = JSON.parse(trimmed)
   } catch {
-    throw new GitError('bad-model-output', '模型输出不是合法 JSON：' + trimmed.slice(0, 200))
+    throw new GitError('bad-model-output', '模型输出不是合法 JSON（' + modelOutputPreview(trimmed) + '）')
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new GitError('bad-model-output', '模型输出的顶层必须是 JSON 对象')
@@ -187,19 +188,12 @@ export function parseReviewOutput(text) {
   return { summary, verdict: parsed.verdict, findings, comment }
 }
 
-function messageOf(error) {
-  if (error instanceof Error) return error.message === '' ? error.name : error.message
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string' && error.message !== '') {
-    return error.message
-  }
-  return String(error)
-}
-
 /**
  * 调模型审阅。
  *
- * 与提交说明生成同一套调用方式（prepareCall + stream + 独立超时 + abort），
+ * 与提交说明生成同一套调用方式（`callModel`：prepareCall + stream + 独立超时 + abort），
  * 但输出上限更高、超时更长、推理档位不主动压低。
+ * 输出被上限截断时由 `callModel` 报 `model-truncated`，不会退化成「JSON 不合法」。
  */
 export async function generateReview(llm, pair, input, options = {}) {
   const deep = options.mode === 'deep'
@@ -215,58 +209,16 @@ export async function generateReview(llm, pair, input, options = {}) {
     ? options.timeoutMs
     : DEFAULT_TIMEOUT_MS
 
-  const controller = new AbortController()
-  let timedOut = false
-  const timer = setTimeout(() => {
-    timedOut = true
-    controller.abort()
-  }, timeoutMs)
-  const forward = () => controller.abort()
-  if (options.signal !== undefined) {
-    if (options.signal.aborted === true) {
-      clearTimeout(timer)
-      throw new GitError('aborted', '操作已取消')
-    }
-    options.signal.addEventListener('abort', forward, { once: true })
-  }
-
-  let output = ''
-  let failure = null
-  try {
-    const call = await llm.prepareCall(
-      { provider: pair.provider, model: pair.model, maxTokens: MAX_OUTPUT_TOKENS },
-      controller.signal,
-      (controls) => controls
-    )
-    const stream = call.stream({
-      ...call.config,
-      messages: [{ role: 'user', content: [{ type: 'text', text }] }],
-      system: deep ? DEEP_SYSTEM_PROMPT : SYSTEM_PROMPT,
-      purpose: 'dsh-git-panel/pr-review',
-      signal: controller.signal
-    })
-    for await (const chunk of stream) {
-      if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') output += chunk.text
-      else if (chunk?.type === 'finish') {
-        const kind = chunk.reason === null || chunk.reason === undefined ? null : chunk.reason.kind
-        if (kind === 'error' || kind === 'aborted') {
-          failure = chunk.reason.failure === undefined || chunk.reason.failure === null
-            ? kind
-            : messageOf(chunk.reason.failure)
-        }
-      }
-    }
-  } catch (error) {
-    if (timedOut) throw new GitError('timeout', '模型 ' + Math.round(timeoutMs / 1000) + ' 秒内没有返回（' + pair.provider + '/' + pair.model + '）')
-    if (options.signal !== undefined && options.signal.aborted === true) throw new GitError('aborted', '操作已取消')
-    if (error instanceof GitError) throw error
-    throw new GitError('model-failed', '模型调用失败（' + pair.provider + '/' + pair.model + '）：' + messageOf(error))
-  } finally {
-    clearTimeout(timer)
-    if (options.signal !== undefined) options.signal.removeEventListener('abort', forward)
-  }
-
-  if (failure !== null) throw new GitError('model-failed', '模型返回了错误（' + pair.provider + '/' + pair.model + '）：' + failure)
-  const review = parseReviewOutput(output)
+  const result = await callModel({
+    llm,
+    pair,
+    system: deep ? DEEP_SYSTEM_PROMPT : SYSTEM_PROMPT,
+    prompt: text,
+    purpose: 'dsh-git-panel/pr-review',
+    maxTokens: MAX_OUTPUT_TOKENS,
+    timeoutMs,
+    signal: options.signal
+  })
+  const review = parseReviewOutput(result.text)
   return { ...review, truncated, filesIncluded, skippedFiles, filesTruncated, model: pair.provider + '/' + pair.model }
 }

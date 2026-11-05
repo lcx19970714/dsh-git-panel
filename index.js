@@ -54,6 +54,8 @@ import {
   switchBranch,
   trackRemoteBranch,
   createBranch,
+  pushBranch,
+  readBranchState,
   writeTextFile,
   prepareReviewBranch,
   cloneForReview,
@@ -65,8 +67,11 @@ import {
   pushedState,
   branchCommits,
   branchDiffText,
-  pullBranch
+  pullBranch,
+  remoteTrackingRefs,
+  deleteBranch
 } from './host/git.js'
+import { mergeBranches } from './host/branches.js'
 import { generatePullText } from './host/pr-text.js'
 import { checkPluginUpdate, pluginInfo } from './host/plugin-meta.js'
 import { createReviewLog } from './host/review-log.js'
@@ -127,6 +132,10 @@ export const ENDPOINTS = Object.freeze([
   'branch/track',
   'branch/pull',
   'branch/create',
+  'branch/push',
+  'branch/delete',
+  'remote/branches',
+  'remote/branch/delete',
   'accounts/list',
   'accounts/add',
   'accounts/update',
@@ -272,6 +281,13 @@ function requireAbsolute(value, field) {
     throw new GitError('bad-request', `参数 ${field} 必须是绝对路径：${raw}`)
   }
   return path.resolve(raw)
+}
+
+function requireBoolean(value, field) {
+  if (typeof value !== 'boolean') {
+    throw new GitError('bad-request', `参数 ${field} 必须是布尔值`)
+  }
+  return value
 }
 
 function asObject(payload) {
@@ -931,11 +947,23 @@ function createDispatcher(ctx) {
   }
 
   /* branches/list · branch/switch -------------------------------------- */
+  /**
+   * 分支列表 + 菜单需要的仓库现状（`state`）。
+   *
+   * 合成一次请求下发：菜单打开时既要分支名单，也要「当前在哪、工作区脏不脏、
+   * 有没有合并/变基进行中」才能决定创建区怎么呈现。分成两个端点只会多一次往返。
+   */
   async function branchesList(request, signal) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
     const repo = await resolveRepo(rootPath)
     if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
-    return listBranches(normalizeSlashes(repo.repoRoot), { signal })
+    if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
+    const repoRoot = normalizeSlashes(repo.repoRoot)
+    const [listed, state] = await Promise.all([
+      listBranches(repoRoot, { signal }),
+      readBranchState(repoRoot, { signal })
+    ])
+    return { ...listed, state }
   }
 
   async function branchTrack(request, signal) {
@@ -960,15 +988,133 @@ function createDispatcher(ctx) {
     return result
   }
 
+  /**
+   * 创建分支（可以携带未提交改动）。
+   *
+   * 入参全部显式：`base` 决定从哪建、`checkout` 决定建完是否切过去。没有默认值填坑 ——
+   * 这个操作可能动工作区，不接受隐式行为，客户端必须把两个选择明确表达出来。
+   */
   async function branchCreate(request, signal) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
-    const branch = requireString(request.name, 'name')
+    const name = requireString(request.name, 'name')
+    const base = requireString(request.base, 'base')
+    const checkout = requireBoolean(request.checkout, 'checkout')
     const repo = await resolveRepo(rootPath)
     if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
     if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
-    const result = await createBranch(normalizeSlashes(repo.repoRoot), branch, { signal })
+    const result = await createBranch(normalizeSlashes(repo.repoRoot), { name, base, checkout }, { signal })
     clearStatusCache()
     return result
+  }
+
+  /**
+   * 推送当前分支到 origin。
+   *
+   * 这是插件唯一的「远端写」git 操作（其余远端写都在平台 API 那边）。
+   * 只推当前分支、只推 origin：不给别的分支/远端开参数，避免变成半套 git 客户端。
+   */
+  async function branchPush(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
+    const result = await pushBranch(normalizeSlashes(repo.repoRoot), { signal })
+    clearStatusCache()
+    return result
+  }
+
+  /* remote/branches · branch/delete · remote/branch/delete ------------- */
+  /**
+   * 远端页签的「分支」区：本地状态 + 远端名单合成一张表。
+   *
+   * 两侧取数各自兜底：本地读取失败、远端 API 失败都只记进 failures，另一段照常返回 ——
+   * 没网 / 令牌过期时本地分支操作仍可用，本地没克隆时远端分支也照常可看。
+   * 端点本身只有在入参不合法时才失败。
+   */
+  async function remoteBranches(request, signal) {
+    const accountId = requireString(request.accountId, 'accountId')
+    const fullName = requireString(request.fullName, 'fullName')
+    const rootPaths = Array.isArray(request.rootPaths)
+      ? request.rootPaths.filter((item) => typeof item === 'string' && item !== '')
+      : []
+    const failures = []
+
+    // 1) 本地：项目里命中对应仓库才读（listBranches + readHead + 远端跟踪引用）
+    let local = null
+    let localInfo = null
+    let tracking = []
+    try {
+      const found = await findLocalRepoFor(rootPaths, fullName)
+      if (found !== null && typeof found.rootPath === 'string') {
+        const repoRoot = normalizeSlashes(found.rootPath)
+        const [listed, head, refs] = await Promise.all([
+          listBranches(repoRoot, { signal }),
+          readHead(repoRoot),
+          remoteTrackingRefs(repoRoot, 'origin', { signal })
+        ])
+        local = { branches: listed.branches, current: head.branch, detached: head.detached === true }
+        tracking = refs
+        localInfo = { rootPath: repoRoot, current: head.branch, detached: head.detached === true }
+      }
+    } catch (error) {
+      failures.push({ section: 'local', message: describe(error) })
+      local = null
+      localInfo = null
+      tracking = []
+    }
+
+    // 2) 远端：平台 API 的分支名单；失败不抛，只把 remoteKnown 置 false
+    let remote = null
+    try {
+      remote = await remotesOf().remoteBranches({ accountId, fullName }, { signal })
+    } catch (error) {
+      failures.push({ section: 'remote', message: describe(error) })
+      remote = null
+    }
+
+    const defaultBranch = typeof remote?.defaultBranch === 'string' ? remote.defaultBranch : ''
+    const merged = mergeBranches({ remote, tracking, local, defaultBranch })
+    return {
+      accountId,
+      fullName,
+      // 远端没读到时按 accountId 的前缀（github:login → github）给出平台
+      provider: typeof remote?.provider === 'string' && remote.provider !== ''
+        ? remote.provider
+        : accountId.split(':')[0],
+      htmlUrl: typeof remote?.htmlUrl === 'string' ? remote.htmlUrl : '',
+      defaultBranch,
+      remoteKnown: merged.remoteKnown,
+      localKnown: merged.localKnown,
+      truncated: merged.truncated,
+      counts: merged.counts,
+      branches: merged.branches,
+      local: localInfo,
+      failures
+    }
+  }
+
+  /** 删除本地分支（默认只删已合并的；前端二次确认后传 force 用 -D）。 */
+  async function branchDelete(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const name = requireString(request.name, 'name')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
+    const result = await deleteBranch(normalizeSlashes(repo.repoRoot), name, {
+      force: request.force === true,
+      signal
+    })
+    clearStatusCache()
+    return result
+  }
+
+  /** 删除远端分支：平台 API，返回 {name, deleted}；错误码由 remotes 层给。 */
+  async function remoteBranchDelete(request, signal) {
+    return remotesOf().deleteRemoteBranch({
+      accountId: requireString(request.accountId, 'accountId'),
+      fullName: requireString(request.fullName, 'fullName'),
+      name: requireString(request.name, 'name')
+    }, { signal })
   }
 
   /* commit ------------------------------------------------------------ */
@@ -1023,7 +1169,13 @@ function createDispatcher(ctx) {
       .map((item) => item.branch)
   }
 
-  /** 准备创建 PR：仓库/账号/源分支/目标分支候选/是否已推送。 */
+  /**
+   * 准备创建 PR：仓库 / 账号 / 源分支 / 目标分支候选。
+   *
+   * 不返回「是否已推送」：那是仓库当前状态，唯一来源是 `status.pushed`。
+   * 在这里再算一遍只会让前端多一份可能过期的快照，同一屏出现两块同样的提示。
+   * 真正的推送校验在 `prCreate`（绕过界面直接调接口也拦得住），那才是它该待的地方。
+   */
   async function prPrepare(request, signal) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
     const repo = await resolveRepo(rootPath)
@@ -1044,17 +1196,14 @@ function createDispatcher(ctx) {
     const remoteBranches = await listRemoteBranches(repoRoot, 'origin', { signal })
     const bases = sortBaseCandidates(remoteBranches, head.branch)
     if (bases.length === 0) {
-      throw new GitError('no-base-branch', '远端没有任何可作目标的分支：先 git fetch')
+      // 面板里确实有这个动作，就指到按钮上；不要甩一句 git 命令让人自己去猜在哪执行
+      throw new GitError('no-base-branch', '远端还没有任何分支能作为合并目标：先在分支菜单里点「获取远程更新」再试')
     }
-    const push = await pushedState(repoRoot, head.branch, 'origin', { signal })
     return {
       repo: { provider: info.provider, fullName: info.fullName },
       head: head.branch,
       bases,
-      accounts,
-      pushed: push.pushed,
-      ahead: head.ahead,
-      behind: head.behind
+      accounts
     }
   }
 
@@ -1160,10 +1309,14 @@ function createDispatcher(ctx) {
     if (head.branch === null || head.detached === true) throw new GitError('detached-head', '当前不在任何分支上')
     const push = await pushedState(repoRoot, head.branch, 'origin', { signal })
     if (!push.pushed) {
+      // 面板身上没有 push 动作，所以说「先去推送」等于让人找一个不存在的按钮：
+      // 这里给的是能直接照抄的命令，并把「远端没有这个分支 / 远端比本地旧」说成人话。
+      const why = push.remoteSha === ''
+        ? 'origin 上还没有这个分支'
+        : 'origin 上的这个分支比你本地旧'
       throw new GitError('not-pushed',
-        '分支 ' + head.branch + ' 还没有完全推送到 origin'
-        + (push.remoteSha === '' ? '（远端没有这个分支）' : '（远端比本地旧）')
-        + '：先 git push 再创建 PR')
+        '分支 ' + head.branch + ' 的最新提交还只在你本机（' + why + '）：'
+        + '在终端运行 git push -u origin ' + head.branch + ' 后再创建 PR')
     }
     const created = await remotesOf().createPull({
       accountId,
@@ -1311,6 +1464,10 @@ function createDispatcher(ctx) {
     'branch/track': (request, signal) => branchTrack(request, signal),
     'branch/pull': (request, signal) => branchPull(request, signal),
     'branch/create': (request, signal) => branchCreate(request, signal),
+    'branch/push': (request, signal) => branchPush(request, signal),
+    'branch/delete': (request, signal) => branchDelete(request, signal),
+    'remote/branches': (request, signal) => remoteBranches(request, signal),
+    'remote/branch/delete': (request, signal) => remoteBranchDelete(request, signal),
     'commit': (request, signal) => commit(request, signal),
     'commit/message': (request, signal) => commitMessage(request, signal),
     'pr/prepare': (request, signal) => prPrepare(request, signal),
@@ -1361,7 +1518,11 @@ function createHandler(ctx) {
       } catch {
         /* ignore */
       }
-      return fail(mapped.code, mapped.message, mapped.details)
+      // 缺参这类契约问题最容易被误读成「功能坏了」：把端点名带上，一眼能定位是哪次调用。
+      // （真实踩过：界面与宿主版本不一致时，旧界面发出的请求少了新宿主要求的字段，
+      //  界面上只有一句「缺少参数 base」，完全看不出是谁在调什么。）
+      const message = mapped.code === 'bad-request' ? '[' + String(endpoint) + '] ' + mapped.message : mapped.message
+      return fail(mapped.code, message, mapped.details)
     }
   }
 }

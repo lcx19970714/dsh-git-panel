@@ -628,6 +628,155 @@ test('RemoteDetail：有更新时间才显示「更新」，缺失时不出现�
     '两个时间都要显示：' + withUpdated)
 })
 
+/* ------------------------- 远端仓库详情 · 分支区 ------------------------- */
+
+const branchStateFixture = {
+  loading: false,
+  error: null,
+  data: {
+    accountId: 'github:alice',
+    fullName: 'alice/app',
+    provider: 'github',
+    htmlUrl: 'https://github.com/alice/app',
+    defaultBranch: 'main',
+    remoteKnown: true,
+    localKnown: true,
+    truncated: false,
+    counts: { total: 3, local: 2, remoteOnly: 1, localOnly: 1 },
+    local: { rootPath: 'C:/work/app', current: 'main', detached: false },
+    branches: [
+      {
+        name: 'main', local: true, current: true, remote: true, default: true, protected: true,
+        remoteSha: 'a1', upstream: 'origin/main', ahead: 2, behind: 3,
+        upstreamGone: false, upstreamMissing: false, remoteUpdated: false
+      },
+      {
+        name: 'feature/x', local: false, current: false, remote: true, default: false, protected: false,
+        remoteSha: 'b2', upstream: null, ahead: 0, behind: 0,
+        upstreamGone: false, upstreamMissing: false, remoteUpdated: true
+      },
+      {
+        name: 'local-only', local: true, current: false, remote: false, default: false, protected: false,
+        remoteSha: null, upstream: null, ahead: 0, behind: 0,
+        upstreamGone: false, upstreamMissing: false, remoteUpdated: false
+      }
+    ],
+    failures: []
+  }
+}
+
+test('BranchList：分支行的当前 / 本地 / 远端 / 领先落后都画出来', () => {
+  const { BranchList } = loadModule('./components/BranchList.js')
+  const tree = renderComponent(BranchList, {
+    selection: { accountId: 'github:alice', fullName: 'alice/app' },
+    state: branchStateFixture,
+    onReloadBranches: () => {},
+    onFetchBranches: () => {},
+    onSwitchBranch: () => {},
+    onTrackBranch: () => {},
+    onDeleteLocalBranch: () => {},
+    onDeleteRemoteBranch: () => {},
+    onOpenUrl: () => {},
+    t: tKey
+  })
+  eq(collect(tree, (node) => classOf(node).split(' ').includes('dgp-branch-section')).length, 1, '.dgp-branch-section')
+
+  const rows = collect(tree, (node) => node.$$host === true && node.props['data-dgp-branch-row'] !== undefined)
+  eq(rows.map((row) => row.props['data-dgp-branch-row']), ['main', 'feature/x', 'local-only'], '分支行与顺序')
+
+  const items = collect(tree, (node) => classOf(node).split(' ').includes('dgp-branch-item'))
+  eq(items.length, 3, '三个分支项')
+  eq(items[0].props['data-current'], 'true', '当前分支必须标记')
+
+  // 本地 / 远端两个标签是「有没有」的唯一稳定表达：data-active 必须是 true/false
+  const tags = collect(tree, (node) => classOf(node).split(' ').includes('dgp-branch-tag'))
+  const localTags = tags.filter((tag) => tag.props['data-kind'] === 'local').map((tag) => tag.props['data-active'])
+  const remoteTags = tags.filter((tag) => tag.props['data-kind'] === 'remote').map((tag) => tag.props['data-active'])
+  eq(localTags, ['true', 'false', 'true'], '本地标签（main 有 / feature 无 / local-only 有）')
+  eq(remoteTags, ['true', 'true', 'false'], '远端标签')
+  assert(tags.some((tag) => tag.props['data-kind'] === 'default' && textOf(tag) === 'branch.defaultTag'), '默认分支标签')
+
+  const text = textOf(tree)
+  assert(text.includes('branch.sectionTitle'), '分区标题')
+  assert(text.includes('branch.summary'), '数量摘要')
+  assert(text.includes('branch.aheadBehind'), '领先落后')
+  assert(text.includes('branch.localRepo'), '已克隆提示')
+  eq(collect(tree, (node) => node.$$host === true && node.props['data-dgp-branch-more'] !== undefined).length, 3, '每行一个「更多」按钮')
+})
+
+test('BranchList：加载 / 失败 / 未克隆 / 无选中四种状态', () => {
+  const { BranchList } = loadModule('./components/BranchList.js')
+  const base = {
+    selection: { accountId: 'github:alice', fullName: 'alice/app' },
+    onReloadBranches: () => {}, onFetchBranches: () => {}, onSwitchBranch: () => {},
+    onTrackBranch: () => {}, onDeleteLocalBranch: () => {}, onDeleteRemoteBranch: () => {},
+    onOpenUrl: () => {}, t: tKey
+  }
+
+  const loading = textOf(renderComponent(BranchList, { ...base, state: { loading: true, error: null, data: null } }))
+  assert(loading.includes('branch.loading'), '首屏加载文案：' + loading)
+
+  const failed = textOf(renderComponent(BranchList, { ...base, state: { loading: false, error: 'boom', data: null } }))
+  assert(failed.includes('branch.loadFailed') && failed.includes('boom'), '失败要说清原因：' + failed)
+
+  const notCloned = textOf(renderComponent(BranchList, {
+    ...base,
+    state: {
+      loading: false, error: null,
+      data: { ...branchStateFixture.data, local: null, counts: { total: 2, local: 0, remoteOnly: 2, localOnly: 0 } }
+    }
+  }))
+  assert(notCloned.includes('branch.notCloned'), '未克隆提示：' + notCloned)
+
+  // 没有选中仓库时整个分区不占位
+  eq(renderComponent(BranchList, { ...base, selection: null, state: null }), null, '无选中时不渲染')
+})
+
+test('RemoteDetail：分支区在详情里，旧的「代码」块已合并进 meta', () => {
+  const { RemoteDetail } = loadModule('./components/RemoteDetail.js')
+  const tree = renderComponent(RemoteDetail, {
+    selection: { accountId: 'github:alice', fullName: 'alice/app' },
+    detail: {
+      loading: false, error: null,
+      data: {
+        repo: {
+          fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
+          issuesUrl: 'x', pullsUrl: 'x'
+        },
+        issues: { total: 0, items: [] },
+        pulls: { total: 0, items: [] },
+        failures: []
+      }
+    },
+    branchState: branchStateFixture,
+    onOpenPull: () => {}, t: tKey
+  })
+  const text = textOf(tree)
+  assert(text.includes('branch.sectionTitle'), '详情里应有分支区：' + text)
+  assert(!text.includes('detail.code'), '重复的「代码」块应已移除：' + text)
+  assert(text.includes('detail.defaultBranch'), '默认分支信息仍在 meta 行')
+  eq(collect(tree, (node) => classOf(node).split(' ').includes('dgp-branch-section')).length, 1, '分支区只出现一次')
+})
+
+test('BranchList：上一个仓库的旧数据不能画在新仓库下面（按 fullName 认数据）', () => {
+  const { BranchList } = loadModule('./components/BranchList.js')
+  const tree = renderComponent(BranchList, {
+    selection: { accountId: 'github:alice', fullName: 'alice/other' },
+    state: {
+      loading: false,
+      error: null,
+      data: { ...branchStateFixture.data, fullName: 'alice/app' }
+    },
+    onReloadBranches: () => {}, onFetchBranches: () => {}, onSwitchBranch: () => {},
+    onTrackBranch: () => {}, onDeleteLocalBranch: () => {}, onDeleteRemoteBranch: () => {},
+    onOpenUrl: () => {}, t: tKey
+  })
+  const text = textOf(tree)
+  assert(text.includes('branch.loading') || text.includes('branch.refreshing'), '旧数据应按加载中处理：' + text)
+  assert(!text.includes('local-only'), '不能把上一个仓库的分支名画出来：' + text)
+})
+
 console.log('')
 if (failures.length > 0) {
   console.error(failures.length + ' failed, ' + passed + ' passed')

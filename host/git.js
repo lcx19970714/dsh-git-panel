@@ -254,17 +254,15 @@ export async function readHead(repoRoot) {
 const SKIP_ALWAYS_DISPLAY = new Set(['.git'])
 
 /**
- * 读取工作区状态。
- * @returns {{ repoRoot, head: object, files: FileEntry[], counts: object, truncated: boolean }}
+ * 工作区条目：`git status --porcelain=v2 -z` 解析后过滤掉「永远不显示」的路径。
+ *
+ * 单独抽出来是因为有两个消费者：`status` 端点要完整条目（含行数统计），
+ * `branches/list` 的 state 只要计数。两边共用同一份解析，避免出现第二套 porcelain 解释。
+ *
+ * @returns {Promise<{files: FileEntry[], truncated: boolean}>}
  */
-export async function readStatus(repoRoot, options = {}) {
-  const { withLineCounts = true, signal } = options
-  const [head, remoteUrl] = await Promise.all([
-    readHead(repoRoot),
-    readRemoteUrl(repoRoot, { signal })
-  ])
-
-  const statusResult = await runGit(repoRoot, [
+async function readWorkingEntries(repoRoot, signal) {
+  const result = await runGit(repoRoot, [
     'status',
     '--porcelain=v2',
     '-z',
@@ -273,43 +271,114 @@ export async function readStatus(repoRoot, options = {}) {
     '--ignored=no'
   ], { signal })
 
-  const entries = parsePorcelainV2(statusResult.stdout.toString('utf8'))
   const files = []
-  for (const entry of entries) {
+  for (const entry of parsePorcelainV2(result.stdout.toString('utf8'))) {
     if (!entry.path || SKIP_ALWAYS_DISPLAY.has(entry.path)) continue
     if (entry.ignored) continue
     files.push(entry)
   }
+  files.sort((a, b) => naturalCompare(a.path, b.path))
+  return { files, truncated: result.truncated }
+}
 
-  // 行数统计：脏文件很多时跳过，保证面板打开速度。命令失败也不影响主流程。
-  const changed = files.length
-  if (withLineCounts && changed > 0 && changed <= 400) {
-    await attachLineCounts(repoRoot, files, signal)
-  }
-
-  const counts = {
-    total: files.length,
-    staged: 0,
-    unstaged: 0,
-    untracked: 0,
-    conflicted: 0
-  }
+/** 按条目算计数（`status` 与分支菜单的 state 同形）。 */
+function countStatus(files) {
+  const counts = { total: files.length, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 }
   for (const file of files) {
     if (file.conflicted) counts.conflicted += 1
     if (file.untracked) counts.untracked += 1
     if (file.staged) counts.staged += 1
     if (file.unstaged) counts.unstaged += 1
   }
+  return counts
+}
 
-  files.sort((a, b) => naturalCompare(a.path, b.path))
+/**
+ * 读取工作区状态。
+ *
+ * `pushed` 回答「这条分支的最新提交在远端有没有」：
+ *   true  = 远端同名引用与 HEAD 一致（不用推）
+ *   false = 远端没有这条分支、或远端比本地旧（要推）
+ *   null  = 无从判断：没有 origin、游离 HEAD、空仓库
+ * 判断必须比对远端跟踪引用的 sha，而不是「有没有 upstream」——`git push origin x`（不带 -u）
+ * 推成功了也不会有 upstream，那时不该继续提示用户去推。
+ *
+ * @returns {{ repoRoot, head: object, files: FileEntry[], counts: object, truncated: boolean, pushed: boolean|null }}
+ */
+export async function readStatus(repoRoot, options = {}) {
+  const { withLineCounts = true, signal } = options
+  const [head, remoteUrl, entries] = await Promise.all([
+    readHead(repoRoot),
+    readRemoteUrl(repoRoot, { signal }),
+    readWorkingEntries(repoRoot, signal)
+  ])
+  const { files, truncated } = entries
+
+  // 行数统计：脏文件很多时跳过，保证面板打开速度。命令失败也不影响主流程。
+  if (withLineCounts && files.length > 0 && files.length <= 400) {
+    await attachLineCounts(repoRoot, files, signal)
+  }
+
+  const pushed = remoteUrl === null || head.branch === null || head.head === null
+    ? null
+    : (await pushedState(repoRoot, head.branch, 'origin', { signal })).pushed
 
   return {
     repoRoot,
     ...head,
     remoteUrl,
+    pushed,
     files,
-    counts,
-    truncated: statusResult.truncated
+    counts: countStatus(files),
+    truncated
+  }
+}
+
+/** 仓库的 git 目录（工作树里的 .git，或裸仓库本身）。 */
+async function readGitDir(repoRoot, signal) {
+  const result = await runGit(repoRoot, ['rev-parse', '--absolute-git-dir'], { signal })
+  return result.stdout.toString('utf8').trim()
+}
+
+/**
+ * 有没有「多步操作」正在进行中。
+ *
+ * 只读标记文件，不调 git：`switch` 在 merge / rebase / cherry-pick / revert / am 进行中
+ * 一律 `fatal: cannot switch branch while ...`（实测），而 `branch` 不受限。
+ * 所以这个结果决定「创建时能不能切换」，必须在动手前就知道，而不是靠解析错误文本。
+ *
+ * @returns {null | 'merge' | 'rebase' | 'cherry-pick' | 'revert'}
+ */
+function readInProgress(gitDir) {
+  if (typeof gitDir !== 'string' || gitDir === '') {
+    throw new GitError('bad-request', '缺少 gitDir')
+  }
+  const has = (name) => existsSync(path.join(gitDir, name))
+  if (has('MERGE_HEAD')) return 'merge'
+  if (has('rebase-merge') || has('rebase-apply')) return 'rebase'
+  if (has('CHERRY_PICK_HEAD') || has('sequencer')) return 'cherry-pick'
+  if (has('REVERT_HEAD')) return 'revert'
+  return null
+}
+
+/**
+ * 分支菜单需要的仓库现状：HEAD 是哪、有没有多步操作、工作区脏到什么程度。
+ *
+ * 与 `status` 的区别只有一个：不做行数统计（菜单不要 diff 规模，只要计数）。
+ */
+export async function readBranchState(repoRoot, options = {}) {
+  const { signal } = options
+  const [head, gitDir, entries] = await Promise.all([
+    readHead(repoRoot),
+    readGitDir(repoRoot, signal),
+    readWorkingEntries(repoRoot, signal)
+  ])
+  return {
+    head: head.head,
+    detached: head.detached === true,
+    unborn: head.head === null,
+    inProgress: readInProgress(gitDir),
+    dirty: countStatus(entries.files)
   }
 }
 
@@ -1231,6 +1300,26 @@ function parseTrack(track) {
   }
 }
 
+/* ------------------------------------------------ 分支名与本地引用的判定 */
+
+/**
+ * 分支名合法性**由 git 判定**（`check-ref-format --branch`），不自己发明一套规则。
+ * 六个入口（切/建/跟踪/删）共用这一个，避免同一件事出现两种说法。
+ */
+async function assertBranchName(repoRoot, name, signal) {
+  const check = await runGit(repoRoot, ['check-ref-format', '--branch', name], { signal, allowFailure: true })
+  if (check.code !== 0) throw new GitError('bad-branch', '不是合法的分支名：' + name)
+}
+
+/** 本地是否已有同名分支（`refs/heads/<name>`，不联网）。 */
+async function localBranchExists(repoRoot, name, signal) {
+  const existing = await runGit(repoRoot, ['show-ref', '--verify', '--quiet', 'refs/heads/' + name], {
+    signal,
+    allowFailure: true
+  })
+  return existing.code === 0
+}
+
 /**
  * 把「仅远程」的分支变成能被 checkout 的本地分支。
  *
@@ -1242,15 +1331,143 @@ export async function trackRemoteBranch(repoRoot, remote, name, options = {}) {
   if (typeof name !== 'string' || name === '') throw new GitError('bad-request', '缺少分支名')
   const { signal } = options
 
-  const check = await runGit(repoRoot, ['check-ref-format', '--branch', name], { signal, allowFailure: true })
-  if (check.code !== 0) throw new GitError('bad-branch', '不是合法的分支名：' + name)
-
-  const existing = await runGit(repoRoot, ['show-ref', '--verify', '--quiet', 'refs/heads/' + name], { signal, allowFailure: true })
-  if (existing.code === 0) throw new GitError('branch-exists', '本地已经有同名分支：' + name)
+  await assertBranchName(repoRoot, name, signal)
+  if (await localBranchExists(repoRoot, name, signal)) {
+    throw new GitError('branch-exists', '本地已经有同名分支：' + name)
+  }
 
   await runGit(repoRoot, ['switch', '-c', name, '--track', remote + '/' + name], { signal })
   const head = await readHead(repoRoot)
   return { branch: head.branch, head: head.head, upstream: head.upstream ?? null }
+}
+
+/**
+ * 列远端跟踪引用（`refs/remotes/<remoteName>/*`）。
+ *
+ * 只读本地引用，不联网。返回的 `name` 已去掉 `<remote>/` 前缀（`origin/feature/x` → `feature/x`），
+ * `origin/HEAD` 这类符号引用跳过：它不是分支，只是远端默认分支的别名。
+ *
+ * @param {string} repoRoot
+ * @param {string} remoteName
+ * @param {{signal?: AbortSignal}} options
+ * @returns {Promise<Array<{name: string, sha: string}>>}
+ */
+export async function remoteTrackingRefs(repoRoot, remoteName = 'origin', options = {}) {
+  const remote = typeof remoteName === 'string' && remoteName !== '' ? remoteName : 'origin'
+  const result = await runGit(repoRoot, [
+    'for-each-ref',
+    '--format=%(refname:short)%09%(objectname)',
+    'refs/remotes/' + remote
+  ], { signal: options.signal })
+
+  const prefix = remote + '/'
+  const refs = []
+  for (const line of result.stdout.toString('utf8').split('\n')) {
+    if (line.trim() === '') continue
+    const tab = line.indexOf('\t')
+    const refname = (tab === -1 ? line : line.slice(0, tab)).trim()
+    const sha = tab === -1 ? '' : line.slice(tab + 1).trim()
+    if (!refname.startsWith(prefix)) continue
+    const name = refname.slice(prefix.length)
+    // `<remote>/HEAD` 是符号引用，不是分支
+    if (name === '' || name === 'HEAD') continue
+    refs.push({ name, sha })
+  }
+  return refs
+}
+
+/**
+ * 删除本地分支。
+ *
+ * 默认用 `git branch -d`：git 自己判断「有没有未合并的提交」，有就拒绝；
+ * 只有调用方显式传 `force: true`（界面上是二次确认过的「强制删除」）才用 `-D`。
+ * 当前分支与不存在的分支在拼命令前就拦下来，给出稳定错误码，而不是让 git 的原文
+ * 变成界面里没法分流的字符串。
+ *
+ * @param {string} repoRoot
+ * @param {string} name
+ * @param {{force?: boolean, signal?: AbortSignal}} options
+ * @returns {Promise<{name: string, deleted: true, forced: boolean}>}
+ */
+export async function deleteBranch(repoRoot, name, options = {}) {
+  if (typeof name !== 'string' || name === '') throw new GitError('bad-request', '缺少分支名')
+  const { signal, force = false } = options
+
+  // 引用名合法性由 git 判定（与其他分支操作共用同一个判定，不自己发明规则）
+  await assertBranchName(repoRoot, name, signal)
+
+  // 当前分支不能删：符号引用 HEAD 读不出来（游离 HEAD）时不挡，那种状态下没有「当前分支」。
+  const current = await runGit(repoRoot, ['symbolic-ref', '--short', '-q', 'HEAD'], { signal, allowFailure: true })
+  const currentBranch = current.code === 0 ? current.stdout.toString('utf8').trim() : ''
+  if (currentBranch !== '' && currentBranch === name) {
+    throw new GitError('current-branch', '当前分支不能删除：' + name)
+  }
+
+  if (!(await localBranchExists(repoRoot, name, signal))) {
+    throw new GitError('branch-not-found', '本地没有这个分支：' + name)
+  }
+
+  const result = await runGit(repoRoot, ['branch', force === true ? '-D' : '-d', name], { signal, allowFailure: true })
+  if (result.code !== 0) {
+    const output = result.stderr !== '' ? result.stderr : result.stdout.toString('utf8').trim()
+    if (/not fully merged/i.test(output)) {
+      throw new GitError('branch-unmerged',
+        '本地分支 ' + name + ' 有未合并的提交：确认无误请用「强制删除」。原始输出：' + output)
+    }
+    throw new GitError('git-failed', '删除分支失败：' + (output === '' ? 'git 退出码 ' + result.code : output))
+  }
+
+  return { name, deleted: true, forced: force === true }
+}
+
+/* ----------------------------------------------------------- 推送当前分支 */
+
+/** 推送是网络写操作，比 fetch 慢：给足上限，但不能无限等。 */
+const PUSH_TIMEOUT_MS = 5 * 60 * 1000
+
+/**
+ * 把当前分支推到 origin。
+ *
+ * 凭据口径与 `branch/pull` 的 fetch 完全一致：**用本机 git 凭据**（SSH key / 凭据管理器），
+ * 插件不掺和令牌 —— 用户自己克隆下来的仓库本来就能推拉，掺进来只会多一套要维护的路径。
+ *
+ * 只发一条命令：`git push --set-upstream origin <当前分支>`。它同时覆盖两种状态
+ * （从没推过 / 已经推过），不需要先判断有没有上游；上游已存在时只是重新确认，可安全重复执行。
+ *
+ * 失败不猜也不吞：认证失败与「远端有你没有的提交」翻译成可操作的原因，其余原样上抛。
+ */
+export async function pushBranch(repoRoot, options = {}) {
+  const { signal } = options
+  const head = await readHead(repoRoot)
+  if (head.branch === null || head.detached === true) {
+    throw new GitError('detached-head', '当前不在任何分支上：先切到一个分支再推送')
+  }
+  if (head.head === null) throw new GitError('unborn', '还没有任何提交：先提交一次再推送')
+  if ((await readRemoteUrl(repoRoot, { signal })) === null) {
+    throw new GitError('no-remote', '这个仓库没有配置远端（origin）：先把仓库接到 GitHub/Gitee 再推送')
+  }
+
+  const result = await runGit(repoRoot, ['push', '--set-upstream', 'origin', head.branch], {
+    signal,
+    timeoutMs: PUSH_TIMEOUT_MS,
+    allowFailure: true
+  })
+  if (result.code !== 0) {
+    const output = [result.stderr, result.stdout.toString('utf8').trim()].filter((part) => part !== '').join('\n')
+    if (/Authentication failed|Unauthorized|could not read Username|Permission denied|publickey|terminal prompts disabled/i.test(output)) {
+      throw new GitError('git-auth-failed',
+        '远端拒绝了这次推送：这台机器上没有可用的 git 凭据。'
+        + '配好 SSH key（或 Windows 的 Git Credential Manager）后再点推送。原始输出：' + output)
+    }
+    if (/non-fast-forward|fetch first|\[rejected\]|Updates were rejected/i.test(output)) {
+      throw new GitError('not-fast-forward',
+        '远端有你本地没有的提交，所以推送被拒绝：先在分支菜单点「拉取当前分支最新代码」，再推送。原始输出：' + output)
+    }
+    throw new GitError('git-failed', '推送失败：' + (output === '' ? 'git 退出码 ' + result.code : output))
+  }
+
+  const after = await readHead(repoRoot)
+  return { branch: after.branch, head: after.head, upstream: after.upstream, output: result.stderr }
 }
 
 /* --------------------------------------------------------- 拉取当前分支 */
@@ -1524,33 +1741,231 @@ export async function switchBranch(repoRoot, branchName, options = {}) {
     throw new GitError('bad-request', '缺少分支名')
   }
   const { signal } = options
-  // 引用名合法性由 git 判定，不自己发明一套规则
-  const check = await runGit(repoRoot, ['check-ref-format', '--branch', branchName], { signal, allowFailure: true })
-  if (check.code !== 0) throw new GitError('bad-branch', '不是合法的分支名：' + branchName)
+  await assertBranchName(repoRoot, branchName, signal)
 
   await runGit(repoRoot, ['switch', branchName], { signal })
   const head = await readHead(repoRoot)
   return { branch: head.branch, head: head.head }
 }
 
-/**
- * 从当前 HEAD 创建本地分支并立刻切过去。
+/* ===========================================================================
+ * 创建分支（可以携带未提交改动）
  *
- * 用 `git switch -c`，不带 `--force`：名字已被占用时 git 自己拒绝，
- * 不会覆盖已有分支。工作区与索引同样交给 git —— 改动能带过去就带过去，
- * 会被覆盖时原样报错，这里不自动 stash。
- */
-export async function createBranch(repoRoot, branchName, options = {}) {
-  if (typeof branchName !== 'string' || branchName === '') {
-    throw new GitError('bad-request', '缺少分支名')
-  }
-  const { signal } = options
-  const check = await runGit(repoRoot, ['check-ref-format', '--branch', branchName], { signal, allowFailure: true })
-  if (check.code !== 0) throw new GitError('bad-branch', '不是合法的分支名：' + branchName)
+ * 先讲清 git 的语义，因为它决定了这里**不需要**什么：
+ *
+ *  - 从当前 HEAD 建分支 = 只写 `refs/heads/<name>` 与 `HEAD` 两个文件，索引与工作区
+ *    一个字节都不动。所以「有未提交改动」根本不影响创建，改动天然跟着走，连 stash 都不需要
+ *    （实测：暂存/未暂存切分、已暂存新文件、删除、未跟踪文件全部原样保留）。
+ *  - 从**别的** ref 建分支才会动工作区：git 会在两棵树之间做一次两路合并，
+ *    脏文件与 `HEAD..base` 的差异重叠时拒绝（"would be overwritten by checkout"），
+ *    未跟踪文件在 base 里存在时也拒绝（"untracked working tree files would be
+ *    overwritten"）。预判用的就是这两条，见 predictCollision()。
+ *  - 合并 / 变基 / 拣选 / 回退进行中时 git 的 `switch` 是硬拒绝（128），`branch` 不受限。
+ *
+ * 因此只有两个正交选择，组合就是全部行为：
+ *    base      ：'HEAD'（默认，零风险）或任意可解析的 ref
+ *    checkout  ：建完是否立刻切过去
+ *
+ * 为什么**没有**「先 stash 再搬过去」这一档：base=HEAD 时不需要；跨 base 无重叠时 git
+ * 自己就会带过去、也不需要；跨 base 有重叠时 `stash apply --index` 必然在**同样的那几个
+ * 文件**上产生冲突（merge 语义决定的，实测），等于明知会冲突还要硬搬。所以撞车时给的是
+ * 两个零风险出口：改为从当前分支创建，或只建分支（不切换）。不做 stash、不做 force。
+ * =========================================================================== */
 
-  await runGit(repoRoot, ['switch', '-c', branchName], { signal })
+/** 进行中操作的中文名（只用于拼给人看的文案）。 */
+const PROGRESS_LABELS = Object.freeze({
+  merge: '合并',
+  rebase: '变基',
+  'cherry-pick': '拣选',
+  revert: '回退'
+})
+
+/**
+ * 解析创建基准。
+ *
+ * `kind` 用 `--symbolic-full-name` 判定（本地分支 / 远端跟踪引用 / 其它），不用文本猜测；
+ * `tracking` 只在「远端引用的分支段与新分支同名」时非空（base=origin/topic、name=topic），
+ * 因为那正是用户想要的跟踪关系。其余情况一律 `--no-track`：跨基准创建时把 `origin/dev`
+ * 设成特性分支的上游，`push.default=simple` 下第一次 push 就会卡住。
+ */
+async function resolveCreateBase(repoRoot, ref, name, signal) {
+  if (ref === 'HEAD') {
+    const head = await runGit(repoRoot, ['rev-parse', '--verify', '--quiet', 'HEAD'], { signal, allowFailure: true })
+    return {
+      ref,
+      kind: 'head',
+      sha: head.code === 0 ? head.stdout.toString('utf8').trim() : null,
+      tracking: null
+    }
+  }
+
+  const commit = await runGit(repoRoot, ['rev-parse', '--verify', '--quiet', ref + '^{commit}'], {
+    signal,
+    allowFailure: true
+  })
+  if (commit.code !== 0) {
+    throw new GitError('base-not-found', '找不到创建基准 ' + ref + '：它可能还没有 fetch 到本地')
+  }
+  const sha = commit.stdout.toString('utf8').trim()
+
+  const symbolic = await runGit(repoRoot, ['rev-parse', '--symbolic-full-name', ref], { signal, allowFailure: true })
+  const full = symbolic.code === 0 ? symbolic.stdout.toString('utf8').trim() : ''
+  if (full.startsWith('refs/heads/')) return { ref, kind: 'local', sha, tracking: null }
+  if (full.startsWith('refs/remotes/')) {
+    const short = full.slice('refs/remotes/'.length)
+    const tracking = short.length > name.length + 1 && short.endsWith('/' + name) ? short : null
+    return { ref, kind: 'remote', sha, tracking }
+  }
+  // tag / sha / 表达式：能解析成提交就能当基准，但没有「跟踪」这回事
+  return { ref, kind: 'commit', sha, tracking: null }
+}
+
+/**
+ * 预判「跨基准创建会不会被 git 拒绝」。
+ *
+ * 判定与 git 自己的拒绝规则一一对应（实测，见 docs/BRANCH-CREATE.md §1.2）：
+ *  - 脏路径（已暂存 / 未暂存 / 删除 / 已暂存的新文件 / 未跟踪）∩ `HEAD..base` 的差异路径 → 拒绝
+ *  - 未跟踪文件在 base 里存在 → 拒绝（哪怕内容完全一致也拒绝，实测）
+ *
+ * `--no-renames` 让「base 里被重命名」表现为 `D 旧路径 + A 新路径`，两条路径都落进差异集合里，
+ * 不需要单独处理 R 条目。返回的是**预测**：最终裁决权在 git，预检若与之不符以 git 原文为准。
+ */
+async function predictCollision(repoRoot, baseSha, files, signal) {
+  const dirtyPaths = new Set()
+  const untrackedPaths = new Set()
+  for (const file of files) {
+    if (file.untracked) {
+      untrackedPaths.add(file.path)
+      dirtyPaths.add(file.path)
+      continue
+    }
+    if (file.staged || file.unstaged || file.conflicted) dirtyPaths.add(file.path)
+  }
+  if (baseSha === null || dirtyPaths.size === 0) return { tracked: [], untracked: [] }
+
+  const result = await runGit(repoRoot, ['diff', '--no-renames', '--name-status', '-z', 'HEAD', baseSha], { signal })
+  const tokens = result.stdout.toString('utf8').split('\u0000')
+  const tracked = []
+  const untracked = []
+  for (let index = 0; index + 1 < tokens.length; index += 2) {
+    const filePath = tokens[index + 1]
+    if (tokens[index] === '' || !filePath || !dirtyPaths.has(filePath)) continue
+    // 未跟踪 ⇒ 不在 HEAD 里 ⇒ 它在 base 里出现一定表现为 A；其余都算已跟踪文件的重叠
+    if (untrackedPaths.has(filePath)) untracked.push(filePath)
+    else tracked.push(filePath)
+  }
+  tracked.sort(naturalCompare)
+  untracked.sort(naturalCompare)
+  return { tracked, untracked }
+}
+
+/** 撞车时的错误文案：把文件列出来（最多 8 个），并给出两个零风险出口。 */
+function overwriteMessage(ref, collision) {
+  const all = collision.tracked.concat(collision.untracked)
+  const shown = all.slice(0, 8)
+  const rest = all.length - shown.length
+  return '有 ' + all.length + ' 个文件的改动与 ' + ref + ' 的差异重叠，git 会拒绝这次切换：\n'
+    + shown.map((item) => '  ' + item).join('\n')
+    + (rest > 0 ? '\n  …另有 ' + rest + ' 个' : '')
+    + '\n可以：改为从当前分支创建（改动零风险跟随），或者只建分支不切换。'
+}
+
+/**
+ * 创建前的检查阶段：只读地判断「能不能建、从哪建」，能建才把基准算出来。
+ *
+ * 拒绝一律抛 GitError（与其余分支操作同一套错误语义），并且都发生在**任何写操作之前**，
+ * 所以失败时仓库状态一定是原样的。
+ *
+ * @returns {Promise<{base: object, head: object}>}
+ */
+async function planCreateBranch(repoRoot, request, options) {
+  const { signal } = options
+  const { name, base, checkout } = request
+
   const head = await readHead(repoRoot)
-  return { branch: head.branch, head: head.head }
+  const unborn = head.head === null
+
+  await assertBranchName(repoRoot, name, signal)
+  if (await localBranchExists(repoRoot, name, signal)) {
+    throw new GitError('branch-exists', '本地已经有这个分支：' + name)
+  }
+
+  const resolved = await resolveCreateBase(repoRoot, base, name, signal)
+
+  if (!checkout) {
+    // `git branch <name> <base>` 在没有任何提交的仓库里会失败（HEAD 不是合法对象名），
+    // 这种状态下「只建分支」不是一个可达状态，直接说清楚，而不是让 git 用一句话失败。
+    if (unborn) throw new GitError('unborn', '仓库还没有任何提交：只能创建并切换分支')
+    return { base: resolved, head }
+  }
+
+  const inProgress = readInProgress(await readGitDir(repoRoot, signal))
+  if (inProgress !== null) {
+    throw new GitError('in-progress',
+      '正在' + PROGRESS_LABELS[inProgress] + '，git 不允许切换分支：'
+      + '先结束或中止它，或者只建分支（不切换）')
+  }
+
+  // 从当前 HEAD 建：不写工作区、不会撞车，改动自动跟随 —— 到此为止，
+  // 连工作区状态都不用读（这是默认路径，不能为大仓库多付一次 porcelain 的钱）
+  if (resolved.kind === 'head') return { base: resolved, head }
+
+  const entries = await readWorkingEntries(repoRoot, signal)
+  const collision = await predictCollision(repoRoot, resolved.sha, entries.files, signal)
+  if (collision.tracked.length + collision.untracked.length > 0) {
+    throw new GitError('would-overwrite', overwriteMessage(base, collision), {
+      base,
+      tracked: collision.tracked,
+      untracked: collision.untracked
+    })
+  }
+  // 脏但与 base 无重叠：git 自己会把改动带过去（实测保留暂存/未暂存切分）
+  return { base: resolved, head }
+}
+
+/** `switch -c` 的参数：从 HEAD 建不带起始点；跨基准用解析出的 sha，保证预检与执行看同一棵树。 */
+function switchCreateArgs(name, base) {
+  const args = ['switch', '-c', name]
+  if (base.kind === 'head') return args
+  if (base.tracking !== null) return [...args, '--track', base.tracking]
+  return [...args, '--no-track', base.sha]
+}
+
+/**
+ * 创建分支（可携带未提交改动）。
+ *
+ * 先跑 `planCreateBranch` 做完全部判定，再执行唯一一条 git 命令 —— 判定与执行之间
+ * 没有第二套规则，失败时也一定什么都没做。
+ *
+ * @param {string} repoRoot
+ * @param {{name: string, base: string, checkout: boolean}} request
+ * @param {{signal?: AbortSignal}} options
+ */
+export async function createBranch(repoRoot, request, options = {}) {
+  const { signal } = options
+  const { name, base, checkout } = request
+  const plan = await planCreateBranch(repoRoot, request, options)
+
+  if (checkout) {
+    // head：从当前 HEAD 建（不带起始点，实测不碰索引与工作区）；
+    // 跨基准：带起始点走 git 自己的两路合并，改动无重叠时它会一起带过去
+    await runGit(repoRoot, switchCreateArgs(name, plan.base), { signal })
+  } else {
+    // 只建 ref：HEAD 与工作区一个字节都不动，改动仍属于原分支
+    await runGit(repoRoot, ['branch', name, plan.base.sha], { signal })
+  }
+
+  const after = await readHead(repoRoot)
+  const entries = await readWorkingEntries(repoRoot, signal)
+  return {
+    branch: after.branch,
+    head: after.head,
+    previousBranch: plan.head.branch,
+    previousHead: plan.head.head,
+    base: { ref: base, kind: plan.base.kind, sha: plan.base.sha },
+    switched: checkout,
+    carried: countStatus(entries.files)
+  }
 }
 
 /**

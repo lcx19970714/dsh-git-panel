@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 33 个 */
+/* 模块: 35 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -335,7 +335,16 @@ window.__ModuleLoader__.load({
         background: var(--dsw-alias-state-business-primary);
         color: var(--dsw-alias-label-primary-inverted);
       }
-      .dgp-btn[data-variant="primary"]:hover:not(:disabled) { filter: brightness(1.06); }
+      /* 主按钮 hover 必须在这里再声明一次底色：
+         通用规则 .dgp-btn:hover:not(:disabled) 的权重 (0,3,0) 高于
+         .dgp-btn[data-variant="primary"] 的 (0,2,0)，只写 filter 的话底色会被那条通用规则
+         换成中性 hover 层，而文字仍是反色 —— 日间是白字压浅层、夜间是黑字压深层，
+         两边都会变成「指针一移上去按钮就消失」。底色和文字必须成对声明，
+         hover、禁用、日间、夜间才对齐。 */
+      .dgp-btn[data-variant="primary"]:hover:not(:disabled) {
+        background: var(--dsw-alias-state-business-primary);
+        filter: brightness(1.06);
+      }
       .dgp-btn[data-variant="ghost"] { background: 0 0; }
       .dgp-btn[data-variant="ghost"]:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
       .dgp-btn[data-variant="danger"] { background: 0 0; color: var(--dsw-alias-state-error-primary); }
@@ -456,14 +465,15 @@ window.__ModuleLoader__.load({
         background: var(--dsw-alias-bg-module-platform);
       }
 
-      /* 分支菜单底部：输入名字后创建并切过去 */
+      /* 分支菜单底部：创建区（名字 + 创建基准 + 是否切换 + 现状提示 + 撞车出口） */
       .dgp-branch-create {
         display: flex;
-        align-items: center;
+        flex-direction: column;
         gap: 4px;
         padding: 4px 4px 2px;
       }
-      .dgp-branch-create > .dgp-input {
+      .dgp-branch-create-row { display: flex; align-items: center; gap: 4px; }
+      .dgp-branch-create-row > .dgp-input {
         flex: 1 1 auto;
         min-width: 0;
         height: 24px;
@@ -471,7 +481,34 @@ window.__ModuleLoader__.load({
         font-family: var(--ds-font-family-code);
         font-size: 11px;
       }
-      .dgp-branch-create > .dgp-btn { flex: none; }
+      .dgp-branch-create-row > .dgp-btn { flex: none; }
+      /* 基准选择与「创建后切换」同排：两者都是「怎么建」的参数，放一起才读得通 */
+      .dgp-branch-create-opts { display: flex; align-items: center; gap: 6px; min-width: 0; }
+      .dgp-branch-base-label { flex: none; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+      .dgp-branch-base {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: 22px;
+        padding: 0 4px;
+        font-family: var(--ds-font-family-code);
+        font-size: 11px;
+      }
+      .dgp-branch-check {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: var(--dsw-alias-label-tertiary);
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .dgp-branch-check > input { margin: 0; }
+      .dgp-branch-check:has(> input:disabled) { opacity: .5; cursor: default; }
+      /* 撞车：不是错误条，而是「换个选择」的提示块 */
+      .dgp-branch-blocked { display: flex; flex-direction: column; gap: 4px; }
+      .dgp-branch-blocked .dgp-branch-hint { white-space: pre-line; }
+      .dgp-branch-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px; }
       .dgp-addform { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 8px; }
       .dgp-addform-actions { display: flex; justify-content: flex-end; gap: 6px; }
       .dgp-list {
@@ -1514,6 +1551,43 @@ window.__ModuleLoader__.load({
       .dgp-pull-verdict[data-state="APPROVED"] { color: var(--dsw-alias-state-success-primary); }
       .dgp-pull-verdict[data-state="CHANGES_REQUESTED"] { color: var(--dsw-alias-state-error-primary); }
       .dgp-detail-notice { margin: 0; color: var(--dsw-alias-state-success-primary); font-size: 11px; }
+      /* 「还没推到远端」的提示：变更页签常驻一条 + 创建 PR 表单里阻断用同一条（PushHint）。
+         面板自己不做 push，所以必须把命令摆出来；命令用 user-select: all —— 点一下就能整条复制。 */
+      .dgp-push-hint {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin: 0 8px 6px;
+        padding: 8px 10px;
+        border-left: 2px solid var(--dsw-alias-state-warn-label);
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+      }
+      .dgp-push-hint-title { margin: 0; font-size: 11px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+      .dgp-push-hint-why { margin: 0; font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
+      .dgp-push-hint-after { margin: 0; font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-tertiary); }
+      /* 命令与「推送到远端」按钮同排：按钮是主路径，命令是失败时能照抄排查的退路 */
+      .dgp-push-hint-action { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+      .dgp-push-hint-error {
+        margin: 0;
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--dsw-alias-state-error-primary);
+        white-space: pre-line;
+      }
+      .dgp-command {
+        align-self: flex-start;
+        max-width: 100%;
+        padding: 0 6px;
+        font-family: var(--ds-font-family-code);
+        font-size: 11px;
+        line-height: 1.8;
+        color: var(--dsw-alias-label-primary);
+        background: var(--dsw-alias-bg-module-platform);
+        border: 1px solid var(--dsw-alias-border-l1);
+        border-radius: var(--dsw-radius-xs);
+        user-select: all;
+      }
       /* 远端仓库详情（右侧） */
       .dgp-detail { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 12px 14px; overflow: auto; }
       .dgp-detail-top { display: flex; align-items: flex-start; gap: 10px; }
@@ -1523,7 +1597,6 @@ window.__ModuleLoader__.load({
       .dgp-detail-desc { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.6; }
       .dgp-detail-meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
       .dgp-detail-failure { margin: 0; color: var(--dsw-alias-state-warn-label); font-size: 11px; }
-      .dgp-detail-code { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: var(--dsw-radius-xs); background: var(--dsw-alias-bg-module-platform); }
       .dgp-detail-section { display: flex; flex-direction: column; gap: 4px; }
       .dgp-detail-head { display: flex; align-items: center; gap: 8px; }
       .dgp-detail-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }
@@ -1567,6 +1640,102 @@ window.__ModuleLoader__.load({
       }
       .dgp-detail-item > .dgp-detail-meta > .dgp-detail-author { color: var(--dsw-alias-label-secondary); }
       .dgp-detail-meta { flex: none; }
+
+      /* ── 远端仓库详情 · 分支区（本地/远端/当前/默认/领先落后/上游状态） ── */
+      .dgp-branch-section { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+      .dgp-branch-head { display: flex; align-items: center; gap: 8px; }
+      .dgp-branch-title { flex: none; font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+      .dgp-branch-summary { flex: 1 1 auto; min-width: 0; color: var(--dsw-alias-label-tertiary); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dgp-branch-head-actions { display: flex; flex: none; gap: 2px; }
+      /* 只补高度与收缩规则，边框/底色沿用 .dgp-input */
+      .dgp-branch-filter { flex: none; height: 24px; }
+      .dgp-branch-status { display: flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+      .dgp-branch-status[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
+      .dgp-branch-status[data-tone="warn"] { color: var(--dsw-alias-state-warn-label); }
+      /* 多行状态/错误/提示容器 */
+      .dgp-branch-statuses { display: flex; flex-direction: column; gap: 2px; }
+      .dgp-branch-list { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
+      /* 行与行尾「⋯」并排；删除确认整行换到下一行（flex-basis 100%） */
+      .dgp-branch-item { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; border-radius: var(--dsw-radius-xs); }
+      .dgp-branch-item[data-current="true"] { background: var(--dsw-alias-bg-module-platform); }
+      .dgp-branch-item[data-busy="true"] { opacity: .6; }
+      .dgp-branch-row {
+        display: flex;
+        flex: 1 1 auto;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        height: 26px;
+        padding: 3px 4px;
+        border: 0;
+        border-radius: var(--dsw-radius-xs);
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .dgp-branch-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+      .dgp-branch-row:disabled { cursor: default; }
+      .dgp-branch-row:disabled:hover { background: transparent; }
+      .dgp-branch-row:focus-visible, .dgp-branch-more:focus-visible {
+        outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+        outline-offset: -1px;
+      }
+      .dgp-branch-ico { flex: none; color: var(--dsw-alias-label-tertiary); }
+      .dgp-branch-ico[data-current="true"] { color: var(--dsw-alias-state-business-primary); }
+      .dgp-branch-name { flex: 1 1 auto; min-width: 0; color: var(--dsw-alias-label-primary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dgp-branch-tags { display: flex; flex: none; align-items: center; gap: 3px; }
+      .dgp-branch-tag {
+        flex: none;
+        padding: 0 4px;
+        border: 1px solid var(--dsw-alias-border-l2);
+        border-radius: var(--dsw-radius-xs);
+        color: var(--dsw-alias-label-tertiary);
+        font-size: 10px;
+        line-height: 15px;
+      }
+      .dgp-branch-tag[data-active="true"] {
+        border-color: var(--dsw-alias-state-business-primary);
+        color: var(--dsw-alias-state-business-primary);
+      }
+      .dgp-branch-track { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+      /* 20×20 图标按钮：视觉同 .dgp-iconbtn，但独立类名便于分支行内定位 */
+      .dgp-branch-more {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border: 0;
+        border-radius: var(--dsw-radius-xs);
+        background: transparent;
+        color: var(--dsw-alias-label-secondary);
+        line-height: 1;
+        cursor: pointer;
+      }
+      .dgp-branch-more svg { width: 14px; height: 14px; }
+      .dgp-branch-more:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
+      .dgp-branch-more:disabled { opacity: .4; cursor: default; }
+      .dgp-branch-confirm {
+        display: flex;
+        flex: 1 0 100%;
+        flex-direction: column;
+        gap: 4px;
+        padding: 6px 8px;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+        color: var(--dsw-alias-label-secondary);
+        font-size: 11px;
+      }
+      .dgp-branch-confirm-actions { display: flex; justify-content: flex-end; gap: 6px; }
+      .dgp-branch-confirm-text { color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.5; }
+      .dgp-branch-hint { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; }
+      /* 提示分两档：中性（改动计数 / 同名远端）用 tertiary，需要用户换个选择的（进行中 / 撞车）用 warn */
+      .dgp-branch-hint[data-tone="warn"] { color: var(--dsw-alias-state-warn-label); }
+      .dgp-branch-empty { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 
       .dgp-remote-item[data-active="true"] { background: var(--dsw-alias-interactive-bg-hover); }
 
@@ -1800,9 +1969,71 @@ window.__ModuleLoader__.load({
         'branch.empty': '这个仓库还没有任何分支',
         'branch.switching': '正在切换到 {name}…',
         'branch.creating': '正在创建并切换到 {name}…',
+        'branch.creatingOnly': '正在创建 {name}（不切换）…',
         'branch.create': '创建',
+        'branch.createOnly': '只建分支',
+        'branch.createOnlyAction': '只建分支（不切换）',
         'branch.createPlaceholder': '新分支名，回车创建并切换',
+        'branch.baseLabel': '从',
+        'branch.baseHead': '当前分支 {branch}',
+        'branch.baseLocalOption': '{name}（本地）',
+        'branch.baseRemoteOption': '{ref}（远端）',
+        'branch.baseHint': '新分支从哪里开始：默认「当前分支」= 沿用你现在的工作区，未提交的改动会一起带过去；选别的分支 = 从那个分支的最新提交开始',
+        'branch.baseNoteClean': '新分支从 {base} 的最新提交开始',
+        'branch.baseNoteDirty': '新分支从 {base} 的最新提交开始；你的 {total} 处改动会跟着一起带过去（和它撞上时，插件会先拦下来让你选）',
+        'branch.checkoutLabel': '创建后切换',
+        'branch.checkoutHint': '创建后立刻切到新分支；不勾选则只建分支引用，工作区一个字节都不动',
+        'branch.dirtyHint': '当前 {branch} · {total} 处改动（{staged} 已暂存）',
+        'branch.inProgressHint': '{kind}进行中，git 不允许切换分支，只能选「{action}」',
+        'branch.progressMerge': '合并',
+        'branch.progressRebase': '变基',
+        'branch.progressCherryPick': '拣选',
+        'branch.progressRevert': '回退',
+        'branch.sameRemoteHint': '远端已有 {ref}：要跟踪它，把「从」选成 {ref}',
+        'branch.fromHead': '改为从当前分支创建',
+        'branch.created': '已创建并切换到 {name}',
+        'branch.createdFollow': '已创建并切换到 {name}；{total} 处改动已跟随（未提交）',
+        'branch.createdOnly': '已创建 {name}（未切换）；改动仍留在当前分支的工作区里',
         'branch.failed': '失败：{message}',
+        'branch.sectionTitle': '分支',
+        'branch.summary': '{total} 个 · 本地 {local}',
+        'branch.filter': '筛选分支…',
+        'branch.loadFailed': '读取分支失败：{message}',
+        'branch.emptyRemote': '远端没有分支',
+        'branch.truncated': '远端分支较多，只显示前 {count} 个',
+        'branch.notCloned': '本地没有这个仓库：可以查看和删除远端分支，拉取到项目后才能切换',
+        'branch.localRepo': '{name} 已克隆到项目',
+        'branch.refreshing': '正在刷新分支…',
+        'branch.fetchingDone': '已获取远程更新',
+        'branch.currentTag': '当前',
+        'branch.defaultTag': '默认',
+        'branch.protectedTag': '受保护',
+        'branch.remoteUpdated': '远端有新提交',
+        'branch.aheadBehind': '↑{ahead} ↓{behind}',
+        'branch.switchTo': '切换到此分支',
+        'branch.switched': '已切换到 {name}',
+        'branch.track': '创建本地跟踪分支',
+        'branch.tracked': '已创建本地分支 {name}',
+        'branch.copy': '复制分支名',
+        'branch.copied': '已复制 {name}',
+        'branch.openWeb': '在浏览器打开',
+        'branch.more': '更多操作',
+        'branch.deleteLocal': '删除本地分支',
+        'branch.deleteRemote': '删除远端分支',
+        'branch.deleteLocalConfirm': '删除本地分支 {name}？未合并的提交会丢。',
+        'branch.deleteRemoteConfirm': '删除远端分支 {name}？会真的从平台上删掉，其他人就拉取不到这个分支了。',
+        'branch.deleteRun': '删除',
+        'branch.deleteForce': '强制删除（有未合并提交）',
+        'branch.deleting': '正在删除 {name}…',
+        'branch.deletedLocal': '已删除本地分支 {name}',
+        'branch.deletedRemote': '已删除远端分支 {name}',
+        'branch.currentNoDelete': '当前分支不能删除',
+        'branch.defaultNoDelete': '默认分支不能删除',
+        'branch.protectedNoDelete': '受保护的分支不能删除',
+        'branch.noLocalOps': '本地没有这个仓库，无法执行这个操作',
+        'branch.notLocal': '本地没有',
+        'branch.remoteUnknown': '远端未知',
+        'branch.notOnRemote': '远端没有这个分支',
         'pull.loading': '正在读取 PR #{number}…',
         'pull.failed': '读取 PR 失败',
         'pull.back': '返回仓库',
@@ -1906,10 +2137,9 @@ window.__ModuleLoader__.load({
         'pull.state.merged': '已合并',
         'pull.state.unknown': '状态未知',
         'detail.pickRepo': '从左侧选一个仓库',
-        'detail.pickRepoHint': '右侧会显示它的代码概况、Issues 与 PR',
+        'detail.pickRepoHint': '右侧会显示它的分支、Issues 与 PR',
         'detail.loading': '正在读取 {name}…',
         'detail.failed': '读取仓库详情失败',
-        'detail.code': '代码',
         'detail.created': '创建 {time}',
         'detail.updated': '更新 {time}',
         'detail.issues': 'Issues',
@@ -1984,7 +2214,13 @@ window.__ModuleLoader__.load({
         'pr.head': '源分支',
         'pr.base': '目标分支',
         'pr.baseHint': '记住上次选择，下次默认用它',
-        'pr.notPushed': '当前分支还没有完全推送到 origin：先在变更里推送，再创建 PR。',
+        'push.title': '这条分支还只在你电脑上',
+        'push.why': '远端没有它的最新提交：别人看不到你的改动，也没法在平台上开 PR。',
+        'push.run': '推送到远端',
+        'push.pushing': '正在推送…',
+        'push.done': '已推送 {branch}',
+        'push.command': 'git push -u origin {branch}',
+        'push.after': '推完这里会自动消失；以后有了新提交，再点一次推送就行。',
         'pr.subject': '标题与描述',
         'pr.generate': '生成标题与描述',
         'pr.generating': '正在生成…',
@@ -1993,6 +2229,7 @@ window.__ModuleLoader__.load({
         'pr.bodyPlaceholder': 'PR 描述（Markdown）',
         'pr.create': '创建 PR',
         'pr.creating': '正在创建…',
+        'pr.blockedNotPushed': '分支还没推送到远端，先在左侧点「推送到远端」',
         'pr.cancel': '取消',
         'pr.done': '完成',
         'pr.openCreated': '打开 PR',
@@ -2193,9 +2430,71 @@ window.__ModuleLoader__.load({
         'branch.empty': 'This repository has no branches yet',
         'branch.switching': 'Switching to {name}…',
         'branch.creating': 'Creating and switching to {name}…',
+        'branch.creatingOnly': 'Creating {name} (no switch)…',
         'branch.create': 'Create',
+        'branch.createOnly': 'Create only',
+        'branch.createOnlyAction': 'Create only (no switch)',
         'branch.createPlaceholder': 'New branch name, Enter to create and switch',
+        'branch.baseLabel': 'From',
+        'branch.baseHead': 'Current branch {branch}',
+        'branch.baseLocalOption': '{name} (local)',
+        'branch.baseRemoteOption': '{ref} (remote)',
+        'branch.baseHint': 'Where the new branch starts: "current branch" keeps your worktree as-is and carries uncommitted changes along; another branch starts from that branch\u2019s latest commit',
+        'branch.baseNoteClean': 'The new branch starts at the latest commit of {base}',
+        'branch.baseNoteDirty': 'The new branch starts at the latest commit of {base}; your {total} changes come along (if they collide, the panel asks you first)',
+        'branch.checkoutLabel': 'Switch after create',
+        'branch.checkoutHint': 'Switch to the new branch right away; unchecked creates only the ref and leaves the worktree untouched',
+        'branch.dirtyHint': 'On {branch} · {total} changed ({staged} staged)',
+        'branch.inProgressHint': '{kind} in progress — git will not switch branches; "{action}" is the only option',
+        'branch.progressMerge': 'Merge',
+        'branch.progressRebase': 'Rebase',
+        'branch.progressCherryPick': 'Cherry-pick',
+        'branch.progressRevert': 'Revert',
+        'branch.sameRemoteHint': 'The remote already has {ref}: pick {ref} under "From" to track it',
+        'branch.fromHead': 'Create from current branch',
+        'branch.created': 'Created and switched to {name}',
+        'branch.createdFollow': 'Created and switched to {name}; {total} changed carried over (not committed)',
+        'branch.createdOnly': 'Created {name} (not switched); your changes stay in the current worktree',
         'branch.failed': 'Failed: {message}',
+        'branch.sectionTitle': 'Branches',
+        'branch.summary': '{total} total · {local} local',
+        'branch.filter': 'Filter branches…',
+        'branch.loadFailed': 'Could not load branches: {message}',
+        'branch.emptyRemote': 'No branches on the remote',
+        'branch.truncated': 'Showing the first {count} remote branches',
+        'branch.notCloned': 'Not cloned locally: you can inspect and delete remote branches; clone it to the project to switch',
+        'branch.localRepo': '{name} is cloned into the project',
+        'branch.refreshing': 'Refreshing branches…',
+        'branch.fetchingDone': 'Fetched remote updates',
+        'branch.currentTag': 'current',
+        'branch.defaultTag': 'default',
+        'branch.protectedTag': 'protected',
+        'branch.remoteUpdated': 'remote has newer commits',
+        'branch.aheadBehind': '↑{ahead} ↓{behind}',
+        'branch.switchTo': 'Switch to this branch',
+        'branch.switched': 'Switched to {name}',
+        'branch.track': 'Create local tracking branch',
+        'branch.tracked': 'Created local branch {name}',
+        'branch.copy': 'Copy branch name',
+        'branch.copied': 'Copied {name}',
+        'branch.openWeb': 'Open in browser',
+        'branch.more': 'More actions',
+        'branch.deleteLocal': 'Delete local branch',
+        'branch.deleteRemote': 'Delete remote branch',
+        'branch.deleteLocalConfirm': 'Delete local branch {name}? Unmerged commits will be lost.',
+        'branch.deleteRemoteConfirm': 'Delete remote branch {name}? It is really deleted on the remote, so others can no longer fetch it.',
+        'branch.deleteRun': 'Delete',
+        'branch.deleteForce': 'Force delete (unmerged commits)',
+        'branch.deleting': 'Deleting {name}…',
+        'branch.deletedLocal': 'Deleted local branch {name}',
+        'branch.deletedRemote': 'Deleted remote branch {name}',
+        'branch.currentNoDelete': 'The current branch cannot be deleted',
+        'branch.defaultNoDelete': 'The default branch cannot be deleted',
+        'branch.protectedNoDelete': 'Protected branches cannot be deleted',
+        'branch.noLocalOps': 'Not cloned locally: this action needs a local repository',
+        'branch.notLocal': 'no local',
+        'branch.remoteUnknown': 'remote unknown',
+        'branch.notOnRemote': 'not on the remote',
         'pull.loading': 'Loading pull request #{number}…',
         'pull.failed': 'Could not load the pull request',
         'pull.back': 'Back to repository',
@@ -2299,10 +2598,9 @@ window.__ModuleLoader__.load({
         'pull.state.merged': 'Merged',
         'pull.state.unknown': 'Unknown state',
         'detail.pickRepo': 'Pick a repository on the left',
-        'detail.pickRepoHint': 'Its code overview, issues and pull requests show up here',
+        'detail.pickRepoHint': 'Its branches, issues and pull requests show up here',
         'detail.loading': 'Loading {name}…',
         'detail.failed': 'Could not load the repository',
-        'detail.code': 'Code',
         'detail.created': 'opened {time}',
         'detail.updated': 'updated {time}',
         'detail.issues': 'Issues',
@@ -2377,7 +2675,13 @@ window.__ModuleLoader__.load({
         'pr.head': 'From branch',
         'pr.base': 'Into branch',
         'pr.baseHint': 'Remembers your last choice',
-        'pr.notPushed': 'This branch is not fully pushed to origin: push first, then create the PR.',
+        'push.title': 'This branch is not on the remote yet',
+        'push.why': 'The remote does not have its latest commit: nobody else can see your work, and no pull request can be opened.',
+        'push.run': 'Push to remote',
+        'push.pushing': 'Pushing…',
+        'push.done': 'Pushed {branch}',
+        'push.command': 'git push -u origin {branch}',
+        'push.after': 'This hint disappears once pushed; after more commits just click push again.',
         'pr.subject': 'Title & description',
         'pr.generate': 'Generate title & description',
         'pr.generating': 'Generating…',
@@ -2386,6 +2690,7 @@ window.__ModuleLoader__.load({
         'pr.bodyPlaceholder': 'Pull request description (Markdown)',
         'pr.create': 'Create PR',
         'pr.creating': 'Creating…',
+        'pr.blockedNotPushed': 'Branch is not on the remote yet — push it from the hint on the left',
         'pr.cancel': 'Cancel',
         'pr.done': 'Done',
         'pr.openCreated': 'Open PR',
@@ -2552,6 +2857,7 @@ window.__ModuleLoader__.load({
       const { EmptyState, LoadingState, InlineNote } = __m("./components/States.js");
       const { CommitBox } = __m("./components/CommitBox.js");
       const { CreatePullForm } = __m("./components/CreatePullForm.js");
+      const { PushHint } = __m("./components/PushHint.js");
       const { PullStatusCard } = __m("./components/PullStatusCard.js");
       const { SettingsView } = __m("./components/SettingsView.js");
       const { RemotePane } = __m("./components/RemotePane.js");
@@ -2625,6 +2931,12 @@ window.__ModuleLoader__.load({
         // 右侧详情：选中的仓库与它的数据
         const [remoteSelection, setRemoteSelection] = useState(null)
         const [remoteDetail, setRemoteDetail] = useState(null)
+        // 选中仓库的分支全貌：{ loading, error, data }（data 来自 remote/branches）
+        const [remoteBranches, setRemoteBranches] = useState(null)
+        const remoteBranchesRef = useRef(null)
+        remoteBranchesRef.current = remoteBranches
+        // 分支数据是「按仓库」的：记住上次拉的是哪个 fullName，避免切页签/关 PR 时重复请求
+        const branchSelectionRef = useRef(null)
         const remoteReposRef = useRef([])
         remoteReposRef.current = remoteRepos
         // 面板内打开的 PR：{ number } + 它的详情
@@ -2727,11 +3039,18 @@ window.__ModuleLoader__.load({
         /** 生成中的已等待毫秒数：每 200ms 刷新一次，让用户看得见它在跑。 */
         const [generateElapsed, setGenerateElapsed] = useState(0)
         const [commitNote, setCommitNote] = useState(null)
+        /** 推送当前分支的状态：{ busy, error }。error 直接显示在「还只在你电脑上」提示块里。 */
+        const [pushState, setPushState] = useState({ busy: false, error: null })
+        const pushStateRef = useRef(pushState)
+        pushStateRef.current = pushState
         const [showSettings, setShowSettings] = useState(false)
         /**
          * 创建 PR 表单（右侧面板）：
          * { loading, error, repo, head, bases, accounts, accountId, base, title, body, bodyHeight,
-         *   pushed, generating, creating, created, notice }
+         *   generating, creating, created, notice }
+         *
+         * 这里没有 pushed：「分支推没推上去」属于仓库状态，唯一来源是 status.pushed。
+         * 表单另存一份快照只会有两个后果 —— 同一屏出现两块同样的提示、以及推送后两边对不上。
          */
         const [pullForm, setPullForm] = useState(null)
         /** 当前分支的 PR 状态卡：{ loading, error, data } */
@@ -2839,6 +3158,8 @@ window.__ModuleLoader__.load({
           // 换根 = 换了一批文件：草稿（按相对路径存）不再有意义
           setDrafts(new Map())
           setSaveState({ busy: false, savedAt: 0, error: null, conflict: null })
+          // 推送错误属于上一个仓库：换根就清掉，别让它挂在另一个仓库的提示块里
+          setPushState({ busy: false, error: null })
           if (activeRoot === null || activeRoot.isGit === false) {
             setStatusLoading(false)
             return undefined
@@ -3293,7 +3614,7 @@ window.__ModuleLoader__.load({
         /** 打开创建 PR 表单：先向宿主要仓库/账号/分支信息。 */
         const openCreatePull = useCallback(async () => {
           if (activeRoot === null || activeRoot.isGit !== true) return
-          setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', pushed: false, generating: false, creating: false, created: null, notice: null })
+          setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', generating: false, creating: false, created: null, notice: null })
           try {
             const prepared = await api.prPrepare({ rootPath: activeRoot.path })
             const remembered = readPrefs().pullTargets?.[pullTargetKey(prepared.repo)] ?? ''
@@ -3310,14 +3631,13 @@ window.__ModuleLoader__.load({
               title: '',
               body: '',
               bodyHeight: '160px',
-              pushed: prepared.pushed === true,
               generating: false,
               creating: false,
               created: null,
               notice: null
             })
           } catch (error) {
-            setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', pushed: false, generating: false, creating: false, created: null, notice: null })
+            setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', generating: false, creating: false, created: null, notice: null })
           }
         }, [activeRoot])
 
@@ -3337,6 +3657,9 @@ window.__ModuleLoader__.load({
         /** 用模型生成标题与描述（失败就地显示原因）。 */
         const generatePullText = useCallback(async () => {
           if (pullForm === null || activeRoot === null) return
+          // 没有目标分支就不发请求：`{ base: undefined }` 序列化后字段会整个消失，
+          // 宿主只会回一句「缺少参数 base」，看起来像生成功能坏了，其实模型根本没被调用。
+          if (typeof pullForm.base !== 'string' || pullForm.base === '') return
           setPullForm({ ...pullForm, generating: true, error: null, notice: null })
           try {
             const generated = await api.prGenerate({ rootPath: activeRoot.path, base: pullForm.base })
@@ -3357,6 +3680,9 @@ window.__ModuleLoader__.load({
         /** 创建 PR：成功后记住目标分支，供下次默认。 */
         const createPull = useCallback(async () => {
           if (pullForm === null || activeRoot === null) return
+          // 同 generatePullText：没有目标分支（或还没准备出 repo）时不发这个注定被拒的请求
+          if (typeof pullForm.base !== 'string' || pullForm.base === '') return
+          if (pullForm.repo === null) return
           setPullForm({ ...pullForm, creating: true, error: null, notice: null })
           try {
             const created = await api.prCreate({
@@ -3570,16 +3896,51 @@ window.__ModuleLoader__.load({
           await refreshStatus()
         }, [resolveProject, refreshStatus])
 
-        /** 创建分支后直接切过去：宿主一次做完 `git switch -c`，面板只负责刷新。 */
-        const createBranch = useCallback(async (root, name) => {
+        /**
+         * 创建分支（可携带未提交改动）。
+         *
+         * 宿主在动手前会把「能不能建」全部判定完，所以失败时仓库一定没被改过 ——
+         * 界面可以放心地把 `would-overwrite` 当成「换个选择再试一次」，而不是「出事了」。
+         * 这里把错误码与 details 透传出去（`api.describeError` 只保留一句话，撞车文件清单会丢），
+         * RepoList 才能据此摆出两个零风险出口。
+         */
+        const createBranch = useCallback(async (root, request) => {
+          let value
           try {
-            await api.createBranch({ rootPath: root.path, name })
+            value = await api.createBranch({ rootPath: root.path, ...request })
           } catch (error) {
-            throw new Error(api.describeError(error, tRef.current))
+            const wrapped = new Error(api.describeError(error, tRef.current))
+            wrapped.code = error === null || error === undefined ? 'internal' : error.code
+            wrapped.details = error === null || error === undefined ? {} : error.details
+            throw wrapped
           }
+          setToolbarNote(buildBranchCreatedNote(value, tRef.current))
+          // 建/切分支会改 HEAD（可能还改了工作区）：行尾分支名与 status 都要重读
           await resolveProject()
           await refreshStatus()
+          return value
         }, [resolveProject, refreshStatus])
+
+        /**
+         * 推送当前分支（`branch/push`）。成功就刷新 status —— 「还只在你电脑上」那条提示
+         * 由 `status.pushed` 驱动，刷新后自己消失；失败把原因留在提示块里，不弹窗。
+         * 正在推送时用 ref 挡住重复点击（state 要等下一遍渲染才生效）。
+         */
+        const pushBranchNow = useCallback(async () => {
+          const root = activeRootRef.current
+          if (root === null || root.isGit !== true || pushStateRef.current.busy === true) return null
+          setPushState({ busy: true, error: null })
+          try {
+            const value = await api.pushBranch({ rootPath: root.path })
+            setPushState({ busy: false, error: null })
+            setToolbarNote({ tone: 'info', text: tRef.current('push.done', { branch: value.branch }) })
+            await refreshStatus()
+            return value
+          } catch (error) {
+            setPushState({ busy: false, error: api.describeError(error, tRef.current) })
+            return null
+          }
+        }, [refreshStatus])
 
         const loadDir = useCallback(async (relPath, signal) => {
           const root = browseRootRef.current
@@ -3653,9 +4014,39 @@ window.__ModuleLoader__.load({
           }
         }, [])
 
-        /** 读一个 PR 的详情（含平台能力与审查记录）。 */
-        const loadPullDetail = useCallback(async (selection) => {
+        /**
+         * 读选中远端仓库的分支全貌：远端分支走平台 API，本地同名分支状态由宿主在
+         * rootPaths 里按 origin 匹配到本地仓库后读出来，合成一条列表返回。
+         * 刷新时保留上一份数据：列表不会先消失再出现。
+         */
+        const loadRemoteBranches = useCallback(async (selection) => {
           if (selection === null) {
+            setRemoteBranches(null)
+            return
+          }
+          setRemoteBranches((previous) => ({
+            loading: true,
+            error: null,
+            data: previous === null ? null : previous.data
+          }))
+          try {
+            const data = await api.remoteBranches({
+              accountId: selection.accountId,
+              fullName: selection.fullName,
+              rootPaths: allGitRoots.map((root) => root.path)
+            })
+            setRemoteBranches({ loading: false, error: null, data })
+          } catch (error) {
+            setRemoteBranches((previous) => ({
+              loading: false,
+              error: error instanceof Error ? error.message : String(error),
+              data: previous === null ? null : previous.data
+            }))
+          }
+        }, [allGitRoots])
+
+        /** 读一个 PR 的详情（含平台能力与审查记录）。 */
+        const loadPullDetail = useCallback(async (selection) => {    if (selection === null) {
             setPullDetail(null)
             return
           }
@@ -3743,6 +4134,118 @@ window.__ModuleLoader__.load({
           openPullWith(selection)
           await loadPullDetail(selection)
         }, [linkedPull, setMode, loadPullDetail, openPullWith])
+
+        /* --------------------------- 远端仓库详情 · 分支 --------------------------- */
+
+        /**
+         * 选中仓库变了才重拉分支：
+         *  - 从 PR 详情关回仓库详情时，选中没变，不重复请求；
+         *  - 切到别的仓库（或从 PR 卡片跳进来）时，按 fullName 重新拉一次；
+         *  - 切回远端页签不自动刷新（分支有「刷新 / 获取远程更新」按钮，拉网络不该偷偷发生）。
+         */
+        useEffect(() => {
+          if (mode !== MODE.remote) return
+          if (remoteSelection === null) {
+            branchSelectionRef.current = null
+            setRemoteBranches(null)
+            return
+          }
+          if (openPull !== null) return
+          if (branchSelectionRef.current === remoteSelection.fullName) return
+          branchSelectionRef.current = remoteSelection.fullName
+          // 换了仓库：先把上一个仓库的分支清掉，避免新数据回来前右侧挂着别人的分支
+          setRemoteBranches(null)
+          loadRemoteBranches(remoteSelection)
+        }, [mode, openPull, remoteSelection, loadRemoteBranches])
+
+        /** 分支操作统一返回 { ok, error, code }：组件据 code 判断要不要露出「强制删除」。 */
+        const branchFailure = useCallback((error) => ({
+          ok: false,
+          error: api.describeError(error, tRef.current),
+          code: error !== null && error !== undefined && typeof error.code === 'string' ? error.code : null
+        }), [])
+
+        /** 本地没有克隆时，本地分支操作明确报出来，不做无声失败。 */
+        const noLocalRepoFailure = useCallback(() => ({
+          ok: false,
+          error: tRef.current('branch.noLocalOps'),
+          code: 'no-local-repo'
+        }), [])
+
+        /** 切换分支：本地已有该分支才能切；成功后重新解析根并刷新 status（储存库行的分支名要跟着变）。 */
+        const switchRemoteBranch = useCallback(async (branch) => {
+          const rootPath = localRootPathOfBranches(remoteBranchesRef.current)
+          if (rootPath === null) return noLocalRepoFailure()
+          try {
+            await api.switchBranch({ rootPath, name: branch.name })
+          } catch (error) {
+            return branchFailure(error)
+          }
+          await resolveProject()
+          await refreshStatus()
+          if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
+          return { ok: true }
+        }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+
+        /** 远端独有的分支：在本地建跟踪分支并切过去（与储存库分支菜单里的行为一致）。 */
+        const trackRemoteBranch = useCallback(async (branch) => {
+          const rootPath = localRootPathOfBranches(remoteBranchesRef.current)
+          if (rootPath === null) return noLocalRepoFailure()
+          try {
+            await api.trackBranch({ rootPath, remote: 'origin', name: branch.name })
+          } catch (error) {
+            return branchFailure(error)
+          }
+          await resolveProject()
+          await refreshStatus()
+          if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
+          return { ok: true }
+        }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+
+        /** 删除本地分支（force 只会在用户点「强制删除」时传 true）。 */
+        const deleteLocalBranchAt = useCallback(async (branch, force) => {
+          const rootPath = localRootPathOfBranches(remoteBranchesRef.current)
+          if (rootPath === null) return noLocalRepoFailure()
+          try {
+            await api.deleteLocalBranch({ rootPath, name: branch.name, force: force === true })
+          } catch (error) {
+            return branchFailure(error)
+          }
+          await resolveProject()
+          await refreshStatus()
+          if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
+          return { ok: true }
+        }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+
+        /** 删除远端分支：它是破坏性操作，界面已二次确认过；成功后只重读分支列表。 */
+        const deleteRemoteBranchAt = useCallback(async (branch) => {
+          if (remoteSelection === null) return { ok: false, error: tRef.current('branch.noLocalOps'), code: null }
+          try {
+            await api.deleteRemoteBranch({
+              accountId: remoteSelection.accountId,
+              fullName: remoteSelection.fullName,
+              name: branch.name
+            })
+          } catch (error) {
+            return branchFailure(error)
+          }
+          await loadRemoteBranches(remoteSelection)
+          return { ok: true }
+        }, [remoteSelection, loadRemoteBranches, branchFailure])
+
+        /** 「获取远程更新」：git fetch --prune（只更新远端跟踪引用，不动工作区/本地分支），然后重读列表。 */
+        const fetchRepoBranches = useCallback(async () => {
+          const rootPath = localRootPathOfBranches(remoteBranchesRef.current)
+          if (rootPath === null) return noLocalRepoFailure()
+          try {
+            await api.fetchRemote({ rootPath })
+          } catch (error) {
+            return branchFailure(error)
+          }
+          await refreshStatus()
+          if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
+          return { ok: true }
+        }, [refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
 
 
         /** 审查：统一把失败包成 { ok:false, error }，界面就地显示。 */
@@ -3908,6 +4411,9 @@ window.__ModuleLoader__.load({
               branch: result.headBranch === '' ? '' : result.headBranch
             }))
             await loadRemoteDetail({ accountId: input.accountId, fullName: input.fullName })
+            // 合并可以顺带删掉源分支：回到详情时分支区要重读，不能留着已删除的那一行
+            branchSelectionRef.current = null
+            setRemoteBranches(null)
             // 合并后未合并数量会变，角标要跟着刷新
             await loadPullCounts(input.accountId, remoteReposRef.current)
             // closed:true 让 PullDetail 不要在被卸载后再写自己的提示
@@ -3928,7 +4434,9 @@ window.__ModuleLoader__.load({
           const selection = { accountId: repo.accountId, fullName: repo.fullName, name: repo.name }
           setRemoteSelection(selection)
           loadRemoteDetail(selection)
-        }, [loadRemoteDetail])
+          // 点的是已经选中的仓库 = 手动刷新：分支数据按 fullName 去重，这里显式再读一次
+          if (branchSelectionRef.current === selection.fullName) loadRemoteBranches(selection)
+        }, [loadRemoteDetail, loadRemoteBranches])
 
         const openExternal = useCallback((url) => {
           const result = openExternalUrl(url)
@@ -4008,6 +4516,9 @@ window.__ModuleLoader__.load({
               targetName: targetName ?? ''
             })
             setCloneState(null)
+            // 项目里多了这个仓库：下次回到远端页签时分支区要重新判断「本地有没有克隆」
+            branchSelectionRef.current = null
+            setRemoteBranches(null)
             await resolveProject()
             await refreshStatus()
             setMode(MODE.changes)
@@ -4163,6 +4674,20 @@ window.__ModuleLoader__.load({
         if (value.behind > 0) return { tone: 'warn', text: t('update.behind', { count: value.behind, upstream }) }
         if (value.ahead > 0) return { tone: 'info', text: t('update.ahead', { count: value.ahead, upstream }) }
         return { tone: 'info', text: t('update.upToDate', { upstream }) }
+      }
+
+      /**
+       * 创建分支后的那句话。
+       *
+       * 用户最不确定的就是「我的改动去哪了」，所以这里必须把三种结局分开说：
+       * 切过去并带走了改动 / 切过去但本来就没有改动 / 只建了分支没切换（改动留在原处）。
+       */
+      function buildBranchCreatedNote(value, t) {
+        if (value.switched !== true) return { tone: 'info', text: t('branch.createdOnly', { name: value.branch }) }
+        if (value.carried.total > 0) {
+          return { tone: 'info', text: t('branch.createdFollow', { name: value.branch, total: value.carried.total }) }
+        }
+        return { tone: 'info', text: t('branch.created', { name: value.branch }) }
       }
 
 
@@ -4424,6 +4949,20 @@ window.__ModuleLoader__.load({
                   t
                 })
                 : null,
+              /**
+               * 当前分支的最新提交不在远端时，常驻一行「要不要推送」的提示 —— 带按钮，点了就推。
+               * 只认 `pushed === false`：没有 origin / 游离 HEAD 时宿主给的是 null（无从判断），不提示。
+               * 推完之后 status 刷新（这里点了按钮就刷、也会轮询），`pushed` 变 true，提示自己消失。
+               */
+              status !== null && status.pushed === false
+                ? h(PushHint, {
+                  branch: status.branch,
+                  t,
+                  onPush: pushBranchNow,
+                  busy: pushState.busy,
+                  error: pushState.error
+                })
+                : null,
               h(CommitBox, {
                 message: commitMessage,
                 stagedCount,
@@ -4484,6 +5023,9 @@ window.__ModuleLoader__.load({
             onGenerate: generatePullText,
             onCreate: createPull,
             onOpenUrl: openExternal,
+            // 推没推上去只认 status.pushed：推完 refreshStatus 一刷新，创建按钮自己就亮了，
+            // 不需要「表单里再推一次」这条独立通路
+            pushed: status !== null && status.pushed === true,
             t
           })
         } else if (mode === MODE.remote && openPull !== null) {
@@ -4518,6 +5060,14 @@ window.__ModuleLoader__.load({
           rightPane = h(RemoteDetail, {
             selection: remoteSelection,
             detail: remoteDetail,
+            // 分支区：数据 + 各类操作都走 Panel，组件只做交互与错误呈现
+            branchState: remoteBranches,
+            onReloadBranches: () => loadRemoteBranches(remoteSelection),
+            onFetchBranches: fetchRepoBranches,
+            onSwitchBranch: switchRemoteBranch,
+            onTrackBranch: trackRemoteBranch,
+            onDeleteLocalBranch: deleteLocalBranchAt,
+            onDeleteRemoteBranch: deleteRemoteBranchAt,
             onRetry: () => loadRemoteDetail(remoteSelection),
             onClone: (selection) => cloneRepo({
               accountId: selection.accountId,
@@ -4800,6 +5350,18 @@ window.__ModuleLoader__.load({
         moreMenu)
       }
 
+      /**
+       * remote/branches 的状态 → 本地仓库根。
+       * 没有本地克隆（或还没读到）时返回 null：分支区的本地操作一律以它为前提。
+       */
+      function localRootPathOfBranches(state) {
+        if (state === null || state === undefined) return null
+        if (state.data === null || state.data === undefined) return null
+        const local = state.data.local
+        if (local === null || local === undefined) return null
+        return typeof local.rootPath === 'string' && local.rootPath !== '' ? local.rootPath : null
+      }
+
       Object.assign(exports, { Panel });
 
     });
@@ -5062,6 +5624,75 @@ window.__ModuleLoader__.load({
       const { AddRootForm } = __m("./components/AddRootForm.js");
       const { stripWrappingQuotes } = __m("./util/paths.js");
 
+      /**
+       * 分支菜单的初始状态。
+       *
+       * 打开菜单与「根操作失败后重开菜单」共用这一份：字段集合（尤其 `state` / `base` /
+       * `checkout` / `blocked`）只在这里定义一次，不至于两处各写一遍慢慢长歪。
+       */
+      function emptyBranchMenu(root, rect) {
+        return {
+          root,
+          rect,
+          list: [],
+          current: null,      // branches/list 的 current：当前分支名（游离 HEAD 时为 null）
+          state: null,        // branches/list 的 state：head / detached / unborn / inProgress / dirty
+          loading: true,
+          switching: null,
+          creating: false,
+          fetching: false,
+          pulling: false,
+          name: '',
+          base: 'HEAD',       // 创建基准；'HEAD' = 从当前 HEAD 建（零风险路径）
+          checkout: true,     // 建完是否立刻切过去
+          blocked: null,      // 撞车说明（would-overwrite 的 message），非空时只给两个出口
+          error: null
+        }
+      }
+
+      /**
+       * 「从哪开新分支」的候选：当前分支 + 其它本地分支 + 远端分支。
+       *
+       * 数据全部来自 `branches/list`，所以切换它不需要任何额外请求。
+       * 选项带上「（本地）/（远端）」后缀：只写 `origin/dev` 对不熟 git 的人等于天书。
+       */
+      function baseOptionsOf(branches, current, translate) {
+        const options = [{ ref: 'HEAD', label: translate('branch.baseHead', { branch: current ?? translate('root.noBranch') }) }]
+        const seen = new Set(['HEAD'])
+        // 先本地分支、再远端引用：本地分支是更常用的起点，混在一起会把列表打散
+        for (const branch of branches) {
+          if (branch.local !== true || branch.current === true || seen.has(branch.name)) continue
+          seen.add(branch.name)
+          options.push({ ref: branch.name, label: translate('branch.baseLocalOption', { name: branch.name }) })
+        }
+        for (const branch of branches) {
+          if (typeof branch.remote !== 'string' || branch.remote === '') continue
+          const ref = branch.remote + '/' + branch.name
+          if (seen.has(ref)) continue
+          seen.add(ref)
+          options.push({ ref, label: translate('branch.baseRemoteOption', { ref }) })
+        }
+        return options
+      }
+
+      /** 输入的名字恰好是一个「仅远端」分支时，返回 `origin/x`（提示用，不改变默认行为）。 */
+      function sameRemoteOf(branches, name) {
+        if (name === '') return null
+        for (const branch of branches) {
+          if (branch.name !== name || branch.local === true) continue
+          if (typeof branch.remote === 'string' && branch.remote !== '') return branch.remote + '/' + name
+        }
+        return null
+      }
+
+      /** 进行中的多步操作 → 文案 key。 */
+      const PROGRESS_KEYS = {
+        merge: 'branch.progressMerge',
+        rebase: 'branch.progressRebase',
+        'cherry-pick': 'branch.progressCherryPick',
+        revert: 'branch.progressRevert'
+      }
+
       function RepoList(props) {
         const source = props
         const translate = source.t
@@ -5083,33 +5714,34 @@ window.__ModuleLoader__.load({
         const closeForm = () => setFormOpen(false)
         const closeBranches = () => setBranchMenu(null)
 
-        /** 隐藏 / 取消隐藏 / 移除：都从分支菜单触发，执行后关掉菜单。 */
+        /** 隐藏 / 取消隐藏 / 移除：都从分支菜单触发，执行后关掉菜单；失败就把菜单重开在最上面报错。 */
         const runRootAction = (handler, root) => {
           if (typeof source[handler] !== 'function') return
           closeBranches()
           Promise.resolve(source[handler](root)).catch((error) => {
             setBranchMenu({
-              root,
-              rect: null,
-              list: [],
+              ...emptyBranchMenu(root, null),
               loading: false,
-              switching: null,
-              creating: false,
-              fetching: false,
-              pulling: false,
-              name: '',
               error: error && error.message ? error.message : String(error)
             })
           })
         }
 
         const loadBranches = (root, rect) => {
-          setBranchMenu({ root, rect, list: [], loading: true, switching: null, creating: false, fetching: false, name: '', error: null })
+          setBranchMenu(emptyBranchMenu(root, rect))
           Promise.resolve(source.onLoadBranches(root))
             .then((value) => {
               setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
                 ? previous
-                : { ...previous, list: value.branches, loading: false }))
+                : {
+                  ...previous,
+                  list: value.branches,
+                  current: value.current,
+                  state: value.state,
+                  loading: false,
+                  // 合并 / 变基进行中 git 不允许切分支：默认就落在「只建分支」上，不摆一个必然失败的勾选
+                  checkout: value.state.inProgress === null
+                }))
             })
             .catch((error) => {
               setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
@@ -5148,12 +5780,19 @@ window.__ModuleLoader__.load({
         /** 拉取远程更新（git fetch）后重读分支列表：别人新推的分支这时才会出现。 */
         const fetchRemote = (menu) => {
           if (typeof source.onFetchBranches !== 'function') return
-          setBranchMenu({ ...menu, fetching: true, error: null })
+          setBranchMenu({ ...menu, fetching: true, error: null, blocked: null })
           Promise.resolve(source.onFetchBranches(menu.root))
             .then((value) => {
               setBranchMenu((previous) => (previous === null
                 ? previous
-                : { ...previous, fetching: false, list: value.branches, loading: false }))
+                : {
+                  ...previous,
+                  fetching: false,
+                  list: value.branches,
+                  current: value.current,
+                  state: value.state,
+                  loading: false
+                }))
             })
             .catch((error) => {
               setBranchMenu((previous) => (previous === null
@@ -5175,20 +5814,55 @@ window.__ModuleLoader__.load({
         }
 
         const changeCreateName = (value) => {
-          setBranchMenu((previous) => (previous === null ? previous : { ...previous, name: value, error: null }))
+          setBranchMenu((previous) => (previous === null
+            ? previous
+            : { ...previous, name: value, error: null, blocked: null }))
         }
 
-        const createBranch = (menu) => {
+        const changeBase = (value) => {
+          setBranchMenu((previous) => (previous === null
+            ? previous
+            : { ...previous, base: value, error: null, blocked: null }))
+        }
+
+        const changeCheckout = (value) => {
+          setBranchMenu((previous) => (previous === null
+            ? previous
+            : { ...previous, checkout: value, error: null, blocked: null }))
+        }
+
+        /**
+         * 创建分支：默认从当前 HEAD 建并切过去。
+         *
+         * `overrides` 是撞车后两个出口用的（改为从当前分支创建 / 只建分支），
+         * 它们都是「同一件事换个参数重试一次」，所以共用这一条路径。
+         */
+        const runCreate = (menu, overrides = {}) => {
           const name = stripWrappingQuotes(menu.name)
           if (name === '' || menu.creating === true || menu.switching !== null) return
-          setBranchMenu({ ...menu, name, creating: true, error: null })
-          Promise.resolve(source.onCreateBranch(menu.root, name))
+          const base = overrides.base ?? menu.base
+          const checkout = overrides.checkout ?? menu.checkout
+          setBranchMenu({
+            ...menu,
+            ...overrides,
+            name,
+            creating: true,
+            error: null,
+            blocked: null
+          })
+          Promise.resolve(source.onCreateBranch(menu.root, { name, base, checkout }))
             .then(() => setBranchMenu(null))
-            .catch((error) => {
-              setBranchMenu((previous) => (previous === null
-                ? previous
-                : { ...previous, creating: false, error: error && error.message ? error.message : String(error) }))
-            })
+            .catch((error) => setBranchMenu((previous) => (previous === null
+              ? previous
+              : {
+                ...previous,
+                creating: false,
+                error: error && error.message ? error.message : String(error),
+                // 撞车不是「失败」而是「需要换个选择」：单独呈现，并给出两个零风险出口
+                blocked: error !== null && error !== undefined && error.code === 'would-overwrite'
+                  ? (error && error.message ? error.message : String(error))
+                  : null
+              })))
         }
 
         const menuBranches = branchMenu === null ? [] : branchMenu.list
@@ -5207,6 +5881,34 @@ window.__ModuleLoader__.load({
 
         const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true || branchMenu.fetching === true)
         const createName = branchMenu === null ? '' : stripWrappingQuotes(branchMenu.name)
+        /**
+         * 创建区的现状提示。三件事各自独立，所以分开渲染而不是拼一坨：
+         *  · 有合并 / 变基在跑 → git 不允许切分支，只能只建分支；
+         *  · 工作区脏 → 说清有多少改动会跟着走（base=HEAD 时这是零风险路径）；
+         *  · 输入的名字恰好是已有远端分支 → 提示要跟踪该选哪个基准。
+         */
+        const branchState = branchMenu === null ? null : branchMenu.state
+        const inProgress = branchState === null ? null : branchState.inProgress
+        const progressKey = inProgress === null ? null : PROGRESS_KEYS[inProgress]
+        const sameRemote = branchMenu === null ? null : sameRemoteOf(branchMenu.list, createName)
+        const baseOptions = branchMenu === null ? [] : baseOptionsOf(branchMenu.list, branchMenu.current, translate)
+        const dirtyHint = branchState === null || branchState.dirty.total === 0
+          ? null
+          : translate('branch.dirtyHint', {
+            branch: branchMenu.current ?? translate('root.noBranch'),
+            total: branchState.dirty.total,
+            staged: branchState.dirty.staged
+          })
+        /**
+         * 选了「不是当前分支」当起点时，用一句人话说明后果。
+         * 这个下拉框对不熟 git 的人很难自解释，只靠 tooltip 不够 —— 选项一改就把话说出来。
+         */
+        const baseIsHead = branchMenu === null || branchMenu.base === 'HEAD'
+        const baseNote = baseIsHead
+          ? null
+          : (branchState !== null && branchState.dirty.total > 0
+            ? translate('branch.baseNoteDirty', { base: branchMenu.base, total: branchState.dirty.total })
+            : translate('branch.baseNoteClean', { base: branchMenu.base }))
         const branchMenuNode = branchMenu === null
           ? null
           : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 240 },
@@ -5252,41 +5954,108 @@ window.__ModuleLoader__.load({
               'data-dgp-branch-create': 'true',
               onSubmit: (event) => {
                 event.preventDefault()
-                createBranch(branchMenu)
+                runCreate(branchMenu)
               }
             },
-            h('input', {
-              className: 'dgp-input',
-              'data-dgp-branch-name': 'true',
-              value: branchMenu.name,
-              placeholder: translate('branch.createPlaceholder'),
-              spellCheck: false,
-              disabled: menuBusy,
-              onChange: (event) => changeCreateName(event.target.value),
-              onKeyDown: (event) => {
-                if (event.key === 'Escape') {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  closeBranches()
+            h('div', { className: 'dgp-branch-create-row' },
+              h('input', {
+                className: 'dgp-input',
+                'data-dgp-branch-name': 'true',
+                value: branchMenu.name,
+                placeholder: translate('branch.createPlaceholder'),
+                spellCheck: false,
+                disabled: menuBusy,
+                onChange: (event) => changeCreateName(event.target.value),
+                onKeyDown: (event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    closeBranches()
+                  }
                 }
-              }
-            }),
-            h('button', {
-              type: 'submit',
-              className: 'dgp-btn',
-              'data-size': 'sm',
-              'data-variant': 'primary',
-              'data-dgp-branch-create-submit': 'true',
-              disabled: menuBusy || createName === '',
-              title: translate('branch.create')
-            }, translate('branch.create'))),
+              }),
+              h('button', {
+                type: 'submit',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'primary',
+                'data-dgp-branch-create-submit': 'true',
+                disabled: menuBusy || createName === '',
+                title: translate(branchMenu.checkout ? 'branch.create' : 'branch.createOnly')
+              }, translate(branchMenu.checkout ? 'branch.create' : 'branch.createOnly'))),
+            h('div', { className: 'dgp-branch-create-opts' },
+              h('span', { className: 'dgp-branch-base-label' }, translate('branch.baseLabel')),
+              h('select', {
+                className: 'dgp-input dgp-branch-base',
+                'data-dgp-branch-base': 'true',
+                value: branchMenu.base,
+                disabled: menuBusy,
+                title: translate('branch.baseHint'),
+                onChange: (event) => changeBase(event.target.value)
+              }, baseOptions.map((option) => h('option', { key: option.ref, value: option.ref }, option.label))),
+              h('label', { className: 'dgp-branch-check', title: translate('branch.checkoutHint') },
+                h('input', {
+                  type: 'checkbox',
+                  'data-dgp-branch-checkout': 'true',
+                  checked: branchMenu.checkout,
+                  disabled: menuBusy || inProgress !== null,
+                  onChange: (event) => changeCheckout(event.target.checked)
+                }),
+                translate('branch.checkoutLabel'))),
+            baseNote === null
+              ? null
+              : h('p', {
+                className: 'dgp-branch-hint',
+                'data-dgp-branch-base-note': branchMenu.base
+              }, baseNote),
+            progressKey === null
+              ? null
+              : h('p', {
+                className: 'dgp-branch-hint',
+                'data-dgp-branch-dirty': 'in-progress',
+                'data-tone': 'warn'
+              }, translate('branch.inProgressHint', {
+                kind: translate(progressKey),
+                action: translate('branch.createOnlyAction')
+              })),
+            dirtyHint === null
+              ? null
+              : h('p', { className: 'dgp-branch-hint', 'data-dgp-branch-dirty': 'dirty' }, dirtyHint),
+            sameRemote === null
+              ? null
+              : h('p', {
+                className: 'dgp-branch-hint',
+                'data-dgp-branch-same-remote': sameRemote
+              }, translate('branch.sameRemoteHint', { ref: sameRemote })),
+            // 撞车 = 「需要换个选择」，不是失败：说清冲突文件，并只给两个零风险出口
+            branchMenu.blocked === null
+              ? null
+              : h('div', { className: 'dgp-branch-blocked', 'data-dgp-branch-blocked': 'true' },
+                h('p', { className: 'dgp-branch-hint', 'data-tone': 'warn' }, branchMenu.blocked),
+                h('div', { className: 'dgp-branch-actions' },
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-dgp-branch-from-head': 'true',
+                    disabled: menuBusy,
+                    onClick: () => runCreate(branchMenu, { base: 'HEAD', checkout: true })
+                  }, translate('branch.fromHead')),
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-dgp-branch-only': 'true',
+                    disabled: menuBusy,
+                    onClick: () => runCreate(branchMenu, { checkout: false })
+                  }, translate('branch.createOnlyAction'))))),
             branchMenu.switching === null
               ? null
               : h(MenuLabel, null, translate('branch.switching', { name: branchMenu.switching })),
             branchMenu.creating !== true
               ? null
-              : h(MenuLabel, null, translate('branch.creating', { name: createName })),
-            branchMenu.error === null
+              : h(MenuLabel, null, translate(branchMenu.checkout ? 'branch.creating' : 'branch.creatingOnly', { name: createName })),
+            branchMenu.error === null || branchMenu.blocked !== null
               ? null
               : h(MenuLabel, null, translate('branch.failed', { message: branchMenu.error })),
             branchMenu.root.kind === 'primary'
@@ -7309,9 +8078,27 @@ window.__ModuleLoader__.load({
         return call('roots/unhide', payload, options)
       }
 
-      /** 列出本地分支。 */
+      /** 列出本地分支 + 分支菜单需要的仓库现状（`state`：HEAD / 进行中操作 / 脏计数）。 */
       function listBranches(payload, options) {
         return call('branches/list', payload, options)
+      }
+
+      /**
+       * 远端仓库的分支全貌：远端分支（平台 API）+ 本地同名分支状态（rootPaths 里 origin
+       * 匹配到的本地仓库），合成一条列表。远端/本地任一侧失败只记在 failures 里。
+       */
+      function remoteBranches(payload, options) {
+        return call('remote/branches', payload, options)
+      }
+
+      /** 删除本地分支（force 只在用户确认「强制删除」后用）。 */
+      function deleteLocalBranch(payload, options) {
+        return call('branch/delete', payload, options)
+      }
+
+      /** 删除远端分支（破坏性，界面上必须二次确认）。 */
+      function deleteRemoteBranch(payload, options) {
+        return call('remote/branch/delete', payload, options)
       }
 
       /** 把「仅远程」的分支建成本地跟踪分支并切过去。 */
@@ -7324,9 +8111,25 @@ window.__ModuleLoader__.load({
         return call('branch/switch', payload, options)
       }
 
-      /** 从当前 HEAD 创建分支并立刻切过去。 */
+      /**
+       * 创建分支：`base` 是创建基准、`checkout` 决定建完是否切过去。
+       *
+       * 基准是当前 HEAD 时未提交改动原样跟随（git 只写 ref 与 HEAD，不碰工作区）；
+       * 跨基准撞车时宿主报 `would-overwrite`（details 里有文件清单，且仓库没被改动），
+       * 界面据此换成「从当前分支创建」或「只建分支」再试一次。
+       */
       function createBranch(payload, options) {
         return call('branch/create', payload, options)
+      }
+
+      /**
+       * 推送当前分支到 origin（`git push --set-upstream origin <当前分支>`，用本机 git 凭据）。
+       *
+       * 网络写操作：超时给到 5 分钟。认证失败（`git-auth-failed`）与「远端有你没有的提交」
+       * （`not-fast-forward`）都带可操作原因，界面直接显示宿主原文。
+       */
+      function pushBranch(payload, options) {
+        return call('branch/push', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
       }
 
       /** 提交：有暂存只提交暂存，没有则先全部暂存。 */
@@ -7420,7 +8223,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, trackBranch, switchBranch, createBranch, commitChanges, commitMessage, prPrepare, pullBranch, pluginInfo, pluginUpdate, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, remoteBranches, deleteLocalBranch, deleteRemoteBranch, trackBranch, switchBranch, createBranch, pushBranch, commitChanges, commitMessage, prPrepare, pullBranch, pluginInfo, pluginUpdate, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -8759,7 +9562,10 @@ window.__ModuleLoader__.load({
        *
        * 交互顺序按用户真实操作：
        *   仓库与源分支（只读）→ 目标分支（记住上次）→ 生成标题与描述 → 自己改 → 创建 PR
-       * 未推送时给出明确阻断（先 git push），不假装能创建。
+       *
+       * 「分支还没推到远端」的完整解释和推送动作只有一处：左栏的 PushHint，
+       * 打开本表单时它就在同一屏里。表单只回答「创建按钮为什么是灰的」，不重复那块内容。
+       * `pushed` 取宿主的 `status.pushed`（唯一事实源），不再从 pr/prepare 另拿一份快照。
        */
       const { h } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
@@ -8768,6 +9574,7 @@ window.__ModuleLoader__.load({
         const source = props
         const t = source.t
         const form = source.form
+        const pushed = source.pushed === true
         if (form === null || form === undefined) return null
 
         const header = h('div', { className: 'dgp-detail-top' },
@@ -8820,6 +9627,15 @@ window.__ModuleLoader__.load({
 
         const baseOptions = Array.isArray(form.bases) ? form.bases : []
         const accountOptions = Array.isArray(form.accounts) ? form.accounts : []
+        /**
+         * 目标分支是「生成」和「创建」共同的前置条件，两处用同一把锁。
+         *
+         * 只判断 `=== ''` 是不够的：`pr/prepare` 没给出候选目标分支时，客户端把
+         * `bases[0]`（undefined）当成 base，而 `{ base: undefined }` 序列化后这个字段会**整个消失**，
+         * 宿主只会回一句「缺少参数 base」——那次请求连模型都没调，却看起来像功能坏了。
+         * 所以这里用「非空字符串」这一个判据，把没有目标分支的表单变成两个按钮都点不了。
+         */
+        const baseReady = typeof form.base === 'string' && form.base !== ''
 
         return h('div', { className: 'dgp-detail dgp-pr-form', 'data-dgp-pr': 'form' },
           header,
@@ -8850,10 +9666,6 @@ window.__ModuleLoader__.load({
             }, baseOptions.map((branch) => h('option', { key: branch, value: branch }, branch))),
             h('span', { className: 'dgp-settings-hint' }, t('pr.baseHint'))),
 
-          form.pushed !== true
-            ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pr': 'not-pushed' }, t('pr.notPushed'))
-            : null,
-
           h('div', { className: 'dgp-pr-row' },
             h('span', { className: 'dgp-settings-label' }, t('pr.subject')),
             h('button', {
@@ -8861,7 +9673,7 @@ window.__ModuleLoader__.load({
               className: 'dgp-btn',
               'data-size': 'sm',
               'data-dgp-pr': 'generate',
-              disabled: form.generating === true || form.creating === true,
+              disabled: form.generating === true || form.creating === true || baseReady !== true,
               onClick: () => source.onGenerate()
             }, t(form.generating === true ? 'pr.generating' : 'pr.generate'))),
           h('input', {
@@ -8888,13 +9700,54 @@ window.__ModuleLoader__.load({
               'data-size': 'sm',
               'data-variant': 'primary',
               'data-dgp-pr': 'create',
-              disabled: form.creating === true || form.pushed !== true || form.title.trim() === '' || form.base === '',
+              disabled: form.creating === true || pushed !== true || form.title.trim() === '' || baseReady !== true,
               onClick: () => source.onCreate()
             }, t(form.creating === true ? 'pr.creating' : 'pr.create')),
+            pushed
+              ? null
+              : h('span', { className: 'dgp-detail-failure', 'data-dgp-pr': 'blocked' }, t('pr.blockedNotPushed')),
             form.notice === null ? null : h('span', { className: 'dgp-detail-notice', 'data-dgp-pr': 'notice' }, form.notice)))
       }
 
       Object.assign(exports, { CreatePullForm });
+
+    });
+    __define("./components/PushHint.js", (exports, module) => {
+      /**
+       * src/components/PushHint.js —— 「这条分支的最新提交还没到远端」的提示
+       *
+       * 只有一个渲染点：变更页签、提交框上方。它回答「要不要推送」，是这个问题唯一的答案。
+       * 打开「创建 PR」表单时左栏仍和表单同屏，所以表单不再重复同一块内容 ——
+       * 表单只需要说明「创建」为什么还是灰的（CreatePullForm 的 pr.blockedNotPushed）。
+       *
+       * 状态也只有一个来源：宿主 `status` 的 `pushed`。推完 status 刷新，提示自己消失。
+       * 命令照旧显示：按钮失败时用户能直接复制到终端排查。
+       */
+      const { h } = __m("./platform.js");
+
+      function PushHint(props) {
+        const { branch, t, onPush, busy, error } = props
+        return h('div', { className: 'dgp-push-hint', 'data-dgp-push': 'true' },
+          h('p', { className: 'dgp-push-hint-title' }, t('push.title')),
+          h('p', { className: 'dgp-push-hint-why' }, t('push.why')),
+          h('div', { className: 'dgp-push-hint-action' },
+            h('code', { className: 'dgp-command', 'data-dgp-push-command': 'true' }, t('push.command', { branch })),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'primary',
+              'data-dgp-push-run': 'true',
+              disabled: busy === true,
+              onClick: () => onPush()
+            }, t(busy === true ? 'push.pushing' : 'push.run'))),
+          error === null || error === undefined
+            ? null
+            : h('p', { className: 'dgp-push-hint-error', 'data-dgp-push-error': 'true' }, error),
+          h('p', { className: 'dgp-push-hint-after' }, t('push.after')))
+      }
+
+      Object.assign(exports, { PushHint });
 
     });
     __define("./components/PullStatusCard.js", (exports, module) => {
@@ -9731,14 +10584,21 @@ window.__ModuleLoader__.load({
     });
     __define("./components/RemoteDetail.js", (exports, module) => {
       /**
-       * src/components/RemoteDetail.js —— 远端仓库右侧详情：代码 / Issues / PR
+       * src/components/RemoteDetail.js —— 远端仓库右侧详情：分支 / Issues / PR
        *
-       * 只负责展示：数据由 Panel 拉（remote/detail），这里把「数量、最近条目、
-       * 打开网页」三件事排清楚；拿不到总数的区块如实写「数量未知」。
+       * 只负责展示：数据由 Panel 拉（remote/detail 与 remote/branches），这里把
+       * 「代码概况、分支、数量、最近条目、打开网页」几件事排清楚；拿不到总数的区块
+       * 如实写「数量未知」。
+       *
+       * 分支区（BranchList）是这一版新增的主角：远端仓库的所有分支、本地有没有、
+       * 远端有没有、当前/默认/领先落后都在这一个列表里，操作也都在行上完成。
+       * 原先单独的「代码」块与顶部 meta 行重复（语言 / 大小 / 默认分支两处都写），
+       * 已合并进 meta，把纵向空间让给分支列表。
        */
       const { h } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
       const { formatDateTime } = __m("./util/time.js");
+      const { BranchList } = __m("./components/BranchList.js");
 
       function Section(props) {
         const { title, total, itemsTheLabel, items, emptyLabel, openLabel, onOpen, t, kind } = props
@@ -9824,7 +10684,8 @@ window.__ModuleLoader__.load({
         const data = detail.data
         const repo = data.repo
         const sizeText = repo.sizeKb > 0 ? t('detail.sizeKb', { size: repo.sizeKb }) : ''
-        const meta = [repo.language, sizeText, repo.defaultBranch === '' ? '' : repo.defaultBranch]
+        // 语言 / 大小 / 默认分支原先在「代码」块里又写了一遍，现在只保留这一行
+        const meta = [repo.language, sizeText, repo.defaultBranch === '' ? '' : t('detail.defaultBranch', { name: repo.defaultBranch })]
           .filter((part) => part !== '').join(' · ')
 
         return h('div', { className: 'dgp-detail', 'data-dgp-detail': 'repo' },
@@ -9864,11 +10725,18 @@ window.__ModuleLoader__.load({
             className: 'dgp-detail-failure'
           }, t('detail.sectionFailed', { section: failure.section, message: failure.message }))),
 
-          h('div', { className: 'dgp-detail-code' },
-            h('span', { className: 'dgp-detail-title' }, t('detail.code')),
-            h('span', { className: 'dgp-detail-meta' },
-              [repo.language === '' ? '' : repo.language, sizeText, repo.defaultBranch === '' ? '' : t('detail.defaultBranch', { name: repo.defaultBranch })]
-                .filter((part) => part !== '').join(' · '))),
+          h(BranchList, {
+            selection,
+            state: source.branchState,
+            onReloadBranches: source.onReloadBranches,
+            onFetchBranches: source.onFetchBranches,
+            onSwitchBranch: source.onSwitchBranch,
+            onTrackBranch: source.onTrackBranch,
+            onDeleteLocalBranch: source.onDeleteLocalBranch,
+            onDeleteRemoteBranch: source.onDeleteRemoteBranch,
+            onOpenUrl: source.onOpenUrl,
+            t
+          }),
 
           h(Section, {
             kind: 'issues',
@@ -9898,6 +10766,543 @@ window.__ModuleLoader__.load({
       }
 
       Object.assign(exports, { RemoteDetail });
+
+    });
+    __define("./components/BranchList.js", (exports, module) => {
+      /**
+       * src/components/BranchList.js —— 「远端」页签仓库详情里的「分支」区
+       *
+       * 解决的是远端仓库详情只能看代码 / Issues / PR、看不到分支的问题：
+       *   · 远端有哪些分支、本地有没有同名分支、哪个是当前分支/默认分支；
+       *   · 本地相对上游领先/落后多少、上游是否已被删除、远端是否已有本地还没 fetch 的新提交；
+       *   · 快速操作：切换、建本地跟踪分支、复制分支名、打开网页、删除本地分支、删除远端分支。
+       *
+       * 数据由 Panel 取（remote/branches：远端 API + 本地 git 合成一条），这里只负责
+       * 交互与错误呈现。删除是破坏性操作，一律先出二次确认；本地分支有未合并提交时
+       * 只把「强制删除」按钮露出来，不默认 force。
+       */
+      const { h, useEffect, useState } = __m("./platform.js");
+      const { Icon } = __m("./ui/Icon.js");
+      const { MenuItem, MenuLabel, PopupMenu } = __m("./ui/Menu.js");
+      const { copyText } = __m("./util/clipboard.js");
+
+      /** 分支行右侧的两个小标签：本地 / 远端。远端未知（API 失败）时用第三种表达。 */
+      function branchTags(row, translate) {
+        return h('span', { className: 'dgp-branch-tags' },
+          h('span', {
+            className: 'dgp-branch-tag',
+            'data-active': row.local === true ? 'true' : 'false',
+            'data-kind': 'local'
+          }, translate('branch.localTag')),
+          h('span', {
+            className: 'dgp-branch-tag',
+            'data-active': row.remote === true ? 'true' : 'false',
+            'data-kind': 'remote',
+            // true/false/null 三态：null = 远端列表没读到，不能画成「没有」
+            'data-unknown': row.remote === null ? 'true' : 'false',
+            title: row.remote === null ? translate('branch.remoteUnknown') : undefined
+          }, translate('branch.remoteTag')),
+          row.default === true
+            ? h('span', { className: 'dgp-branch-tag', 'data-active': 'false', 'data-kind': 'default' },
+              translate('branch.defaultTag'))
+            : null)
+      }
+
+      /** 分支的完整情况放进 title：窄面板里行内放不下，但鼠标停一下要能看到全部事实。 */
+      function branchTitle(row, translate) {
+        const parts = [row.name]
+        if (row.current === true) parts.push(translate('branch.currentTag'))
+        if (row.default === true) parts.push(translate('branch.defaultTag'))
+        if (row.protected === true) parts.push(translate('branch.protectedTag'))
+        parts.push(translate(row.local === true ? 'branch.localTag' : 'branch.notLocal'))
+        if (row.remote === true) parts.push(translate('branch.remoteTag'))
+        else if (row.remote === null) parts.push(translate('branch.remoteUnknown'))
+        else parts.push(translate('branch.notOnRemote'))
+        if (row.upstreamGone === true || row.upstreamMissing === true) parts.push(translate('branch.upstreamGone'))
+        if (row.ahead > 0 || row.behind > 0) {
+          parts.push(translate('branch.aheadBehind', { ahead: row.ahead, behind: row.behind }))
+        }
+        if (row.remoteUpdated === true) parts.push(translate('branch.remoteUpdated'))
+        return parts.join(' · ')
+      }
+
+      /** 领先/落后：两边都有值时用一条完整文案，只有一边时只画那一边（不写 ↓0 这种噪音）。 */
+      function aheadBehindText(row, translate) {
+        if (row.ahead > 0 && row.behind > 0) return translate('branch.aheadBehind', { ahead: row.ahead, behind: row.behind })
+        if (row.ahead > 0) return '↑' + row.ahead
+        return '↓' + row.behind
+      }
+
+      /** 这一行点下去会发生什么；没有主操作时点行 = 打开菜单。 */
+      function primaryActionOf(row, hasLocalRepo) {
+        if (row.current === true) return null
+        if (row.local === true) return 'switch'
+        if (hasLocalRepo && row.remote === true) return 'track'
+        return null
+      }
+
+      function BranchList(props) {
+        const source = props
+        const translate = source.t
+        const state = source.state === null || source.state === undefined ? null : source.state
+        const rawData = state === null || state.data === null || state.data === undefined ? null : state.data
+        const selection = source.selection === null || source.selection === undefined ? null : source.selection
+        /**
+         * 数据是「按仓库」的：切到另一个仓库而新数据还没回来时，手里这份是上一个仓库的分支。
+         * 这种情况当加载中处理，不能把别人的分支列表画在标题下面。
+         */
+        const dataBelongsToSelection = rawData === null || selection === null
+          || typeof rawData.fullName !== 'string' || rawData.fullName === selection.fullName
+        const data = dataBelongsToSelection ? rawData : null
+        const loading = (state !== null && state.loading === true) || (rawData !== null && dataBelongsToSelection !== true)
+        const loadError = state !== null && typeof state.error === 'string' && state.error !== '' ? state.error : null
+        const branches = data !== null && Array.isArray(data.branches) ? data.branches : []
+        const hasLocalRepo = data !== null && data.local !== null && data.local !== undefined
+        const localRootPath = hasLocalRepo ? data.local.rootPath : null
+        // 分支少时不放筛选框；此时残留的筛选词也必须失效，否则列表看着被过滤却找不到筛选框
+        const showFilter = branches.length > 8
+
+        const [filter, setFilter] = useState('')
+        // 行尾「⋯」菜单：{ row, rect }
+        const [menu, setMenu] = useState(null)
+        // 删除确认：{ row, kind: 'local'|'remote', force, error }
+        const [confirm, setConfirm] = useState(null)
+        // 正在执行操作的物理行名（切换/跟踪/删除共用）
+        const [busy, setBusy] = useState(null)
+        const [fetching, setFetching] = useState(false)
+        // 最近一次操作的结果：{ tone: 'info'|'error', text }
+        const [note, setNote] = useState(null)
+
+        const closeMenu = () => setMenu(null)
+        const closeConfirm = () => setConfirm(null)
+
+        // 换仓库时把筛选 / 菜单 / 确认 / 提示全部清掉：它们都属于上一个仓库的上下文
+        const dataRepo = data === null || typeof data.fullName !== 'string' ? null : data.fullName
+        useEffect(() => {
+          setFilter('')
+          setMenu(null)
+          setConfirm(null)
+          setNote(null)
+        }, [dataRepo])
+
+        const needle = showFilter ? filter.trim().toLowerCase() : ''
+        const visible = needle === ''
+          ? branches
+          : branches.filter((row) => row.name.toLowerCase().includes(needle))
+
+        const openMenu = (row, target) => {
+          setNote(null)
+          setMenu({ row, rect: target.getBoundingClientRect() })
+        }
+
+        const runPrimary = (row, action) => {
+          if (busy !== null) return
+          setBusy(row.name)
+          setNote(null)
+          const started = action === 'switch'
+            ? source.onSwitchBranch(row)
+            : source.onTrackBranch(row)
+          Promise.resolve(started)
+            .then((result) => {
+              setBusy(null)
+              if (result !== null && result !== undefined && result.ok === true) {
+                setNote({
+                  tone: 'info',
+                  text: translate(action === 'switch' ? 'branch.switched' : 'branch.tracked', { name: row.name })
+                })
+                return
+              }
+              setNote({ tone: 'error', text: result === null || result === undefined ? translate('branch.failed', { message: '' }) : result.error })
+            })
+            .catch((error) => {
+              setBusy(null)
+              setNote({ tone: 'error', text: translate('branch.failed', { message: error && error.message ? error.message : String(error) }) })
+            })
+        }
+
+        const startDelete = (row, kind) => {
+          setMenu(null)
+          setNote(null)
+          setConfirm({ row, kind, force: false, error: null })
+        }
+
+        const runDelete = (force) => {
+          if (confirm === null || busy !== null) return
+          const { row, kind } = confirm
+          setBusy(row.name)
+          setNote(null)
+          const started = kind === 'local'
+            ? source.onDeleteLocalBranch(row, force)
+            : source.onDeleteRemoteBranch(row)
+          Promise.resolve(started)
+            .then((result) => {
+              if (result !== null && result !== undefined && result.ok === true) {
+                setBusy(null)
+                setConfirm(null)
+                setNote({
+                  tone: 'info',
+                  text: translate(kind === 'local' ? 'branch.deletedLocal' : 'branch.deletedRemote', { name: row.name })
+                })
+                return
+              }
+              const error = result === null || result === undefined ? translate('branch.failed', { message: '' }) : result.error
+              // 未合并的本地分支：把「强制删除」按钮放出来，让用户明确决定，不默认 force
+              if (kind === 'local' && result !== null && result !== undefined && result.code === 'branch-unmerged') {
+                setBusy(null)
+                setConfirm({ row, kind, force: true, error })
+                return
+              }
+              setBusy(null)
+              setConfirm({ row, kind, force: false, error })
+            })
+            .catch((error) => {
+              setBusy(null)
+              setConfirm({
+                row,
+                kind,
+                force: false,
+                error: translate('branch.failed', { message: error && error.message ? error.message : String(error) })
+              })
+            })
+        }
+
+        const runFetch = () => {
+          if (fetching === true) return
+          setFetching(true)
+          setNote(null)
+          Promise.resolve(source.onFetchBranches())
+            .then((result) => {
+              setFetching(false)
+              if (result !== null && result !== undefined && result.ok === true) {
+                setNote({ tone: 'info', text: translate('branch.fetchingDone') })
+                return
+              }
+              setNote({ tone: 'error', text: result === null || result === undefined ? translate('branch.failed', { message: '' }) : result.error })
+            })
+            .catch((error) => {
+              setFetching(false)
+              setNote({ tone: 'error', text: translate('branch.failed', { message: error && error.message ? error.message : String(error) }) })
+            })
+        }
+
+        const copyName = (row) => {
+          setMenu(null)
+          Promise.resolve(copyText(row.name)).then((result) => {
+            setNote(result.ok === true
+              ? { tone: 'info', text: translate('branch.copied', { name: row.name }) }
+              : { tone: 'error', text: translate('branch.failed', { message: String(result.reason) }) })
+          })
+        }
+
+        const openWeb = (row) => {
+          setMenu(null)
+          if (data === null || typeof data.htmlUrl !== 'string' || data.htmlUrl === '') return
+          if (typeof source.onOpenUrl === 'function') source.onOpenUrl(data.htmlUrl + '/tree/' + encodeURI(row.name))
+        }
+
+        const summary = data !== null && data.localKnown === true
+          ? translate('branch.summary', { total: branches.length, local: data.counts.local })
+          : null
+        const remoteShown = branches.filter((row) => row.remote === true).length
+
+        const failures = data !== null && Array.isArray(data.failures) ? data.failures : []
+
+        const statusNodes = []
+        if (loadError !== null) {
+          statusNodes.push(h('div', { key: 'error', className: 'dgp-branch-status', 'data-tone': 'error' },
+            h('span', { className: 'dgp-oneline' }, translate('branch.loadFailed', { message: loadError })),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'ghost',
+              'data-dgp-branch-retry': 'true',
+              disabled: loading,
+              onClick: () => {
+                setNote(null)
+                if (typeof source.onReloadBranches === 'function') source.onReloadBranches()
+              }
+            }, translate('action.retry'))))
+        } else if (loading === true && data === null) {
+          statusNodes.push(h('div', { key: 'loading', className: 'dgp-branch-status' },
+            h('span', { className: 'dgp-spinner' }),
+            h('span', null, translate('branch.loading'))))
+        } else if (loading === true) {
+          statusNodes.push(h('div', { key: 'refreshing', className: 'dgp-branch-status' },
+            h('span', { className: 'dgp-spinner' }),
+            h('span', null, translate('branch.refreshing'))))
+        }
+        for (const failure of failures) {
+          statusNodes.push(h('div', { key: 'failure-' + String(failure.section), className: 'dgp-branch-status', 'data-tone': 'warn' },
+            h('span', null, translate('detail.sectionFailed', {
+              section: translate(failure.section === 'local' ? 'branch.localTag' : 'branch.remoteTag'),
+              message: String(failure.message)
+            }))))
+        }
+        if (note !== null) {
+          statusNodes.push(h('div', { key: 'note', className: 'dgp-branch-status', 'data-tone': note.tone === 'error' ? 'error' : 'info' },
+            h('span', { className: 'dgp-oneline' }, note.text)))
+        }
+
+        const hints = []
+        if (data !== null && data.localKnown === true && data.local === null) {
+          hints.push(h('div', { key: 'not-cloned', className: 'dgp-branch-hint' }, translate('branch.notCloned')))
+        } else if (hasLocalRepo === true) {
+          const folder = String(localRootPath).split(/[\\/]/).filter(Boolean).pop() ?? String(localRootPath)
+          hints.push(h('div', { key: 'local-repo', className: 'dgp-branch-hint' }, translate('branch.localRepo', { name: folder })))
+        }
+        if (data !== null && data.truncated === true) {
+          hints.push(h('div', { key: 'truncated', className: 'dgp-branch-hint' },
+            translate('branch.truncated', { count: remoteShown })))
+        }
+        if (data !== null && data.remoteKnown === true && remoteShown === 0) {
+          hints.push(h('div', { key: 'remote-empty', className: 'dgp-branch-hint' }, translate('branch.emptyRemote')))
+        }
+
+        const rows = visible.map((row) => {
+          const action = primaryActionOf(row, hasLocalRepo === true)
+          const rowBusy = busy === row.name
+          const confirmHere = confirm !== null && confirm.row.name === row.name
+          const canDeleteLocal = row.local === true
+          const canDeleteRemote = row.remote === true
+          return h('li', {
+            key: row.name,
+            className: 'dgp-branch-item',
+            'data-current': row.current === true ? 'true' : undefined,
+            'data-busy': rowBusy ? 'true' : undefined
+          },
+          h('button', {
+            type: 'button',
+            className: 'dgp-branch-row',
+            'data-dgp-branch-row': row.name,
+            title: branchTitle(row, translate),
+            disabled: rowBusy,
+            onClick: (event) => {
+              const target = event.currentTarget
+              if (action === null) {
+                openMenu(row, target)
+                return
+              }
+              runPrimary(row, action)
+            }
+          },
+          h('span', {
+            className: 'dgp-branch-ico',
+            'data-current': row.current === true ? 'true' : undefined
+          }, h(Icon, { name: row.current === true ? 'check' : 'git-branch', size: 12 })),
+          h('span', { className: 'dgp-branch-name dgp-oneline' }, row.name),
+          row.ahead > 0 || row.behind > 0
+            ? h('span', { className: 'dgp-branch-track' }, aheadBehindText(row, translate))
+            : null,
+          branchTags(row, translate)),
+          h('button', {
+            type: 'button',
+            className: 'dgp-branch-more',
+            'data-dgp-branch-more': row.name,
+            title: translate('branch.more'),
+            'aria-label': translate('branch.more'),
+            disabled: rowBusy,
+            onClick: (event) => {
+              event.stopPropagation()
+              openMenu(row, event.currentTarget)
+            }
+          }, rowBusy ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'more', size: 12 })),
+          confirmHere
+            ? h('div', { className: 'dgp-branch-confirm', 'data-dgp-branch-confirm': confirm.kind },
+              h('div', { className: 'dgp-branch-confirm-text' },
+                translate(confirm.kind === 'local' ? 'branch.deleteLocalConfirm' : 'branch.deleteRemoteConfirm', { name: row.name })),
+              confirm.error === null
+                ? null
+                : h('div', { className: 'dgp-branch-status', 'data-tone': 'error' }, h('span', null, confirm.error)),
+              h('div', { className: 'dgp-branch-confirm-actions' },
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-variant': 'ghost',
+                  disabled: busy !== null,
+                  onClick: closeConfirm
+                }, translate('action.cancel')),
+                confirm.force === true
+                  ? h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-variant': 'danger',
+                    'data-dgp-branch-delete-force': row.name,
+                    disabled: busy !== null,
+                    onClick: () => runDelete(true)
+                  }, translate('branch.deleteForce'))
+                  : null,
+                h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-variant': 'danger',
+                  'data-dgp-branch-delete-run': row.name,
+                  disabled: busy !== null,
+                  onClick: () => runDelete(confirm.force === true)
+                }, translate('branch.deleteRun'))))
+            : null)
+        })
+
+        const menuRow = menu === null ? null : menu.row
+        const menuNode = menuRow === null
+          ? null
+          : h(PopupMenu, { open: true, anchorRect: menu.rect, onClose: closeMenu, minWidth: 220 },
+            h(MenuLabel, null, menuRow.name),
+            menuRow.current === true
+              ? null
+              : (menuRow.local === true
+                ? h(MenuItem, {
+                  icon: 'git-branch',
+                  label: translate('branch.switchTo', { name: menuRow.name }),
+                  dataKey: 'branch-switch',
+                  disabled: busy !== null,
+                  onClick: () => {
+                    setMenu(null)
+                    runPrimary(menuRow, 'switch')
+                  }
+                })
+                : (hasLocalRepo === true && menuRow.remote === true
+                  ? h(MenuItem, {
+                    icon: 'plus',
+                    label: translate('branch.track'),
+                    dataKey: 'branch-track',
+                    disabled: busy !== null,
+                    onClick: () => {
+                      setMenu(null)
+                      runPrimary(menuRow, 'track')
+                    }
+                  })
+                  : h(MenuLabel, null, translate('branch.noLocalOps')))),
+            h('div', { className: 'dgp-menu-sep', role: 'separator' }),
+            h(MenuItem, {
+              icon: 'file',
+              label: translate('branch.copy'),
+              dataKey: 'branch-copy',
+              onClick: () => copyName(menuRow)
+            }),
+            h(MenuItem, {
+              icon: 'external',
+              label: translate('branch.openWeb'),
+              dataKey: 'branch-open',
+              disabled: data === null || typeof data.htmlUrl !== 'string' || data.htmlUrl === '',
+              onClick: () => openWeb(menuRow)
+            }),
+            h('div', { className: 'dgp-menu-sep', role: 'separator' }),
+            canDeleteMenuLocal(menuRow)
+              ? h(MenuItem, {
+                icon: 'trash',
+                label: translate('branch.deleteLocal'),
+                dataKey: 'branch-delete-local',
+                danger: true,
+                disabled: busy !== null,
+                onClick: () => startDelete(menuRow, 'local')
+              })
+              : h(MenuItem, {
+                icon: 'trash',
+                label: translate('branch.deleteLocal'),
+                dataKey: 'branch-delete-local-disabled',
+                sub: canDeleteLocalReason(menuRow, translate),
+                disabled: true
+              }),
+            canDeleteMenuRemote(menuRow)
+              ? h(MenuItem, {
+                icon: 'trash',
+                label: translate('branch.deleteRemote'),
+                dataKey: 'branch-delete-remote',
+                danger: true,
+                disabled: busy !== null,
+                onClick: () => startDelete(menuRow, 'remote')
+              })
+              : h(MenuItem, {
+                icon: 'trash',
+                label: translate('branch.deleteRemote'),
+                dataKey: 'branch-delete-remote-disabled',
+                sub: canDeleteRemoteReason(menuRow, translate),
+                disabled: true
+              }))
+
+        if (data === null && loadError === null && loading !== true) return null
+
+        return h('section', { className: 'dgp-branch-section', 'data-dgp-branch': 'section' },
+          h('div', { className: 'dgp-branch-head' },
+            h('span', { className: 'dgp-branch-title' }, translate('branch.sectionTitle')),
+            summary === null ? null : h('span', { className: 'dgp-branch-summary dgp-oneline' }, summary),
+            h('div', { className: 'dgp-branch-head-actions' },
+              hasLocalRepo
+                ? h('button', {
+                  type: 'button',
+                  className: 'dgp-iconbtn',
+                  style: { width: 22, height: 22 },
+                  title: translate('branch.fetch'),
+                  'aria-label': translate('branch.fetch'),
+                  'data-dgp-branch-fetch': 'true',
+                  disabled: fetching,
+                  onClick: runFetch
+                }, fetching ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'sync', size: 12 }))
+                : null,
+              h('button', {
+                type: 'button',
+                className: 'dgp-iconbtn',
+                style: { width: 22, height: 22 },
+                title: translate('remote.refresh'),
+                'aria-label': translate('remote.refresh'),
+                'data-dgp-branch-refresh': 'true',
+                disabled: loading,
+                onClick: () => {
+                  setNote(null)
+                  if (typeof source.onReloadBranches === 'function') source.onReloadBranches()
+                }
+              }, h(Icon, { name: 'refresh', size: 12 })))),
+          showFilter
+            ? h('input', {
+              className: 'dgp-input dgp-branch-filter',
+              'data-dgp-branch-filter': 'true',
+              placeholder: translate('branch.filter'),
+              spellCheck: false,
+              value: filter,
+              onChange: (event) => setFilter(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setFilter('')
+                }
+              }
+            })
+            : null,
+          statusNodes.length > 0 ? h('div', { className: 'dgp-branch-statuses' }, statusNodes) : null,
+          data !== null && visible.length === 0
+            ? h('div', { className: 'dgp-branch-empty' }, branches.length === 0 ? translate('branch.empty') : '')
+            : h('ul', { className: 'dgp-branch-list', role: 'list' }, rows),
+          hints.length > 0 ? h('div', null, hints) : null,
+          menuNode)
+      }
+
+      /** 删除本地分支：当前分支不能删；只读行（无本地仓库）没有这个动作的来源。 */
+      function canDeleteMenuLocal(row) {
+        return row.local === true && row.current !== true
+      }
+
+      function canDeleteLocalReason(row, translate) {
+        if (row.local !== true) return translate('branch.noLocalOps')
+        return translate('branch.currentNoDelete')
+      }
+
+      /** 删除远端分支：远端已知且存在，并且不是默认 / 受保护分支。 */
+      function canDeleteMenuRemote(row) {
+        return row.remote === true && row.default !== true && row.protected !== true
+      }
+
+      function canDeleteRemoteReason(row, translate) {
+        if (row.remote === null) return translate('branch.remoteUnknown')
+        if (row.remote !== true) return translate('branch.notOnRemote')
+        if (row.default === true) return translate('branch.defaultNoDelete')
+        return translate('branch.protectedNoDelete')
+      }
+
+      Object.assign(exports, { BranchList });
 
     });
     __define("./components/PullDetail.js", (exports, module) => {

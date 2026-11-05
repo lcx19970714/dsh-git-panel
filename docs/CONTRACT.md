@@ -42,6 +42,9 @@
 | `src/components/RootPicker.js` | `RootPicker` | 仓库/根切换器 + 添加外部仓库 |
 | `src/components/GitPanelSurface.js` | `GitPanelSurface` | 两个外壳（会话视图 tab / 右侧栏 tab）共用的转发层 |
 | `src/components/Panel.js` | `Panel` | 根布局：工具条 + 分栏 + 键盘 + 拖拽 |
+| `src/components/RemotePane.js` | `RemotePane` | 「远端」页签左栏：账号 chip + 仓库列表 + 行内拉取 |
+| `src/components/RemoteDetail.js` | `RemoteDetail` | 「远端」页签右栏：仓库概况 + 分支区 + Issues + PR |
+| `src/components/BranchList.js` | `BranchList` | 远端仓库详情的「分支」区：本地/远端状态 + 行内操作（切换 / 建跟踪分支 / 复制 / 打开网页 / 删除本地 / 删除远端） |
 | `src/index.js` | `apply(ctx)`、`name`、`inject` | 注册入口 |
 
 ## 2. 数据契约（Host RPC 返回的形状；端点清单见 `docs/ARCHITECTURE.md` §3.2）
@@ -70,6 +73,7 @@ interface FileEntry {
 interface StatusResult {
   repoRoot: string; branch: string | null; head: string | null; detached: boolean
   upstream: string | null; ahead: number; behind: number
+  pushed: boolean | null          // 远端有没有 HEAD 这个提交：true=一致、false=要推、null=无从判断（无 origin / 游离 HEAD / 空仓库）
   files: FileEntry[]
   counts: { total: number; staged: number; unstaged: number; untracked: number; conflicted: number }
   truncated: boolean
@@ -89,7 +93,90 @@ interface FileResult {
 }
 
 interface TreeResult { entries: { name: string; path: string; type: 'dir'|'file'|'other' }[]; truncated: boolean }
+
+interface BranchInfo {
+  name: string
+  local: boolean
+  current: boolean
+  remote: boolean | null          // null = 远端名单没读到（未知），不是「远端没有」
+  default: boolean
+  protected: boolean
+  remoteSha: string | null
+  upstream: string | null
+  ahead: number; behind: number
+  upstreamGone: boolean           // 本地 %(upstream:track) 报 gone
+  upstreamMissing: boolean        // 上游分支名不在远端名单里（远端已删）
+  remoteUpdated: boolean          // 远端 sha ≠ 本地 refs/remotes/origin/<name>
+}
+
+interface RemoteBranchesResult {
+  accountId: string; fullName: string; provider: string; htmlUrl: string
+  defaultBranch: string
+  remoteKnown: boolean; localKnown: boolean; truncated: boolean
+  counts: { total: number; local: number; remoteOnly: number; localOnly: number }
+  branches: BranchInfo[]
+  local: { rootPath: string; current: string | null; detached: boolean } | null
+  failures: { section: 'local'|'remote'; message: string }[]
+}
+
+interface RepoState {                    // branches/list 的 state：分支菜单要的全部现状，跟名单同一次往返
+  head: string | null                    // 短 sha；null = unborn（空仓库还没有第一个提交）
+  detached: boolean
+  unborn: boolean
+  inProgress: null | 'merge' | 'rebase' | 'cherry-pick' | 'revert'
+                                         // 读 .git/MERGE_HEAD、rebase-merge / rebase-apply、CHERRY_PICK_HEAD、REVERT_HEAD、sequencer
+  dirty: { total: number; staged: number; unstaged: number; untracked: number; conflicted: number }
+                                         // 与 status.counts 同形，但不做行数统计（菜单只要计数）
+}
+
+interface BranchesResult {               // branches/list 的返回：refs/heads 与 refs/remotes 按名字合成一条，跳过 origin/HEAD
+  branches: { name: string; local: boolean; current: boolean; remote: string | null
+              upstream: string | null; ahead: number; behind: number; upstreamGone: boolean }[]
+  current: string | null
+  state: RepoState
+}
+
+interface BranchCreateRequest {          // 三个字段全部必填，缺一个就 bad-request
+  rootPath: string
+  name: string
+  base: string                           // 'HEAD' 或任意可解析的 ref（本地分支名 / origin/x / sha）
+  checkout: boolean                      // 建完是否立刻切过去；false = 只建分支，只写 ref、不碰工作区
+}
+
+interface BranchCreateResult {
+  branch: string; head: string | null
+  previousBranch: string | null; previousHead: string | null   // 创建前（detached 时 branch 为 null）
+  base: { ref: string; kind: 'head' | 'local' | 'remote' | 'commit'; sha: string }
+  switched: boolean
+  carried: { total: number; staged: number; unstaged: number; untracked: number; conflicted: number }
+                                         // 创建后的工作区脏计数（与 status.counts 同形）
+}
+
+interface BranchPushRequest { rootPath: string }   // 只推当前分支、只推 origin，没有别的参数
+
+interface BranchPushResult {
+  branch: string; head: string | null; upstream: string | null; output: string
+}
 ```
+
+`branches/list` 的入参没变，仍是 `{rootPath}`（裸仓库明确报 `not-a-repository`）：多返回一个 `state`，
+分支菜单就不必再调一次 `status`。`branch/create` 的入参见 `BranchCreateRequest`；它的错误码如下
+（全部带可操作文案；全部发生在动手之前 —— 撞车时什么都没做，所以菜单可以拿另一组参数直接重试，
+这正是「不新增预检端点」的落点）：
+
+| code | 场景 |
+|---|---|
+| `bad-branch` | 名字非法 |
+| `branch-exists` | 本地已有同名分支 |
+| `base-not-found` | base ref 不存在（例如 `origin/dev` 还没 fetch） |
+| `unborn` | 空仓库（还没有第一个提交）且 `checkout:false`：只能创建并切换 |
+| `in-progress` | merge / rebase / cherry-pick / revert 进行中且 `checkout:true`（git 的 `switch` 会硬拒绝） |
+| `would-overwrite` | base≠HEAD、脏文件与 base 的差异重叠且 `checkout:true`：message 内联文件清单（最多 8 个 + 另有 N 个）并提示两个出口，`details` 为 `{ base, tracked: string[], untracked: string[] }` |
+
+`branch/push`（`BranchPushRequest` → `BranchPushResult`）只做一件事：`git push --set-upstream origin <当前分支>`，
+凭据用本机 git（与 `branch/pull` 的 fetch 同口径，插件不掺和令牌）。错误码：
+`detached-head` / `unborn` / `no-remote` / `git-auth-failed`（远端拒绝：本机没有可用凭据）/
+`not-fast-forward`（远端有你没有的提交，提示先「拉取当前分支最新代码」）。
 
 ## 3. 组件 props 契约（由 `Panel.js` 传入，禁止改动形状）
 
@@ -167,12 +254,63 @@ SkeletonRows({ rows })
 InlineNote({ tone: 'info'|'warn'|'error', children })
 ```
 
+### `<RepoList />`（「储存库」区 + 分支菜单）
+```js
+{
+  roots,                          // Root[]
+  activeRootId,                   // string | null
+  open,                           // boolean —— 折叠状态
+  onToggleOpen(),                 // 折叠 / 展开
+  onSelect(root),                 // 只选中仓库，不打开分支菜单
+  onAdd(dir),                     // 添加外部仓库
+  onHide(root), onUnhide(root), onRemove(root),
+  onLoadBranches(root),           // => Promise<BranchesResult>（branches / current / state）
+  onSwitchBranch(root, name),     // 切换已有分支
+  onTrackBranch(root, branch),    // 仅远程的行：建本地跟踪分支并切换
+  onPullBranch(root),             // 拉取当前分支最新代码（branch/pull，只允许快进）
+  onFetchBranches(root),          // 获取远程更新（remote/fetch，只读）=> Promise<BranchesResult>
+  onCreateBranch(root, request),  // request = { name, base, checkout }
+  t,
+}
+```
+- `onCreateBranch` 的 `request` 三个字段**全部必填**：`base` 是 `'HEAD'` 或任意可解析的 ref（本地分支名 /
+  `origin/x` / sha），`checkout` 是「创建后是否立刻切过去」（`false` = 只建分支，只写 ref、不碰工作区）。
+  组件不自己补默认值：菜单上看到什么就发什么，`branch/create` 缺字段直接回 `bad-request`。
+- 菜单要的现状（`state.dirty` 的改动计数、`state.inProgress` / `state.unborn`）由 `onLoadBranches` 一并返回，
+  组件**不另调** `status`：一次 `branches/list` 就能把菜单画全；切换 / 创建成功后由 Panel 重新拉一次 `state`。
+- 创建失败按 `error.code` + `error.details` 渲染，不吞错误：`would-overwrite` 用 `details.tracked` /
+  `details.untracked` 列出重叠文件，给两个**零风险出口** ——「改为从当前分支创建」（把 base 拉回 `HEAD`，
+  重发原请求）与「只建分支」（`checkout:false` 重发，只写 ref、不碰工作区）；`in-progress` 也只剩「只建分支」；
+  `unborn` 反过来只剩「创建并切换」（空仓库没有可指的 `HEAD`，`git branch` 会失败）。
+- 组件自身不做 git 调用，也不判断「会不会撞车」：撞车判定在 `branch/create` 内部、与执行共用同一份代码，
+  客户端只负责把 `code` 翻译成可操作的出口；插件不走 stash、不做 force，不会制造冲突现场。
+
+### `<BranchList />`（远端仓库详情的「分支」区）
+```js
+BranchList({
+  selection,                     // { accountId, fullName, name }
+  state,                         // { loading, error, data } | null；data 见 RemoteBranchesResult
+  onReloadBranches,              // () => Promise<{ok:true}|{ok:false,error,code}>
+  onFetchBranches,               // git fetch --prune（只更新远端跟踪引用）
+  onSwitchBranch(branch),        // 本地已有 → 切换
+  onTrackBranch(branch),         // 仅远端 → 建本地跟踪分支并切换
+  onDeleteLocalBranch(branch, force),
+  onDeleteRemoteBranch(branch),
+  onOpenUrl(url),
+  t
+})
+```
+回调统一返回 `{ ok: true }` 或 `{ ok: false, error, code }`；只有 `code === 'branch-unmerged'` 时
+组件才在确认框里露出「强制删除」，其它失败就地显示原因。组件自身不做网络/ git 调用。
+
 ## 4. 样式契约
 
 - 所有 class 以 `dgp-` 开头，禁止全局选择器、禁止 `!important`。
 - 颜色/圆角/字体/间距**只用** `styles.js` 里已定义的 `--dsw-*` / `--ds-*` 变量（主题令牌清单见 `docs/ARCHITECTURE.md` §4.3）。
 - 0.5px 发丝线：`border-bottom: .5px solid var(--dsw-alias-border-l3)`。
 - 行数据要带稳定钩子：`data-dgp-entry` / `data-dgp-path` / `data-dgp-row`。
+- 分支创建区的可测试属性见 §5（`data-dgp-branch-base` / `-checkout` / `-dirty` / `-blocked` / `-from-head` / `-only`）：
+  `test/components.test.mjs` 只按这些属性定位，不假设 DOM 嵌套。
 
 ## 5. CSS class 词汇表（`styles.js` 保证提供，组件只许引用这些）
 
@@ -193,10 +331,35 @@ InlineNote({ tone: 'info'|'warn'|'error', children })
 `dgp-repolist-toggle[data-dgp-repolist-toggle][data-open]`、`dgp-repolist-title`、
 `dgp-repolist-rows`、`dgp-repo-row[data-dgp-repo][data-active][data-hidden]`（只选中仓库）、
 `dgp-repo-branch[data-dgp-branch]`（行最右侧；只有点它才打开分支菜单）、
-`dgp-branch-create[data-dgp-branch-create]`（菜单底部：输入名字创建并切换）、
+`dgp-branch-create[data-dgp-branch-create]`（菜单底部：名字 + 起点选择 + 切换勾选 + 现状提示 + 撞车警告 + 两个出口）、
 `dgp-repolist-hidden[data-dgp-repolist-hidden]` + `dgp-repolist-hidden-count`（展开/收起已隐藏的仓库）、
 `dgp-row-action[data-dgp-repo-hide]`（非 primary 可隐藏）、`dgp-row-action[data-dgp-repo-unhide]`（已隐藏的行）、
 `dgp-row-action[data-dgp-repo-remove]`（仅外部仓库）、`dgp-addform` + `dgp-addform-actions`
+
+分支创建区的可测试属性（测试按属性定位，不依赖 class）：
+`[data-dgp-branch-name]`（新分支名输入框）、
+`[data-dgp-branch-create-submit]`（创建按钮；勾着「创建后切换」时文案是「创建」，否则是「只建分支」）、
+`[data-dgp-branch-base]`（起点选择器，标签是「从」：`当前分支 main` / `dev（本地）` / `origin/dev（远端）`；
+`title` 里给出整句话解释）、
+`[data-dgp-branch-base-note]`（选了非当前分支时出现的解释句，属性值是所选 ref；文案随工作区脏不脏变化）、
+`[data-dgp-branch-checkout]`（「创建后切换」勾选框；`inProgress` 非空时禁用并默认不勾）、
+`[data-dgp-branch-dirty]`（现状提示行，属性值是 `dirty`（工作区脏，文案 `当前 main · 3 处改动（1 已暂存）`）
+或 `in-progress`（合并 / 变基等进行中，文案解释为什么不能切换））、
+`[data-dgp-branch-same-remote]`（输入的名字命中仅远端分支时出现，属性值是远端 ref，如 `origin/topic`）、
+`[data-dgp-branch-blocked]`（撞车警告块：重叠文件清单 + 两个零风险出口）、
+`[data-dgp-branch-from-head]`（「改为从当前分支创建」按钮，把 base 拉回 `HEAD` 后重发）、
+`[data-dgp-branch-only]`（「只建分支」按钮，`checkout:false` 重发）
+
+### 远端仓库详情 · 分支区
+`dgp-branch-section`（分区根）、`dgp-branch-head`、`dgp-branch-title`、`dgp-branch-summary`、
+`dgp-branch-head-actions`、`dgp-branch-filter`（筛选框，复用 `dgp-input`）、
+`dgp-branch-status[data-tone=info|warn|error]`、`dgp-branch-statuses`、
+`dgp-branch-list`（ul）、`dgp-branch-item[data-current][data-busy]`（li）、`dgp-branch-row[data-dgp-branch-row]`（行主按钮）、
+`dgp-branch-ico[data-current]`、`dgp-branch-name`、`dgp-branch-tags`、
+`dgp-branch-tag[data-kind=local|remote|default][data-active][data-unknown]`（亮 = 有，暗 = 没有）、
+`dgp-branch-track`（`↑n ↓m`）、`dgp-branch-more[data-dgp-branch-more]`（行尾 ⋯）、
+`dgp-branch-confirm[data-dgp-branch-confirm=local|remote]` + `dgp-branch-confirm-text` + `dgp-branch-confirm-actions`、
+`dgp-branch-hint`（未克隆 / 截断等提示）、`dgp-branch-empty`
 
 ### 左侧列表 / 树
 `dgp-list`、`dgp-level`（ul）、`dgp-item`（li）、`dgp-row`（button；`data-kind=dir|file`；`data-active`）、

@@ -1,12 +1,19 @@
 /**
- * src/components/RemoteDetail.js —— 远端仓库右侧详情：代码 / Issues / PR
+ * src/components/RemoteDetail.js —— 远端仓库右侧详情：分支 / Issues / PR
  *
- * 只负责展示：数据由 Panel 拉（remote/detail），这里把「数量、最近条目、
- * 打开网页」三件事排清楚；拿不到总数的区块如实写「数量未知」。
+ * 只负责展示：数据由 Panel 拉（remote/detail 与 remote/branches），这里把
+ * 「代码概况、分支、数量、最近条目、打开网页」几件事排清楚；拿不到总数的区块
+ * 如实写「数量未知」。
+ *
+ * 分支区（BranchList）是这一版新增的主角：远端仓库的所有分支、本地有没有、
+ * 远端有没有、当前/默认/领先落后都在这一个列表里，操作也都在行上完成。
+ * 原先单独的「代码」块与顶部 meta 行重复（语言 / 大小 / 默认分支两处都写），
+ * 已合并进 meta，把纵向空间让给分支列表。
  */
 import { h } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
 import { formatDateTime } from '../util/time.js'
+import { BranchList } from './BranchList.js'
 
 function Section(props) {
   const { title, total, itemsTheLabel, items, emptyLabel, openLabel, onOpen, t, kind } = props
@@ -92,7 +99,8 @@ export function RemoteDetail(props) {
   const data = detail.data
   const repo = data.repo
   const sizeText = repo.sizeKb > 0 ? t('detail.sizeKb', { size: repo.sizeKb }) : ''
-  const meta = [repo.language, sizeText, repo.defaultBranch === '' ? '' : repo.defaultBranch]
+  // 语言 / 大小 / 默认分支原先在「代码」块里又写了一遍，现在只保留这一行
+  const meta = [repo.language, sizeText, repo.defaultBranch === '' ? '' : t('detail.defaultBranch', { name: repo.defaultBranch })]
     .filter((part) => part !== '').join(' · ')
 
   return h('div', { className: 'dgp-detail', 'data-dgp-detail': 'repo' },
@@ -132,11 +140,18 @@ export function RemoteDetail(props) {
       className: 'dgp-detail-failure'
     }, t('detail.sectionFailed', { section: failure.section, message: failure.message }))),
 
-    h('div', { className: 'dgp-detail-code' },
-      h('span', { className: 'dgp-detail-title' }, t('detail.code')),
-      h('span', { className: 'dgp-detail-meta' },
-        [repo.language === '' ? '' : repo.language, sizeText, repo.defaultBranch === '' ? '' : t('detail.defaultBranch', { name: repo.defaultBranch })]
-          .filter((part) => part !== '').join(' · '))),
+    h(BranchList, {
+      selection,
+      state: source.branchState,
+      onReloadBranches: source.onReloadBranches,
+      onFetchBranches: source.onFetchBranches,
+      onSwitchBranch: source.onSwitchBranch,
+      onTrackBranch: source.onTrackBranch,
+      onDeleteLocalBranch: source.onDeleteLocalBranch,
+      onDeleteRemoteBranch: source.onDeleteRemoteBranch,
+      onOpenUrl: source.onOpenUrl,
+      t
+    }),
 
     h(Section, {
       kind: 'issues',

@@ -5,7 +5,7 @@
  * 文案全部走 `t('key')`；`t` 由宿主传入，缺了就是调用方的 bug（直接抛错，不静默降级）。
  *
  * props 契约（CONTRACT.md §3）：
- *   EmptyState({ icon, title, description, actions, t })
+ *   EmptyState({ icon, title, description, actions })
  *   LoadingState({ label, t })
  *   ErrorState({ message, onRetry, t })
  *   SkeletonRows({ rows })
@@ -42,6 +42,7 @@ function isBlank(value) {
 /**
  * 居中空态。
  * `icon` 既可以传图标名（字符串，内部渲染 `Icon`），也可以传现成的 React node。
+ * 空态不取 `t`：标题与描述都由调用方翻译好再传进来。
  */
 export function EmptyState(props) {
   const { icon, title, description, actions } = props
@@ -79,9 +80,7 @@ export function ErrorState(props) {
     className: 'dgp-btn',
     'data-variant': 'ghost',
     'data-size': 'sm',
-    onClick: function handleRetry() {
-      if (typeof onRetry === 'function') onRetry()
-    }
+    onClick: onRetry
   }, h(Icon, { name: 'refresh', size: 14 }), T('action.retry'))
   return h('div', { className: 'dgp-state', role: 'alert' },
     h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 28 })),

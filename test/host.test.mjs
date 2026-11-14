@@ -3,7 +3,7 @@
  * 用法：node test/host.test.mjs
  *
  * 覆盖：apply() 注册通道、project/resolve（cwd / 活会话 / 冷会话 / 普通目录多仓库）、
- * status（含缓存）、diff（暂存/未暂存/未跟踪/二进制/重命名/删除）、file/read、tree/list、
+ * status（含缓存）、roots/stats（多仓库改动规模）、diff（暂存/未暂存/未跟踪/二进制/重命名/删除）、file/read、tree/list、
  * roots/add·remove + 持久化、路径逃逸与错误映射、损坏配置恢复。
  */
 import assert from 'node:assert/strict'
@@ -301,19 +301,20 @@ test('会话级深度审阅：create/prompt 都必须带 AbortSignal（否则 DS
   assert.ok(promptText.includes('src/a.js'), '提示词要带改动文件')
   assert.equal(calls[0].params.cwd, '/repo', '会话 cwd 应是准备好的目录')
 
-  // 没传 signal 时也不能把 undefined 交给 DSH：内部要兜一个可用的 AbortSignal
-  const noSignal = []
-  await startSessionReview({
-    sessionController: {
-      async create(params, sig) { noSignal.push(sig); return { sessionId: 'session-2' } },
-      async prompt(params, sig) { noSignal.push(sig) }
-    },
-    localRoot: '/repo',
-    fullName: 'alice/app',
-    pull: { title: 'T' },
-    files: []
-  })
-  assert.ok(noSignal[0] instanceof AbortSignal, '调用方没给 signal 时也要传一个真实的 AbortSignal')
+  // 没传 signal：这是契约违背（DSH 内部要 throwIfAborted），直接报错而不是伪造一个永不 abort 的 signal
+  await assert.rejects(
+    () => startSessionReview({
+      sessionController: {
+        async create() { return { sessionId: 'session-2' } },
+        async prompt() {}
+      },
+      localRoot: '/repo',
+      fullName: 'alice/app',
+      pull: { title: 'T' },
+      files: []
+    }),
+    (error) => error.code === 'bad-request' && /AbortSignal/.test(error.message)
+  )
 })
 
 test('pr/prepare 路由：origin 是 GitHub 时要走到分支检查（助手必须真的被导入）', async () => {
@@ -344,8 +345,8 @@ test('评论转会话的提示词：带评论原文、先判断、不自动提�
   assert.ok(prompt.includes('需要向评论人确认'), '说不清时要停下来问')
 })
 
-test('创建 PR 的本地信息：远端地址识别、远端分支、是否已推送、base..HEAD 提交', async () => {
-  const { remoteInfoFor, listRemoteBranches, pushedState, branchCommits } = await import('../host/git.js')
+test('创建 PR 的本地信息：远端地址识别、远端分支、是否已同步、base..HEAD 提交', async () => {
+  const { remoteInfoFor, listRemoteBranches, remoteSyncState, branchCommits } = await import('../host/git.js')
   const platform = path.join(tempDir('dgp-pr-platform-'), 'repo.git')
   execFileSync('git', ['init', '--bare', '-q', platform], { stdio: 'pipe' })
   const work = makeRepo(path.join(tempDir('dgp-pr-work-'), 'repo'))
@@ -373,9 +374,10 @@ test('创建 PR 的本地信息：远端地址识别、远端分支、是否已�
   assert.ok(branches.includes('dev'), '应列出远端 dev：' + branches.join(','))
   assert.ok(branches.includes('master'))
 
-  const pushed = await pushedState(work, 'feat/x')
-  assert.equal(pushed.pushed, true, '刚推过，应判定已推送')
-  assert.equal(pushed.local, pushed.remoteSha)
+  const sync = await remoteSyncState(work, 'feat/x')
+  assert.equal(sync.state, 'synced', '刚推过：本地与远端一致')
+  assert.equal(sync.ahead, 0)
+  assert.equal(sync.behind, 0)
 
   const commits = await branchCommits(work, 'origin/master')
   assert.equal(commits.length, 1, 'base..HEAD 应有 1 个提交')
@@ -403,6 +405,7 @@ test('生成 PR 文案：严格 JSON，非法输出直接报错，且错误里�
 test('生成 PR 文案：上限 4096 且压低推理档位（长正文不会被 1024 砍断）', async () => {
   const prText = await import('../host/pr-text.js')
   const { service, seen } = fakeLlm({
+    modelInfo: { reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] } },
     chunks: [
       { type: 'text-delta', text: '{"title":"feat: X","body":"## 变更摘要\\n- a"}' },
       { type: 'finish', reason: { kind: 'stop' } }
@@ -718,6 +721,40 @@ test('路由 fetch：能拿到真实 status（走完整信封链路）', async (
   assert.equal(result.ok, true, 'status 调用失败: ' + JSON.stringify(result))
   assert.equal(typeof result.value.repoRoot, 'string')
   assert.ok(Array.isArray(result.value.files), 'files 应是数组')
+})
+
+test('roots/stats：一次返回所有仓库的改动规模，坏仓库只影响自己那一行', async () => {
+  const repoA = makeRepo(tempDir('dgp-stats-a-'))
+  const repoB = makeRepo(tempDir('dgp-stats-b-'))
+  // A：一个已跟踪文件 +1 行，一个新文件 +2 行；B 保持干净
+  writeFileSync(path.join(repoA, 'hello.txt'), 'hello\nworld\n')
+  writeFileSync(path.join(repoA, 'new.txt'), 'a\nb\n')
+  const missing = path.join(tempDir('dgp-stats-none-'), 'missing')
+
+  const result = await callOk('roots/stats', { paths: [repoA, repoB, missing, repoA] })
+  assert.equal(result.summaries.length, 3, '重复路径只查一次')
+
+  const a = result.summaries.find((item) => item.path === repoA.replace(/\\/g, '/'))
+  assert.equal(a.counts.total, 2, '两个改动文件')
+  assert.equal(a.counts.untracked, 1, '其中一个未跟踪')
+  assert.equal(a.adds, 3, '新增行数 = 已跟踪 1 + 新文件 2')
+  assert.equal(a.dels, 0, '没有删除行')
+
+  const b = result.summaries.find((item) => item.path === repoB.replace(/\\/g, '/'))
+  assert.equal(b.counts.total, 0, '干净仓库没有改动')
+  assert.equal(b.adds, 0)
+  assert.equal(b.dels, 0)
+
+  const bad = result.summaries.find((item) => item.path === missing.replace(/\\/g, '/'))
+  assert.equal(typeof bad.error, 'string', '不存在/不是仓库的路径只在这一行报错')
+  assert.ok(Array.isArray(result.summaries), '一行坏掉不影响整个请求（仍是成功信封）')
+})
+
+test('roots/stats：参数不合法时回 bad-request，不猜默认值', async () => {
+  await callFail('roots/stats', {})
+  await callFail('roots/stats', { paths: [] })
+  await callFail('roots/stats', { paths: ['relative/path'] })
+  await callFail('roots/stats', { paths: Array.from({ length: 33 }, (_item, index) => 'C:/x/' + String(index)) })
 })
 
 test('路由注册是进程内单例：重复 apply 只注册一次，最后一个 disposer 才注销', async () => {
@@ -1046,39 +1083,146 @@ test('status：1.2s 内重复请求命中缓存（内容一致）', async () => 
   assert.equal(third.counts.total, first.counts.total)
 })
 
-test('status.pushed：远端一致=true、本地有新提交=false、没有 origin=null', async () => {
-  // 没有远端：无从判断，不能误报「要推送」
-  const plain = makeRepo(path.join(tempDir('dgp-pushed-none-'), 'repo'))
+test('status.sync：unknown / never-pushed / synced / ahead / behind / diverged / remote-deleted 七种状态', async () => {
+  // unknown：没有远端时无从判断，不能误报「要推送」
+  const plain = makeRepo(path.join(tempDir('dgp-sync-none-'), 'repo'))
   plugin.clearStatusCache()
   const noRemote = await callOk('status', { rootPath: plain })
-  assert.equal(noRemote.pushed, null, '没有 origin 时 pushed 是 null')
+  assert.deepEqual(noRemote.sync, { state: 'unknown', ahead: 0, behind: 0 }, '没有 origin 时是 unknown')
 
-  // 建一个 bare 远端并推一次：远端跟踪引用由 push 更新，此时应判定「已推」
-  const remoteDir = path.join(tempDir('dgp-pushed-remote-'), 'origin.git')
+  const remoteDir = path.join(tempDir('dgp-sync-remote-'), 'origin.git')
   mkdirSync(remoteDir, { recursive: true })
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main'], { cwd: remoteDir, stdio: 'pipe' })
-  const work = makeRepo(path.join(tempDir('dgp-pushed-work-'), 'repo'))
+  const work = makeRepo(path.join(tempDir('dgp-sync-work-'), 'repo'))
+  const git = (...args) => execFileSync('git', args, { cwd: work, stdio: 'pipe' })
+  git('remote', 'add', 'origin', remoteDir)
+
+  // never-pushed：本地有这条分支，远端没有，也没有上游配置
+  git('switch', '-q', '-c', 'feature/local')
+  plugin.clearStatusCache()
+  const never = await callOk('status', { rootPath: work })
+  assert.equal(never.sync.state, 'never-pushed', '从没推过的本地分支')
+
+  // synced：推上去之后一致
+  git('push', '-q', '--set-upstream', 'origin', 'feature/local')
+  plugin.clearStatusCache()
+  const synced = await callOk('status', { rootPath: work })
+  assert.equal(synced.sync.state, 'synced')
+
+  // ahead：本地又多一个提交
+  writeFileSync(path.join(work, 'ahead.txt'), 'x\n')
+  git('add', '-A')
+  git('commit', '-qm', 'ahead commit')
+  plugin.clearStatusCache()
+  const ahead = await callOk('status', { rootPath: work })
+  assert.equal(ahead.sync.state, 'ahead')
+  assert.equal(ahead.sync.ahead, 1)
+  assert.equal(ahead.sync.behind, 0)
+
+  // behind：把本地提交推上去，再从另一个克隆推一个提交，本地 fetch 后就是 behind
+  git('push', '-q', 'origin', 'feature/local')
+  const other = path.join(tempDir('dgp-sync-other-'), 'clone')
+  execFileSync('git', ['clone', '-q', remoteDir, other], { stdio: 'pipe' })
+  const og = (...args) => execFileSync('git', args, { cwd: other, stdio: 'pipe' })
+  og('config', 'user.email', 'other@example.com')
+  og('config', 'user.name', 'Other')
+  og('switch', '-q', 'feature/local')
+  writeFileSync(path.join(other, 'behind.txt'), 'y\n')
+  og('add', '-A')
+  og('commit', '-qm', 'behind commit')
+  og('push', '-q', 'origin', 'feature/local')
+  git('fetch', '-q', 'origin')
+  plugin.clearStatusCache()
+  const behind = await callOk('status', { rootPath: work })
+  assert.equal(behind.sync.state, 'behind')
+  assert.equal(behind.sync.ahead, 0)
+  assert.equal(behind.sync.behind, 1)
+
+  // diverged：本地也提交一笔 → 两边互有对方没有的提交
+  writeFileSync(path.join(work, 'diverge.txt'), 'z\n')
+  git('add', '-A')
+  git('commit', '-qm', 'diverge commit')
+  plugin.clearStatusCache()
+  const diverged = await callOk('status', { rootPath: work })
+  assert.equal(diverged.sync.state, 'diverged')
+  assert.equal(diverged.sync.ahead, 1)
+  assert.equal(diverged.sync.behind, 1)
+
+  // remote-deleted：另起一条分支，推上去后删掉远端（合并后删分支的典型状态）
+  git('switch', '-q', 'main')
+  git('switch', '-q', '-c', 'feature/gone')
+  writeFileSync(path.join(work, 'gone.txt'), 'g\n')
+  git('add', '-A')
+  git('commit', '-qm', 'gone work')
+  git('push', '-q', '--set-upstream', 'origin', 'feature/gone')
+  git('push', '-q', 'origin', '--delete', 'feature/gone')
+  plugin.clearStatusCache()
+  const deleted = await callOk('status', { rootPath: work })
+  assert.equal(deleted.sync.state, 'remote-deleted', '推过又被删：必须和「从没推过」区分开')
+})
+
+test('branch/cleanup：切回默认分支 + 快进 + 删本地分支；未合并则拒绝且不丢代码', async () => {
+  const remoteDir = path.join(tempDir('dgp-clean-remote-'), 'origin.git')
+  mkdirSync(remoteDir, { recursive: true })
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main'], { cwd: remoteDir, stdio: 'pipe' })
+  const work = makeRepo(path.join(tempDir('dgp-clean-work-'), 'repo'))
   const git = (...args) => execFileSync('git', args, { cwd: work, stdio: 'pipe' })
   git('remote', 'add', 'origin', remoteDir)
   git('push', '-q', 'origin', 'main')
+  // 远端 HEAD 是收尾动作判断「默认分支」的唯一依据：显式设好（不靠猜 main/master）
+  git('remote', 'set-head', 'origin', 'main')
+
+  // 1) 已合并的分支：收尾应当「切到 main → 快进 → 删除」，并留下步骤
+  git('switch', '-q', '-c', 'feature/merged')
+  writeFileSync(path.join(work, 'merged.txt'), 'm\n')
+  git('add', '-A')
+  git('commit', '-qm', 'merged work')
+  git('push', '-q', '--set-upstream', 'origin', 'feature/merged')
+  git('switch', '-q', 'main')
+  git('merge', '-q', '--no-ff', 'feature/merged', '-m', 'merge feature')
+  git('push', '-q', 'origin', 'main')
+  git('push', '-q', 'origin', '--delete', 'feature/merged')
+  git('switch', '-q', 'feature/merged')
 
   plugin.clearStatusCache()
-  const justPushed = await callOk('status', { rootPath: work })
-  assert.equal(justPushed.pushed, true, '刚推过：远端与 HEAD 一致')
+  const cleaned = await callOk('branch/cleanup', { rootPath: work })
+  assert.equal(cleaned.deleted, true)
+  assert.equal(cleaned.branch, 'feature/merged')
+  assert.equal(cleaned.base, 'main')
+  assert.equal(cleaned.current, 'main', '收尾后停在默认分支上')
+  assert.ok(cleaned.steps.length >= 4, '步骤要能说清做了什么：' + cleaned.steps.join(' / '))
+  const branchesAfter = execFileSync('git', ['branch', '--format=%(refname:short)'], { cwd: work, stdio: 'pipe' })
+    .toString('utf8').trim().split('\n')
+  assert.equal(branchesAfter.includes('feature/merged'), false, '本地分支应已删除')
 
-  // 本地再提交一笔：远端就旧了
-  writeFileSync(path.join(work, 'hello.txt'), 'local commit\n')
-  git('commit', '-qam', 'local commit')
-  plugin.clearStatusCache()
-  const ahead = await callOk('status', { rootPath: work })
-  assert.equal(ahead.pushed, false, '本地有新提交：要推')
+  // 2) 没合并的分支：切到 main 后删除被 git 拒绝，必须如实报错、保住分支
+  git('switch', '-q', '-c', 'feature/unmerged')
+  writeFileSync(path.join(work, 'unmerged.txt'), 'u\n')
+  git('add', '-A')
+  git('commit', '-qm', 'unmerged work')
+  const refused = await callRoute('branch/cleanup', { rootPath: work })
+  assert.equal(refused.ok, false)
+  assert.equal(refused.error.code, 'branch-unmerged')
+  // 收尾已经切回 main（明确状态），未合并的提交必须还在那条分支上
+  const unmergedContent = execFileSync('git', ['show', 'feature/unmerged:unmerged.txt'], { cwd: work, stdio: 'pipe' })
+    .toString('utf8')
+  assert.equal(unmergedContent, 'u\n', '代码不能被悄悄丢掉')
+  const stillThere = execFileSync('git', ['branch', '--format=%(refname:short)'], { cwd: work, stdio: 'pipe' })
+    .toString('utf8').trim().split('\n')
+  assert.ok(stillThere.includes('feature/unmerged'), '未合并的分支必须保留')
+  const currentAfterRefuse = execFileSync('git', ['branch', '--show-current'], { cwd: work, stdio: 'pipe' })
+    .toString('utf8').trim()
+  assert.equal(currentAfterRefuse, 'main', '已经切回默认分支，状态是明确的')
 
-  // 新建的分支远端根本没有，同样要推（这正是「创建分支后」要提示的场景）
-  git('checkout', '-q', '-b', 'feature/local')
-  plugin.clearStatusCache()
-  const localOnly = await callOk('status', { rootPath: work })
-  assert.equal(localOnly.pushed, false, '远端没有这条分支：要推')
-  assert.equal(localOnly.branch, 'feature/local')
+  // 3) 在默认分支上收尾：明确拒绝
+  const onDefault = await callRoute('branch/cleanup', { rootPath: work })
+  assert.equal(onDefault.error.code, 'on-default-branch')
+
+  // 4) origin/HEAD 未知时不猜默认分支
+  git('remote', 'set-head', 'origin', '--delete')
+  git('switch', '-q', 'feature/unmerged')
+  const noDefault = await callRoute('branch/cleanup', { rootPath: work })
+  assert.equal(noDefault.error.code, 'no-default-branch')
 })
 
 test('branch/push：推到 origin 并设好上游；重复推没事；非快进 / 没远端给可操作错误', async () => {
@@ -1469,6 +1613,24 @@ test('file/write：读到的 hash 能保存成功，返回新 hash', async () =>
   assert.equal(readFileSync(file, 'utf8'), 'one\ntwo\nthree\n', '磁盘内容')
   const again = await callRoute('file/read', { rootPath: dir, path: 'a.txt' })
   assert.equal(again.value.hash, wrote.value.hash, '写入返回的 hash 应与重新读一致')
+})
+
+test('file/write 之后的 status 不能命中保存前的缓存', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-cache-write-'), 'repo'))
+  const before = await callRoute('status', { rootPath: dir })
+  assert.equal(before.ok, true, 'status 失败: ' + JSON.stringify(before))
+  assert.equal(before.value.files.length, 0, '刚提交的仓库应是干净的')
+
+  // 1.2s 的 status 缓存里现在有一份「干净」快照：保存后必须失效
+  const wrote = await callRoute('file/write', {
+    rootPath: dir, path: 'hello.txt', text: 'hello world\n', force: true, eol: 'lf', bom: false
+  })
+  assert.equal(wrote.ok, true, 'file/write 失败: ' + JSON.stringify(wrote))
+
+  const after = await callRoute('status', { rootPath: dir })
+  assert.equal(after.value.files.length, 1, '保存后紧接着的 status 必须看到改动，而不是旧缓存')
+  assert.equal(after.value.files[0].path, 'hello.txt')
+  assert.equal(after.value.files[0].status, 'M')
 })
 
 test('file/write：hash 过期 → conflict（不覆盖别人的改动）', async () => {
@@ -2585,10 +2747,11 @@ function fakeLlm(overrides = {}) {
         ? [{ provider: 'p1', id: 'm1', name: 'Model One' }, { provider: 'p1', id: 'm2', name: 'Model Two' }]
         : [{ provider: 'p2', id: 'm3', name: 'Model Three' }]
     },
+    resolveModelInfo: async (provider, model) => ({ provider, id: model,
+      ...(overrides.modelInfo ?? { reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'high' } }) }),
     prepareCall: async (config, signal, configure) => {
       seen.calls.push(config)
-      // configure 会拿到 (controls, model 元数据)：给一份带推理档位的模型信息
-      const info = overrides.modelInfo ?? { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } }
+      const info = await service.resolveModelInfo(config.provider, config.model)
       return {
         config: { ...configure(config, info), provider: config.provider, model: config.model },
         stream: (options) => {
@@ -2611,6 +2774,62 @@ function fakeLlm(overrides = {}) {
 }
 
 const models = await import('../host/models.js')
+const modelErrors = await import('../host/model-errors.js')
+
+test('模型错误翻译：余额不足给「去充值 / 换模型」，并保留原始错误与 request_id', () => {
+  const raw = 'Insufficient Balance (request_id: b5166035-314c-464a-9eb9-9e3cfd39e354)'
+  const text = modelErrors.describeModelFailure(raw, 'deepseek-account/deepseek-flash')
+  assert.match(text, /余额不足/, '要说清是余额问题：' + text)
+  assert.match(text, /充值/, '要给出下一步：' + text)
+  assert.match(text, /换一个可用模型/, '还要给「换模型」这条出口：' + text)
+  assert.match(text, /deepseek-account\/deepseek-flash/, '带上出问题的模型：' + text)
+  assert.match(text, /Insufficient Balance/, '原始错误要保留，方便排查：' + text)
+  assert.match(text, /request_id/, '上游给的 request_id 不能被抹掉：' + text)
+})
+
+test('模型错误翻译：密钥 / 限流 / 模型不存在 / 上下文超限 / 断网各有对应说法', () => {
+  const target = 'p1/m1'
+  const cases = [
+    ['401 Unauthorized: invalid api key', /密钥无效或已过期/],
+    ['429 Too Many Requests: rate limit exceeded', /限流/],
+    ['404 model not found: gpt-nope', /模型不存在/],
+    ['This model\'s maximum context length is 128000 tokens', /上下文上限/],
+    ['connect ECONNREFUSED 127.0.0.1:11434', /连不上模型服务/]
+  ]
+  for (const [raw, pattern] of cases) {
+    const text = modelErrors.describeModelFailure(raw, target)
+    assert.match(text, pattern, '「' + raw + '」应翻成可读原因，实际：' + text)
+    assert.match(text, /p1\/m1/, '每个提示都带模型：' + text)
+    assert.ok(text.includes(raw), '保留原始错误：' + text)
+  }
+})
+
+test('模型错误翻译：认不出的错误也要说清是哪个模型、原文是什么', () => {
+  const text = modelErrors.describeModelFailure('weird upstream failure 42', 'p2/m3')
+  assert.match(text, /模型服务返回了错误/, text)
+  assert.match(text, /p2\/m3/, text)
+  assert.match(text, /weird upstream failure 42/, text)
+})
+
+test('generateCommitMessage：余额不足时抛出的是人话，不是上游原文', async () => {
+  const { service } = fakeLlm({
+    chunks: [
+      { type: 'text-delta', text: '' },
+      { type: 'finish', reason: { kind: 'error', failure: { message: 'Insufficient Balance (request_id: abc123)' } } }
+    ]
+  })
+  await assert.rejects(
+    () => models.generateCommitMessage(service, { provider: 'p1', model: 'm1' }, 'diff'),
+    (error) => {
+      assert.equal(error.code, 'model-failed')
+      assert.match(error.message, /余额不足/)
+      assert.match(error.message, /充值/)
+      assert.match(error.message, /Insufficient Balance/, '原文要留着')
+      assert.ok(!/^模型返回了错误/.test(error.message), '不要再把「模型返回了错误（provider/model）」当开头')
+      return true
+    }
+  )
+})
 
 test('models.listModels：目录来自 llm 服务，provider/模型名都取到', async () => {
   const { service } = fakeLlm()
@@ -2620,6 +2839,10 @@ test('models.listModels：目录来自 llm 服务，provider/模型名都取到'
   assert.equal(catalog.models[0].providerLabel, 'P1', 'provider 名来自路由的 name')
   assert.equal(catalog.models[0].modelLabel, 'Model One', '模型名来自记录本身')
   assert.equal(catalog.models[1].modelLabel, 'Model Two')
+  assert.equal(catalog.models[0].reasoning.supported, true)
+  assert.equal(catalog.models[0].reasoning.toggleable, true)
+  assert.deepEqual(catalog.models[0].reasoning.efforts.map((effort) => effort.id), ['off', 'low', 'high'])
+  assert.equal(catalog.models[0].reasoning.defaultEffort, 'high')
 })
 
 test('models.listModels：provider 路由缺 id/name 是契约违背，直接报错而不是跳过', async () => {
@@ -2666,6 +2889,27 @@ test('models.generateCommitMessage：拼 text-delta 得到说明，并把 diff �
   assert.equal(seen.options.messages[0].content[0].text, 'diff --git a/x b/x')
   assert.match(seen.options.system, /提交说明/)
   assert.equal(seen.calls[0].maxTokens > 0, true, '要带输出上限')
+})
+
+test('提交生成：默认 OFF 使用 off；开启后传实际 effort，默认不会回落 off', async () => {
+  const { service, seen } = fakeLlm({ modelInfo: { reasoning: { efforts: [
+    { id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'max', name: 'Max' }
+  ], defaultEffort: 'off' } } })
+  const pair = { provider: 'p1', model: 'm1' }
+  await models.generateCommitMessage(service, pair, 'diff')
+  assert.equal(seen.options.reasoningEffort, 'off')
+  assert.equal(seen.options.maxTokens, 1024)
+  await models.generateCommitMessage(service, pair, 'diff', { commitThinking: true, commitReasoningEffort: 'max' })
+  assert.equal(seen.options.reasoningEffort, 'max')
+  assert.equal(seen.options.maxTokens, 16384)
+  await models.generateCommitMessage(service, pair, 'diff', { commitThinking: true })
+  assert.equal(seen.options.reasoningEffort, 'low')
+  await assert.rejects(() => models.generateCommitMessage(service, pair, 'diff', { commitThinking: true, commitReasoningEffort: 'high' }), (e) => e.code === 'bad-request')
+  const required = fakeLlm({ modelInfo: { reasoning: { efforts: [{ id: 'low', name: 'Low' }] } } })
+  await assert.rejects(() => models.generateCommitMessage(required.service, pair, 'diff'), (e) => e.code === 'bad-request' && /无法关闭思考/.test(e.message))
+  const absent = fakeLlm({ modelInfo: {} })
+  await models.generateCommitMessage(absent.service, pair, 'diff')
+  assert.equal(absent.seen.options.reasoningEffort, undefined)
 })
 
 test('models.generateCommitMessage：finish 是错误时抛 model-failed，不返回半截文本', async () => {
@@ -2759,6 +3003,11 @@ test('models 设置：结构不对就是坏配置，不静默当成「未设置�
   writeFileSync(file, JSON.stringify({ version: 1, commitModel: { provider: 'p1' } }), 'utf8')
   await assert.rejects(() => models.readSettings(), (error) => error.code === 'bad-config')
 
+  writeFileSync(file, JSON.stringify({ commitThinking: 'false' }), 'utf8')
+  await assert.rejects(() => models.readSettings(), (error) => error.code === 'bad-config')
+  writeFileSync(file, JSON.stringify({ commitReasoningEffort: [] }), 'utf8')
+  await assert.rejects(() => models.readSettings(), (error) => error.code === 'bad-config')
+
   writeFileSync(file, '[]', 'utf8')
   await assert.rejects(() => models.readSettings(), (error) => error.code === 'bad-config')
 
@@ -2771,6 +3020,12 @@ test('models 设置：结构不对就是坏配置，不静默当成「未设置�
 test('models 设置：存的是 provider/model 对，读回来一致，null 表示清空', async () => {
   assert.equal((await models.readSettings()).commitModel, null, '没有设置文件时是 null')
   assert.equal((await models.readSettings()).reviewModel, null, '审阅模型同样默认为 null')
+  assert.equal((await models.readSettings()).commitThinking, false)
+  assert.equal((await models.readSettings()).commitReasoningEffort, null)
+  await Promise.all([models.writeSettings({ commitThinking: true }), models.writeSettings({ commitReasoningEffort: 'high' })])
+  assert.equal((await models.readSettings()).commitThinking, true)
+  assert.equal((await models.readSettings()).commitReasoningEffort, 'high')
+  await models.writeSettings({ commitThinking: false, commitReasoningEffort: null })
 
   await models.writeSettings({ commitModel: { provider: 'p1', model: 'm1' } })
   assert.deepEqual((await models.readSettings()).commitModel, { provider: 'p1', model: 'm1' })
@@ -2840,6 +3095,16 @@ test('apply 注入 llm 后：models/list 走真实 llm，settings/set 校验模�
   assert.equal(good.ok, true, JSON.stringify(good))
   assert.deepEqual(good.value.commitModel, { provider: 'p1', model: 'm1' })
   assert.deepEqual((await call('settings/get', {})).value.commitModel, { provider: 'p1', model: 'm1' })
+  assert.equal(good.value.commitThinking, false)
+  assert.equal(good.value.commitReasoningEffort, null)
+  for (const payload of [{ commitThinking: 'true' }, { commitReasoningEffort: 1 }, { commitReasoningEffort: 'max' }, { commitReasoningEffort: 'off' }]) {
+    assert.equal((await call('settings/set', payload)).ok, false, JSON.stringify(payload))
+  }
+  const thinking = await call('settings/set', { commitThinking: true, commitReasoningEffort: 'high' })
+  assert.equal(thinking.ok, true, JSON.stringify(thinking))
+  assert.equal((await call('settings/get', {})).value.commitThinking, true)
+  assert.equal((await call('settings/get', {})).value.commitReasoningEffort, 'high')
+  await call('settings/set', { commitThinking: false, commitReasoningEffort: null })
 })
 
 test('未知端点没有路由；畸形 payload 返回错误信封，绝不抛出', async () => {

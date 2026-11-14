@@ -142,7 +142,7 @@ export function runGit(cwd, args, options = {}) {
         finish(reject, new GitError('git-missing', '系统里找不到 git 可执行文件'))
         return
       }
-      finish(reject, new GitError('spawn-failed', error.message, { args }))
+      finish(reject, new GitError('spawn-failed', error.message, { args: redactArgs(args) }))
     })
 
     child.on('close', (code) => {
@@ -161,7 +161,7 @@ export function runGit(cwd, args, options = {}) {
       finish(reject, new GitError(
         'git-failed',
         reason === '' ? `git ${args[0]} 以退出码 ${code} 结束` : reason,
-        { args, code, stderr, stdout: stdoutText.slice(0, DETAIL_LIMIT) }
+        { args: redactArgs(args), code, stderr, stdout: stdoutText.slice(0, DETAIL_LIMIT) }
       ))
     })
 
@@ -179,6 +179,20 @@ export function runGit(cwd, args, options = {}) {
  */
 function decodeGitOutput(buffer) {
   return buffer.toString('utf8')
+}
+
+/**
+ * 报错里不能出现凭据。
+ *
+ * 深度审阅 / 克隆用 `-c http.extraHeader=Authorization: Basic <token>` 传凭据，
+ * 而 GitError.details.args 会原样回给客户端（还会写进日志）—— 一条失败命令就把令牌抄进 DevTools。
+ * 这里只对凭据那一个参数打码，其余参数照留（排错仍然需要看命令行）。
+ */
+function redactArgs(args) {
+  const list = Array.isArray(args) ? args : []
+  return list.map((arg) => (typeof arg === 'string' && arg.toLowerCase().startsWith('http.extraheader=')
+    ? 'http.extraHeader=***'
+    : arg))
 }
 
 // ---------------------------------------------------------------------------
@@ -296,14 +310,21 @@ function countStatus(files) {
 /**
  * 读取工作区状态。
  *
- * `pushed` 回答「这条分支的最新提交在远端有没有」：
- *   true  = 远端同名引用与 HEAD 一致（不用推）
- *   false = 远端没有这条分支、或远端比本地旧（要推）
- *   null  = 无从判断：没有 origin、游离 HEAD、空仓库
- * 判断必须比对远端跟踪引用的 sha，而不是「有没有 upstream」——`git push origin x`（不带 -u）
- * 推成功了也不会有 upstream，那时不该继续提示用户去推。
+ * `sync` 回答「本地这条分支与远端同名分支现在是什么关系」。它是**一个状态**，不是布尔：
+ *   unknown       无从判断（没有 origin / 游离 HEAD / 空仓库）
+ *   never-pushed  本地没有对应的远端引用，也没记录过上游 —— 从没推过
+ *   remote-deleted 本地还留着上游配置，但远端引用没了 —— 推过，后来被删了（PR 合并后删分支是常态）
+ *   synced        HEAD 与远端引用一致
+ *   ahead         本地有远端没有的提交（要推）
+ *   behind        远端有本地没有的提交（要拉，不是要推）
+ *   diverged      两边都有对方没有的提交（先拉取/合并，不能直接推）
  *
- * @returns {{ repoRoot, head: object, files: FileEntry[], counts: object, truncated: boolean, pushed: boolean|null }}
+ * 为什么必须区分：`ahead` 和 `never-pushed` 该提示「去推送」，而 `remote-deleted` 不能 ——
+ * 对已合并删除的分支再推一次会把远端分支重新建出来；`behind` 更不该提示推送。
+ * 判据是远端跟踪引用的差集，而不是「有没有 upstream」：`git push origin x`（不带 -u）
+ * 推成功了也没有 upstream，那时不该提示去推。
+ *
+ * @returns {{ repoRoot, head: object, sync: object, files: FileEntry[], counts: object, truncated: boolean }}
  */
 export async function readStatus(repoRoot, options = {}) {
   const { withLineCounts = true, signal } = options
@@ -314,24 +335,57 @@ export async function readStatus(repoRoot, options = {}) {
   ])
   const { files, truncated } = entries
 
-  // 行数统计：脏文件很多时跳过，保证面板打开速度。命令失败也不影响主流程。
-  if (withLineCounts && files.length > 0 && files.length <= 400) {
+  // 已跟踪文件用两次批量 numstat；仓库较大时也保留逐文件统计。
+  if (withLineCounts && files.length > 0) {
     await attachLineCounts(repoRoot, files, signal)
   }
 
-  const pushed = remoteUrl === null || head.branch === null || head.head === null
-    ? null
-    : (await pushedState(repoRoot, head.branch, 'origin', { signal })).pushed
+  const sync = remoteUrl === null || head.branch === null || head.head === null
+    ? { state: 'unknown', ahead: 0, behind: 0 }
+    : await remoteSyncState(repoRoot, head.branch, 'origin', { signal })
 
   return {
     repoRoot,
     ...head,
     remoteUrl,
-    pushed,
+    sync,
     files,
     counts: countStatus(files),
     truncated
   }
+}
+
+/**
+ * 一批工作区条目的「代码量」：增删行数与二进制文件数。
+ *
+ * 只统计已知行数的文件（`adds/dels === -1` 表示平台没给数字，不编 0 去糊弄读者）。
+ */
+export function summarizeFiles(files) {
+  let adds = 0
+  let dels = 0
+  let binary = 0
+  for (const file of files) {
+    if (file.binary === true) {
+      binary += 1
+      continue
+    }
+    if (file.adds > 0) adds += file.adds
+    if (file.dels > 0) dels += file.dels
+  }
+  return { adds, dels, binary }
+}
+
+/**
+ * 给「储存库」列表用的轻量汇总：只要文件数与增删行数。
+ *
+ * 与 `readStatus` 共用同一套 porcelain 解析与行数统计，但**不读 HEAD / 远端 / sync** ——
+ * 列表会在每次刷新时对每个仓库各查一次，多出来的 git 调用纯属浪费。
+ */
+export async function readStatusSummary(repoRoot, options = {}) {
+  const { signal } = options
+  const { files, truncated } = await readWorkingEntries(repoRoot, signal)
+  await attachLineCounts(repoRoot, files, signal)
+  return { counts: countStatus(files), ...summarizeFiles(files), truncated }
 }
 
 /** 仓库的 git 目录（工作树里的 .git，或裸仓库本身）。 */
@@ -498,21 +552,24 @@ async function attachLineCounts(repoRoot, files, signal) {
     applyNumstat(byPath, staged, true)
   } catch { /* ignore */ }
 
-  // 未跟踪文件：小文件直接数行，让面板也能显示 +N。
-  let budget = 40
-  await Promise.all(files.map(async (file) => {
-    if (!file.untracked || budget <= 0) return
-    budget -= 1
-    try {
-      const abs = path.join(repoRoot, file.path)
-      const info = await stat(abs)
-      if (!info.isFile() || info.size > 512 * 1024) return
-      const buffer = await readFile(abs)
-      if (buffer.includes(0)) { file.binary = true; return }
-      const text = buffer.toString('utf8')
-      file.adds = text.length === 0 ? 0 : text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
-      file.dels = 0
-    } catch { /* ignore */ }
+  // 未跟踪文件：限制并发而非文件总数，避免第 41 个文件开始丢失统计。
+  const untracked = files.filter((file) => file.untracked)
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(8, untracked.length) }, async () => {
+    while (next < untracked.length) {
+      if (signal?.aborted) return
+      const file = untracked[next++]
+      try {
+        const abs = path.join(repoRoot, file.path)
+        const info = await stat(abs)
+        if (!info.isFile() || info.size > 512 * 1024) continue
+        const buffer = await readFile(abs)
+        if (buffer.includes(0)) { file.binary = true; continue }
+        const text = buffer.toString('utf8')
+        file.adds = text.length === 0 ? 0 : text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
+        file.dels = 0
+      } catch { /* ignore */ }
+    }
   }))
 }
 
@@ -521,6 +578,11 @@ function applyNumstat(byPath, entries, stagedOnly) {
     const file = byPath.get(item.path)
     if (!file) continue
     if (stagedOnly ? !file.staged : !file.unstaged) continue
+    file[stagedOnly ? 'stagedStats' : 'unstagedStats'] = {
+      adds: item.binary ? -1 : item.adds,
+      dels: item.binary ? -1 : item.dels,
+      binary: item.binary
+    }
     file.binary = file.binary || item.binary
     if (item.binary) continue
     file.adds = Math.max(file.adds, 0) + item.adds
@@ -1470,6 +1532,85 @@ export async function pushBranch(repoRoot, options = {}) {
   return { branch: after.branch, head: after.head, upstream: after.upstream, output: result.stderr }
 }
 
+/** 远端的默认分支（`refs/remotes/origin/HEAD` 指向的那个）。没配置就是 null，不去猜 main/master。 */
+async function remoteDefaultBranch(repoRoot, remoteName, signal) {
+  const result = await runGit(repoRoot, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/' + remoteName + '/HEAD'], {
+    signal,
+    allowFailure: true
+  })
+  if (result.code !== 0) return null
+  const name = result.stdout.toString('utf8').trim()
+  const prefix = remoteName + '/'
+  return name.startsWith(prefix) && name.length > prefix.length ? name.slice(prefix.length) : null
+}
+
+/**
+ * 收尾一条「远端分支已被删除」的本地分支。
+ *
+ * 合并后的标准动作是一条链：**取远程更新（带 prune）→ 切到默认分支 → 快进 → 删掉这条本地分支**。
+ * 中间任何一步都不做强行动作：
+ *  - 默认分支未知（origin/HEAD 缺失）就报错让人先「获取远程更新」，不去猜 main；
+ *  - 本地默认分支与远端分叉就停下（不产生合并提交），并说清卡在哪一步；
+ *  - 删除用 `git branch -d`：没合并进默认分支会被 git 拒绝，此时把「已切到默认分支、未删分支」的
+ *    真实状态告诉用户，要不要强制删除由他自己决定 —— 收尾不能把没合并的代码悄悄丢掉。
+ *
+ * @returns {Promise<{branch: string, base: string, deleted: true, current: string|null, steps: string[]}>}
+ */
+export async function cleanupDeletedBranch(repoRoot, options = {}) {
+  const { signal } = options
+  const head = await readHead(repoRoot)
+  if (head.branch === null || head.detached === true) {
+    throw new GitError('detached-head', '当前不在任何分支上：先切到要收尾的那个分支')
+  }
+  if ((await readRemoteUrl(repoRoot, { signal })) === null) {
+    throw new GitError('no-remote', '这个仓库没有配置远端（origin）：没有远端分支，也就没有可收尾的分支')
+  }
+  const branch = head.branch
+  const base = await remoteDefaultBranch(repoRoot, 'origin', signal)
+  if (base === null) {
+    throw new GitError('no-default-branch', '不知道远端的默认分支（origin/HEAD 不存在）：先在分支菜单点「获取远程更新」再试')
+  }
+  if (base === branch) {
+    throw new GitError('on-default-branch', '当前就在默认分支 ' + branch + ' 上：这里没有可收尾的分支')
+  }
+
+  const steps = []
+  await runGit(repoRoot, ['fetch', '--prune', '--no-tags', 'origin'], { signal, timeoutMs: 5 * 60 * 1000 })
+  steps.push('获取远程更新（--prune）')
+
+  if (await localBranchExists(repoRoot, base, signal)) {
+    await runGit(repoRoot, ['switch', base], { signal })
+    steps.push('切换到 ' + base)
+  } else {
+    await runGit(repoRoot, ['switch', '-c', base, '--track', 'origin/' + base], { signal })
+    steps.push('创建并切换到 ' + base + '（跟踪 origin/' + base + '）')
+  }
+
+  try {
+    await runGit(repoRoot, ['merge', '--ff-only', 'origin/' + base], { signal })
+    steps.push('快进到 origin/' + base)
+  } catch {
+    throw new GitError('not-fast-forward',
+      '已切到 ' + base + '，但本地 ' + base + ' 与 origin/' + base + ' 已经分叉，无法快进：'
+      + '先自己把 ' + base + ' 处理好，再回来删除 ' + branch + '。', { steps })
+  }
+
+  const removed = await runGit(repoRoot, ['branch', '-d', branch], { signal, allowFailure: true })
+  if (removed.code !== 0) {
+    const output = removed.stderr !== '' ? removed.stderr : removed.stdout.toString('utf8').trim()
+    if (/not fully merged/i.test(output)) {
+      throw new GitError('branch-unmerged',
+        '已切到 ' + base + '，但 ' + branch + ' 还有没合并进 ' + base + ' 的提交，所以没有删它。'
+        + '确认不要了，到分支菜单里用「强制删除」。', { branch, base, steps })
+    }
+    throw new GitError('git-failed', '删除本地分支失败：' + (output === '' ? 'git 退出码 ' + removed.code : output), { steps })
+  }
+  steps.push('删除本地分支 ' + branch)
+
+  const after = await readHead(repoRoot)
+  return { branch, base, deleted: true, current: after.branch, steps }
+}
+
 /* --------------------------------------------------------- 拉取当前分支 */
 
 /**
@@ -1552,16 +1693,39 @@ export async function listRemoteBranches(repoRoot, remoteName = 'origin', option
     .map((line) => line.slice(remoteName.length + 1))
 }
 
-/** 本地 HEAD 是否已经推到了远端同名分支（SHA 相同才算）。 */
-export async function pushedState(repoRoot, branch, remoteName = 'origin', options = {}) {
-  const head = await runGit(repoRoot, ['rev-parse', 'HEAD'], { signal: options.signal })
-  const local = head.stdout.toString('utf8').trim()
-  const remote = await runGit(repoRoot, ['rev-parse', '--verify', '--quiet', 'refs/remotes/' + remoteName + '/' + branch], {
-    allowFailure: true,
-    signal: options.signal
-  })
-  const remoteSha = remote.code === 0 ? remote.stdout.toString('utf8').trim() : ''
-  return { local, remoteSha, pushed: remoteSha !== '' && remoteSha === local }
+/**
+ * 本地分支与远端同名分支的关系（见 readStatus 的注释）。
+ *
+ * @returns {Promise<{state: 'synced'|'ahead'|'behind'|'diverged'|'never-pushed'|'remote-deleted', ahead: number, behind: number}>}
+ */
+export async function remoteSyncState(repoRoot, branch, remoteName = 'origin', options = {}) {
+  const { signal } = options
+  const ref = 'refs/remotes/' + remoteName + '/' + branch
+  const remote = await runGit(repoRoot, ['rev-parse', '--verify', '--quiet', ref], { signal, allowFailure: true })
+
+  if (remote.code !== 0) {
+    // 远端没有这个引用。区分「从没推过」与「推过但被删了」的唯一本地依据是上游配置：
+    // `git push -u` / `branch --set-upstream` 会写 branch.<name>.merge，删远端分支不会清它。
+    const configured = await runGit(repoRoot, ['config', '--get', 'branch.' + branch + '.merge'], {
+      signal,
+      allowFailure: true
+    })
+    const hasUpstream = configured.code === 0 && configured.stdout.toString('utf8').trim() !== ''
+    return { state: hasUpstream ? 'remote-deleted' : 'never-pushed', ahead: 0, behind: 0 }
+  }
+
+  // 一条命令同时拿到双向差集：left = 远端独有（behind），right = 本地独有（ahead）
+  const counts = await runGit(repoRoot, ['rev-list', '--count', '--left-right', ref + '...HEAD'], { signal })
+  const [left, right] = counts.stdout.toString('utf8').trim().split(/\s+/)
+  const behind = Number.parseInt(left, 10)
+  const ahead = Number.parseInt(right, 10)
+  if (!Number.isInteger(behind) || !Number.isInteger(ahead)) {
+    throw new GitError('git-failed', '无法解析与远端的差距：' + JSON.stringify({ left, right }))
+  }
+  if (ahead === 0 && behind === 0) return { state: 'synced', ahead, behind }
+  if (behind === 0) return { state: 'ahead', ahead, behind }
+  if (ahead === 0) return { state: 'behind', ahead, behind }
+  return { state: 'diverged', ahead, behind }
 }
 
 /** base...HEAD 的 patch 文本（给生成 PR 描述用；超长由调用方截断）。 */

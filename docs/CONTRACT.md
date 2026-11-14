@@ -28,10 +28,17 @@
 | `src/platform.js` | `h, Fragment, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, setPluginContext, getPluginContext` | 唯一接触 react/宿主的文件 |
 | `src/i18n.js` | `zh, en, NS` | 内联字典（`t` 由宿主 locale 注入，插件不自造） |
 | `src/styles.js` | `CSS, ensureStyles()` | 全部样式（注入 `<style>`） |
-| `src/api.js` | `resolveProject, readStatus, readDiff, readFile, writeFile, listDirectory, addRoot, removeRoot, describeError` | Host RPC 封装（超时/取消/错误归一） |
-| `src/store.js` | `MODE, MODES, usePref, useLatestGuard, readRemoteAccount, saveRemoteAccount` | 显示偏好持久化 + 每个工作区记住的远端账号 + 请求序号守护 |
+| `src/api.js` | 按端点各一个函数（`resolveProject` … `remotePullFile`），加上 `describeError` | Host RPC 封装（超时/取消/错误归一）。导出清单以文件为准：**每个端点一个函数**，不再逐条抄在这里（抄过一版，很快就漏了 40 多个） |
+| `src/store.js` | `MODE, usePref, useLatestGuard, readRemoteAccount, saveRemoteAccount` | 显示偏好持久化（`usePref`：`changesView` / `untrackedMode` / `postCommitPush` 等，其中 `postCommitPush` 默认 `true`；值变化后写一次 localStorage，不在 setter 的 updater 里写）+ 每个工作区记住的远端账号 + 请求序号守护 |
 | `src/util/paths.js` | `basename, dirname, segments, parentChain, naturalCompare, buildTree, compactChain, flattenTree, collectDirPaths, matchesFilter, formatCount` | 纯函数，必须可单测 |
 | `src/util/diff.js` | `buildUnifiedRows, buildSplitRows, highlightWordDiff, diffStats, budgetRows, pairChangedRuns, MAX_DIFF_ROWS` | **纯函数**，必须可单测 |
+| `src/util/resource-cache.js` | `readSnapshot, writeSnapshot, dropSnapshot, snapshotAge, clearSnapshots` | 首屏快照（内存、模块级、有上限）：切走再切回来先渲染旧画面、后台刷新；只存成功结果 |
+| `src/util/draft-cache.js` | `readDrafts, writeDraft, dropDraft, clearDrafts` | 编辑器草稿（内存、模块级、按仓库根 + 路径分桶、条数/字符双上限）：切页签卸载组件后未保存的改动仍在 |
+| `src/ui/useTreeCursor.js` | `useTreeCursor` | 「变更」树与「文件」树共用的键盘游标（↑↓ / Enter / ←→ / 滚进可视区 / 焦点收尾） |
+| `src/ui/useTimedNotice.js` | `useTimedNotice` | 操作结果提示的唯一定时规则：`info` 过 ttl 自动消失，`warn` / `error` 留着等用户处理 |
+| `src/ui/useAutoGrow.js` | `clampHeight, useAutoGrow` | 多行输入框按实测 `scrollHeight` 长高（提交框与创建 PR 描述框共用），不再按字符数估算 |
+| `src/ui/useSnapshotResource.js` | `useSnapshotResource` | 远端详情 / 分支全貌 / PR 详情 / 当前分支 PR 卡片共用的快照资源：序号守护、快照、loading 语义一处定义 |
+| `src/ui/useOpenPanel.js` | `useOpenPanel` | 两个「打开 Git 页签」入口共用的失败态：同步抛错 → 标红 + 5 秒复位 |
 | `src/ui/Icon.js` | `Icon` 组件 + `StatusLetter` | 内联 SVG 图标（不依赖 primitives） |
 | `src/ui/Menu.js` | `PopupMenu, MenuItem, MenuLabel, MenuSeparator` | 轻量下拉菜单 |
 | `src/components/States.js` | `EmptyState, LoadingState, ErrorState, SkeletonRows, InlineNote` | 空/加载/错误/骨架 |
@@ -39,12 +46,21 @@
 | `src/components/FileEditor.js` | `FileEditor` | 文件模式右栏：可编辑 textarea + 行号 + 脏/冲突态 + 不可编辑占位态 |
 | `src/components/ChangesList.js` | `ChangesList` | 「变更」模式的树/列表 |
 | `src/components/FileTree.js` | `FileTree` | 「文件」模式的浏览树 |
-| `src/components/RootPicker.js` | `RootPicker` | 仓库/根切换器 + 添加外部仓库 |
-| `src/components/GitPanelSurface.js` | `GitPanelSurface` | 两个外壳（会话视图 tab / 右侧栏 tab）共用的转发层 |
+| `src/components/RepoList.js` | `RepoList` | 「储存库」列表：仓库行 + 改动规模（文件数 / +N −N）+ 分支按钮 + 分支菜单（切换 / 新建 / 拉取 / 隐藏 / 移除） |
+| `src/components/AddRootForm.js` | `AddRootForm` | 添加本机目录的内联表单（粘贴带引号的路径会自动去引号） |
+| `src/components/GitPanelSurface.js` | `GitPanelSurface` | 右侧栏 tab 的转发层（只注册 `sidebar.right.pane.tab` 一处） |
 | `src/components/Panel.js` | `Panel` | 根布局：工具条 + 分栏 + 键盘 + 拖拽 |
+| `src/components/CommitBox.js` | `CommitBox` | 提交框：说明输入 + 生成 + 提交 + 创建 PR |
+| `src/components/CreatePullForm.js` | `CreatePullForm` | 创建 PR 表单（目标分支 / 模型生成 / 同步阻断提示） |
+| `src/components/PullStatusCard.js` | `PullStatusCard` | 变更页签顶部「我的 PR 状态」卡片 |
+| `src/components/PullDetail.js` | `PullDetail` | 单个 PR：门禁 / 变动文件 / AI 审阅 / 评论 / 审查 / 合并 |
 | `src/components/RemotePane.js` | `RemotePane` | 「远端」页签左栏：账号 chip + 仓库列表 + 行内拉取 |
 | `src/components/RemoteDetail.js` | `RemoteDetail` | 「远端」页签右栏：仓库概况 + 分支区 + Issues + PR |
 | `src/components/BranchList.js` | `BranchList` | 远端仓库详情的「分支」区：本地/远端状态 + 行内操作（切换 / 建跟踪分支 / 复制 / 打开网页 / 删除本地 / 删除远端） |
+| `src/components/SettingsView.js` | `SettingsView` | 设置页：两个模型 / 显示偏好 / 代码托管账号 |
+| `src/components/HeaderAction.js` | `GitHeaderAction` | 会话标题栏最右侧的「变更」按钮 |
+| `src/components/SidebarGitEntry.js` | `SidebarGitEntry` | 左侧栏底部「代码坞」入口（收起时只剩图标） |
+| `src/components/PushHint.js` | `PushHint` | 「分支未推送 / 远端已删除」的常驻提示条（推送 / 收尾） |
 | `src/index.js` | `apply(ctx)`、`name`、`inject` | 注册入口 |
 
 ## 2. 数据契约（Host RPC 返回的形状；端点清单见 `docs/ARCHITECTURE.md` §3.2）
@@ -73,7 +89,15 @@ interface FileEntry {
 interface StatusResult {
   repoRoot: string; branch: string | null; head: string | null; detached: boolean
   upstream: string | null; ahead: number; behind: number
-  pushed: boolean | null          // 远端有没有 HEAD 这个提交：true=一致、false=要推、null=无从判断（无 origin / 游离 HEAD / 空仓库）
+  sync: {                          // 本地分支与远端同名分支的关系：一个状态，不是布尔
+    state: 'unknown' | 'never-pushed' | 'remote-deleted' | 'synced' | 'ahead' | 'behind' | 'diverged'
+    // unknown        没有 origin / 游离 HEAD / 空仓库，无从判断
+    // never-pushed   远端没有对应引用，本地也没有上游配置（branch.<name>.merge）
+    // remote-deleted 远端没有对应引用，但本地还留着上游配置 —— 推过、后来被删了（PR 合并后删分支是常态）
+    // synced / ahead / behind / diverged  远端引用存在，按 rev-list --count --left-right 的双向差集判定
+    ahead: number                  // 本地独有提交数（state 为 ahead / diverged 时 > 0）
+    behind: number                 // 远端独有提交数（state 为 behind / diverged 时 > 0）
+  }
   files: FileEntry[]
   counts: { total: number; staged: number; unstaged: number; untracked: number; conflicted: number }
   truncated: boolean
@@ -157,7 +181,35 @@ interface BranchPushRequest { rootPath: string }   // 只推当前分支、只�
 interface BranchPushResult {
   branch: string; head: string | null; upstream: string | null; output: string
 }
+
+interface BranchCleanupRequest { rootPath: string }  // 收尾「远端分支已被删除」的**当前**本地分支，没有别的参数
+
+interface BranchCleanupResult {
+  branch: string                  // 被收尾的本地分支
+  base: string                    // 切回去的远端默认分支（来自 refs/remotes/origin/HEAD，不猜 main/master）
+  deleted: true
+  current: string | null          // 收尾完成后的当前分支（正常就是 base）
+  steps: string[]                 // 已完成的步骤；失败时随 error.details.steps 一起返回，界面如实显示卡在哪
+}
+
+interface RootStatsSummary {              // roots/stats 的一项：一个仓库的改动规模
+  path: string                            // 请求里原样带回的绝对路径（界面按它匹配储存库行）
+  counts?: { total: number; staged: number; unstaged: number; untracked: number; conflicted: number }
+  adds?: number                           // 已知的新增行数（二进制/未知不计入，不是 0）
+  dels?: number
+  binary?: number                         // 其中二进制文件数
+  truncated?: boolean                     // status 输出被截断（仓库过大）
+  error?: string                           // 这个仓库读失败：只有它这一行显示标记，其它行不受影响
+}
+
+interface RootsStatsResult { summaries: RootStatsSummary[] }
 ```
+
+`roots/stats` 的入参是绝对路径数组（重复路径按一次算，最多 32 个）：宿主对每个仓库只跑
+工作区解析与行数统计，不做 HEAD / 远端 / sync；能命中 status 缓存时直接摊平复用。
+**单个仓库失败（不存在 / 不是仓库 / 裸仓库 / git 报错）只体现在它自己的 `error` 字段里**，
+整个请求仍是成功信封 —— 一行坏掉不该让整张「储存库」列表失去数字。二进制文件只计入 `binary`，
+`adds` / `dels` 不编 0；`truncated` 表示该仓库的 status 输出被截断。
 
 `branches/list` 的入参没变，仍是 `{rootPath}`（裸仓库明确报 `not-a-repository`）：多返回一个 `state`，
 分支菜单就不必再调一次 `status`。`branch/create` 的入参见 `BranchCreateRequest`；它的错误码如下
@@ -177,6 +229,22 @@ interface BranchPushResult {
 凭据用本机 git（与 `branch/pull` 的 fetch 同口径，插件不掺和令牌）。错误码：
 `detached-head` / `unborn` / `no-remote` / `git-auth-failed`（远端拒绝：本机没有可用凭据）/
 `not-fast-forward`（远端有你没有的提交，提示先「拉取当前分支最新代码」）。
+它**只执行推送、不判断此刻该不该推**：`remote-deleted` 该收尾而不是重新推送（见 `status.sync`），
+这层判断在界面与 `pr/create`，端点本身不猜。
+
+`branch/cleanup`（`BranchCleanupRequest` → `BranchCleanupResult`）收尾「远端分支已被删除」的当前本地分支，
+一条链做完：`fetch --prune origin` → 切到远端默认分支（`refs/remotes/origin/HEAD`；本地没有就
+`switch -c <base> --track origin/<base>`）→ `merge --ff-only origin/<base>` → `git branch -d <branch>`。
+不做强删（`-D` 只在用户到分支菜单里显式点「强制删除」时用）。错误码：
+
+| code | 场景 |
+|---|---|
+| `detached-head` | 当前不在任何分支上 |
+| `no-remote` | 仓库没有配置 origin |
+| `no-default-branch` | `origin/HEAD` 缺失（不去猜 main/master）：先「获取远程更新」 |
+| `on-default-branch` | 当前就在默认分支上，没有可收尾的分支 |
+| `not-fast-forward` | 已切到默认分支，但本地 `base` 与 `origin/<base>` 分叉、无法快进；`details.steps` 给出已完成步骤 |
+| `branch-unmerged` | 已切回默认分支，但待删分支有未合并提交，拒绝删除；`details` 含 `{ branch, base, steps }` |
 
 ## 3. 组件 props 契约（由 `Panel.js` 传入，禁止改动形状）
 
@@ -185,32 +253,38 @@ interface BranchPushResult {
 {
   status,            // StatusResult | null
   loading,           // boolean
-  error,             // string | null
+  view,              // 'list' | 'tree'
+  untrackedMode,     // 'merge' | 'separate'
   selectedPath,      // string | null
-  onSelect,          // (entry: FileEntry) => void
+  onSelect,          // (entry: FileEntry, groupKey: string) => void
   filter,            // string
-  onFilterChange,    // (value: string) => void
   collapsedGroups,   // { staged?: boolean, unstaged?: boolean, untracked?: boolean, conflicted?: boolean }
   onToggleGroup,     // (group: string) => void
+  onStage,           // (relPath: string, action: 'stage'|'unstage') => void
+  pendingPath,       // string | null（正在暂存/取消暂存的文件）
+  onStageGroup,      // (scope: 'stage-unstaged'|'stage-untracked'|'stage-all'|'unstage') => void
+  pendingGroup,      // string | null（正在操作的整组 scope）
   t,                 // (key, params?) => string
 }
 ```
 行为：把 `status.files` 按 冲突 / 已暂存 / 未暂存 / 未跟踪 分组（同一文件可同时出现在已暂存与未暂存组，
-VSCode 的 MM 就是这样），每组内按路径构建**目录树**（单子节点链折叠成 `a/b/c`）；
+VSCode 的 MM 就是这样），每组内按路径构建**目录树**（单子节点链折叠成 `a/b/c`）。
+筛选框非空时所有分组与目录按展开渲染（命中项必须看得见）；错误只由 Panel 的错误条统一渲染。
 
 ### `<FileTree />`
 ```js
 {
-  rootPath,          // string  —— 浏览根（绝对路径）
+  rootPath,          // string | null —— 浏览根（绝对路径）
   selectedPath,      // string | null —— 相对 rootPath
   onSelectFile,      // (relPath: string) => void
   filter,            // string
-  onFilterChange,    // (value: string) => void
   loadDir,           // (relPath: string, signal) => Promise<TreeResult>
+  dirtyPaths,        // Set<string> —— 有未保存草稿的文件（画脏点）
+  reloadNonce,       // number —— 变化时清空目录缓存并重读（外部新建/删除的文件才看得到）
   t,
 }
 ```
-自带展开状态与目录缓存；点文件只回调，不自己取内容。
+自带展开状态与目录缓存；点文件只回调，不自己取内容。筛选非空时所有已加载目录按展开渲染。
 
 ### `<DiffView />`
 ```js
@@ -247,7 +321,7 @@ VSCode 的 MM 就是这样），每组内按路径构建**目录树**（单子�
 
 ### `<States.* />`
 ```js
-EmptyState({ icon, title, description, actions, t })
+EmptyState({ icon, title, description, actions })   // 文案由调用方翻译好传入（不取 t）
 LoadingState({ label, t })
 ErrorState({ message, onRetry, t })
 SkeletonRows({ rows })
@@ -258,6 +332,7 @@ InlineNote({ tone: 'info'|'warn'|'error', children })
 ```js
 {
   roots,                          // Root[]
+  stats,                          // { [rootPath]: { counts, adds, dels, binary } | { error } } —— 行上的改动规模
   activeRootId,                   // string | null
   open,                           // boolean —— 折叠状态
   onToggleOpen(),                 // 折叠 / 展开
@@ -303,6 +378,53 @@ BranchList({
 回调统一返回 `{ ok: true }` 或 `{ ok: false, error, code }`；只有 `code === 'branch-unmerged'` 时
 组件才在确认框里露出「强制删除」，其它失败就地显示原因。组件自身不做网络/ git 调用。
 
+### `<PushHint />`（变更页签的同步提示条，唯一渲染点）
+```js
+PushHint({
+  branch,            // string —— 当前分支名，渲染进文案
+  sync,              // { state, ahead, behind } —— 宿主 status.sync，唯一事实源
+  t,                 // (key, params?) => string
+  onPush,            // () => Promise<...> —— 调 branch/push
+  onCleanup,         // () => Promise<...> —— 调 branch/cleanup
+  busy,              // boolean —— 推送 / 收尾进行中（两个按钮都禁用）
+  error,             // string | null —— 上一次远端动作的失败原因，显示在提示条里
+})
+```
+行为：只有两种形态 —— `never-pushed` / `ahead` 给「推送到远端」按钮 + `git push -u origin <branch>` 命令；
+`remote-deleted` 只给「收尾：切到默认分支并删除本地分支」按钮，**不给推送按钮、也不显示 push 命令**
+（再推一次会把已合并删除的分支重新建出来）。`behind` / `diverged`、`synced` / `unknown` 不渲染，
+由 Panel 的 `SYNC_HINT_STATES` 决定。可测试属性：`data-dgp-sync`（状态值）、`data-dgp-push-run`、
+`data-dgp-cleanup-run`、`data-dgp-push-command`、`data-dgp-sync-error`。
+
+### `<CreatePullForm />`
+```js
+CreatePullForm({
+  form,              // { loading, error, repo, head, bases, accountId, base, title, body,
+                     //   generating, creating, created, notice }
+  synced,            // boolean —— status.sync.state === 'synced'（不是「推过一次」的意思）
+  syncState,         // sync.state —— 阻断文案按状态分两套
+  t,
+  onCancel, onChangeAccount, onChangeBase, onGenerate, onChangeTitle, onChangeBody, onCreate, onOpenUrl
+})
+```
+`synced !== true` 时「创建 PR」置灰；阻断文案按 `syncState` 取 `sync.prBlockedPush`（还没同步：先在左侧推送）
+或 `sync.prBlockedDeleted`（远端分支已被删除：先在左侧「收尾」，再从默认分支新建分支）。表单**不存**
+「是否已推送」的快照，唯一来源是 `status.sync`。
+
+### `<SettingsView />`（设置页）
+```js
+SettingsView({
+  models, commitModel, reviewModel, onChangeModel, onChangeReviewModel, loading, error, saved,
+  changesView, onChangeChangesView, untrackedMode, onChangeUntrackedMode,
+  postCommitPush,              // boolean —— 提交后自动推送偏好（默认 true）
+  onChangePostCommitPush,      // (value: boolean) => void
+  accounts, providers, accountsBusy, accountsError, accountsNotice,
+  onAddAccount, onUpdateAccount, onReadToken, onRemoveAccount, onBack, t
+})
+```
+`postCommitPush` 是**客户端偏好**（`src/store.js` 的 `usePref`，localStorage，默认 `true`），
+不进 `settings.json`、也不在 `settings/get` 接口里。设置项的可测试属性 `data-dgp-settings="post-commit-push"`。
+
 ## 4. 样式契约
 
 - 所有 class 以 `dgp-` 开头，禁止全局选择器、禁止 `!important`。
@@ -311,6 +433,8 @@ BranchList({
 - 行数据要带稳定钩子：`data-dgp-entry` / `data-dgp-path` / `data-dgp-row`。
 - 分支创建区的可测试属性见 §5（`data-dgp-branch-base` / `-checkout` / `-dirty` / `-blocked` / `-from-head` / `-only`）：
   `test/components.test.mjs` 只按这些属性定位，不假设 DOM 嵌套。
+- 同步提示条的可测试属性：`data-dgp-sync`（状态值）、`data-dgp-push-run`、`data-dgp-cleanup-run`、
+  `data-dgp-push-command`、`data-dgp-sync-error`；`test/panel-flow.test.mjs` 同样只按属性定位。
 
 ## 5. CSS class 词汇表（`styles.js` 保证提供，组件只许引用这些）
 
@@ -333,7 +457,7 @@ BranchList({
 `dgp-repo-branch[data-dgp-branch]`（行最右侧；只有点它才打开分支菜单）、
 `dgp-branch-create[data-dgp-branch-create]`（菜单底部：名字 + 起点选择 + 切换勾选 + 现状提示 + 撞车警告 + 两个出口）、
 `dgp-repolist-hidden[data-dgp-repolist-hidden]` + `dgp-repolist-hidden-count`（展开/收起已隐藏的仓库）、
-`dgp-row-action[data-dgp-repo-hide]`（非 primary 可隐藏）、`dgp-row-action[data-dgp-repo-unhide]`（已隐藏的行）、
+`dgp-repo-stats[data-dgp-repo-stats]`（有改动的仓库行尾：文件数 + `+N −N`；`data-dgp-repo-stats="error"` 表示该仓库读失败，`title` 给原因）、`dgp-repo-stats-files`、`dgp-repo-conflict`、`dgp-row-action[data-dgp-repo-hide]`（非 primary 可隐藏）、`dgp-row-action[data-dgp-repo-unhide]`（已隐藏的行）、
 `dgp-row-action[data-dgp-repo-remove]`（仅外部仓库）、`dgp-addform` + `dgp-addform-actions`
 
 分支创建区的可测试属性（测试按属性定位，不依赖 class）：
@@ -351,7 +475,7 @@ BranchList({
 `[data-dgp-branch-only]`（「只建分支」按钮，`checkout:false` 重发）
 
 ### 远端仓库详情 · 分支区
-`dgp-branch-section`（分区根）、`dgp-branch-head`、`dgp-branch-title`、`dgp-branch-summary`、
+`dgp-branch-section`（分区根）、`dgp-branch-head`、`dgp-branch-title`、`dgp-branch-summary`、`dgp-branch-filter`（分支菜单里的筛选框，>8 条才出现）、
 `dgp-branch-head-actions`、`dgp-branch-filter`（筛选框，复用 `dgp-input`）、
 `dgp-branch-status[data-tone=info|warn|error]`、`dgp-branch-statuses`、
 `dgp-branch-list`（ul）、`dgp-branch-item[data-current][data-busy]`（li）、`dgp-branch-row[data-dgp-branch-row]`（行主按钮）、

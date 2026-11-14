@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 35 个 */
+/* 模块: 42 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -448,6 +448,36 @@ window.__ModuleLoader__.load({
       }
       .dgp-repo-branch:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
       .dgp-repo-branch:focus-visible { outline: none; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+      /* 行上的改动规模：文件数 + 增删行数（有改动才出现，编号用等宽） */
+      .dgp-repo-stats {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 3px;
+        max-width: 42%;
+        padding-left: 4px;
+        overflow: hidden;
+        white-space: nowrap;
+        font-family: var(--ds-font-family-code);
+        font-size: 10px;
+        line-height: 1;
+        color: var(--dsw-alias-label-tertiary);
+      }
+      .dgp-repo-stats > .dgp-ico { flex: none; opacity: .8; }
+      .dgp-repo-stats-files { color: var(--dsw-alias-label-secondary); }
+      .dgp-repo-stats .dgp-add,
+      .dgp-repo-stats .dgp-del { font-size: 10px; }
+      .dgp-repo-conflict { color: var(--dsw-alias-state-warn-label); font-weight: 600; }
+
+      /* 分支菜单里的筛选框（分支多时才出现） */
+      .dgp-branch-filter {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px 6px;
+      }
+      .dgp-branch-filter > .dgp-ico { flex: none; color: var(--dsw-alias-label-tertiary); }
+      .dgp-branch-filter > .dgp-input { flex: 1 1 auto; min-width: 0; height: 24px; padding: 0 6px; }
       /* 分支条目：本地 / 远程 两个小标签，亮 = 有，暗 = 没有 */
       .dgp-menu-badges { display: inline-flex; gap: 4px; flex: none; }
       .dgp-menu-badge {
@@ -510,6 +540,9 @@ window.__ModuleLoader__.load({
       .dgp-branch-blocked .dgp-branch-hint { white-space: pre-line; }
       .dgp-branch-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px; }
       .dgp-addform { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 8px; }
+      .dgp-addform-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+      .dgp-addform-path > .dgp-input { flex: 1 1 120px; min-width: 0; padding: 0 8px; }
+      .dgp-addform-path > .dgp-btn { flex: none; }
       .dgp-addform-actions { display: flex; justify-content: flex-end; gap: 6px; }
       .dgp-list {
         display: flex;
@@ -841,6 +874,18 @@ window.__ModuleLoader__.load({
       .dgp-commit-status[data-tone="info"] { color: var(--dsw-alias-label-secondary); }
       .dgp-commit-status[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
       .dgp-commit-status-text { min-width: 0; }
+      /* 错误提示：换行 + 最多 5 行（完整内容仍在 title 上），别让一句「余额不足，去充值或换模型」被省略号吃掉 */
+      .dgp-commit-status[data-wrap="true"] { align-items: flex-start; }
+      .dgp-commit-status[data-wrap="true"] .dgp-commit-status-text {
+        display: -webkit-box;
+        -webkit-line-clamp: 5;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        line-height: 1.55;
+      }
+      .dgp-commit-settings { flex: none; }
       .dgp-commit-status .dgp-spinner { width: 11px; height: 11px; border-width: 1.2px; }
       .dgp-commit-submit { flex: none; min-width: 64px; }
 
@@ -1135,7 +1180,6 @@ window.__ModuleLoader__.load({
       .dgp-menu-sep { height: .5px; margin: 4px 6px; background: var(--dsw-alias-border-l2); }
 
       /* ===================== 10. 自适应 ===================== */
-      .dgp-root[data-narrow="true"] .dgp-meta,
       @media (prefers-reduced-motion: reduce) {
         .dgp-spinner { animation-duration: 2.4s; }
         .dgp-skel-dot, .dgp-skel-bar { animation: none; }
@@ -1177,6 +1221,7 @@ window.__ModuleLoader__.load({
         color: var(--dsw-alias-label-primary, inherit);
       }
 
+      .dgp-headerbtn[data-failed="true"] { color: var(--dsw-alias-state-error-primary); }
       .dgp-headerbtn:active {
         background: var(--dsw-alias-bg-layer-2, rgba(127, 127, 127, 0.18));
       }
@@ -1199,7 +1244,7 @@ window.__ModuleLoader__.load({
       }
 
 
-      /* 版本号 chip：显示当前提交短 SHA，点击 = 检测更新 */
+      /* 插件版本 chip：显示已安装的插件版本，点击 = 检查插件更新（与本仓库的 git 状态无关） */
       .dgp-version {
         display: inline-flex;
         align-items: center;
@@ -1550,6 +1595,51 @@ window.__ModuleLoader__.load({
       }
       .dgp-pull-verdict[data-state="APPROVED"] { color: var(--dsw-alias-state-success-primary); }
       .dgp-pull-verdict[data-state="CHANGES_REQUESTED"] { color: var(--dsw-alias-state-error-primary); }
+      /* PR 详情 · 变动的文件：一行一个文件，点开就地看 diff（不再跳走或整页刷新） */
+      .dgp-pull-files { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
+      .dgp-pull-file { display: flex; flex-direction: column; min-width: 0; border-radius: var(--dsw-radius-xs); }
+      .dgp-pull-file-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        min-height: 28px;
+        padding: 0 6px;
+        border: 0;
+        border-radius: var(--dsw-radius-xs);
+        background: 0 0;
+        color: var(--dsw-alias-label-primary);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .dgp-pull-file-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+      .dgp-pull-file-row:focus-visible {
+        outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+        outline-offset: -2px;
+      }
+      .dgp-pull-file-name {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-family: var(--ds-font-family-code);
+        font-size: 12px;
+      }
+      .dgp-pull-file-stat { display: inline-flex; flex: none; gap: 6px; font-size: 11px; font-variant-numeric: tabular-nums; }
+      .dgp-pull-file-diff {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        max-height: 460px;
+        margin: 2px 0 6px;
+        overflow: hidden;
+        border: .5px solid var(--dsw-alias-border-l1);
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+      }
+      .dgp-pull-file-diff > .dgp-viewer { min-height: 0; }
+      .dgp-pull-file-diff > .dgp-detail-meta { margin: 8px; }
+      .dgp-pull-file-error { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; }
+      .dgp-pull-file-error > .dgp-detail-failure { flex: 1 1 100%; }
       .dgp-detail-notice { margin: 0; color: var(--dsw-alias-state-success-primary); font-size: 11px; }
       /* 「还没推到远端」的提示：变更页签常驻一条 + 创建 PR 表单里阻断用同一条（PushHint）。
          面板自己不做 push，所以必须把命令摆出来；命令用 user-select: all —— 点一下就能整条复制。 */
@@ -1597,6 +1687,18 @@ window.__ModuleLoader__.load({
       .dgp-detail-desc { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.6; }
       .dgp-detail-meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
       .dgp-detail-failure { margin: 0; color: var(--dsw-alias-state-warn-label); font-size: 11px; }
+      /* PR 详情底部的操作失败块：错误说清 + （冲突时）一条去网页解决的出口 */
+      .dgp-pull-error {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-top: 2px;
+        padding: 8px 10px;
+        border-radius: var(--dsw-radius-xs);
+        background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
+      }
+      .dgp-pull-error > .dgp-detail-failure { flex: 1 1 100%; line-height: 1.6; }
       .dgp-detail-section { display: flex; flex-direction: column; gap: 4px; }
       .dgp-detail-head { display: flex; align-items: center; gap: 8px; }
       .dgp-detail-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }
@@ -1937,18 +2039,25 @@ window.__ModuleLoader__.load({
         'toolbar.addRoot': '添加本机目录…',
         'toolbar.removeRoot': '从列表移除「{name}」',
         'toolbar.collapseAll': '全部折叠',
+        'toolbar.resize': '拖动调整宽度（←/→ 调 16px）',
 
         'filter.placeholder': '筛选文件…',
         'filter.clear': '清除筛选',
         'filter.loadedOnly': '只搜索已展开的目录',
 
         'roots.hiddenShow': '显示已隐藏的仓库（{count}）',
+        'roots.statsTitle': '{files} 个文件 · +{adds} −{dels}',
+        'roots.statsTitleBinary': '{files} 个文件（含 {binary} 个二进制）· +{adds} −{dels}',
         'roots.hiddenCollapse': '收起已隐藏的仓库',
         'roots.hide': '隐藏「{name}」（只从储存库移除，不影响仓库本身）',
         'roots.unhide': '取消隐藏「{name}」',
 
         'root.noBranch': '未命名分支',
         'root.addPlaceholder': '输入本机目录的绝对路径，例如 D:\\code\\my-repo',
+        'root.pathLabel': '储存库路径',
+        'root.pickPath': '选择路径…',
+        'root.picking': '正在选择…',
+        'root.pickFailed': '选择路径失败：{message}。可重试或手动输入路径。',
         'root.addConfirm': '添加',
         'root.addCancel': '取消',
         'root.addHint': '只识别这一个目录（它自己必须含 .git）：不向上找上级仓库，也不扫描子目录。粘贴「复制为路径」带引号会自动去掉。',
@@ -1956,6 +2065,8 @@ window.__ModuleLoader__.load({
         'branch.hint': '当前分支 {branch} · 点击切换或新建',
         'branch.title': '分支 · {name}',
         'branch.loading': '正在读取分支…',
+        'branch.filterPlaceholder': '筛选分支…',
+        'branch.noMatch': '没有匹配「{filter}」的分支',
         'branch.localTag': '本地',
         'branch.remoteTag': '远程',
         'branch.trackHint': '本地还没有这个分支，点一下会创建 {ref} 的本地跟踪分支并切换',
@@ -2040,6 +2151,7 @@ window.__ModuleLoader__.load({
         'pull.review': '审查',
         'pull.reviewCount': '{count} 条审查记录',
         'pull.reviewUnsupported': '该平台不提供审查记录接口',
+        'pull.reviewsUnavailable': '审查记录读取失败：{message}',
         'pull.approve': '通过',
         'pull.requestChanges': '请求修改',
         'pull.comment': '评论',
@@ -2062,17 +2174,11 @@ window.__ModuleLoader__.load({
         'pull.aiClonePlaceholder': '输入本机绝对路径，例如 D:\\code\\repo',
         'pull.aiCloneNoPath': '请先填一个绝对路径',
         'pull.aiDeepRun': '深度审阅',
-        'pull.aiDeepRerun': '重新深度审阅',
         'pull.aiDeepHint': '把 PR 切到你本机工作区分支，并在新会话里用 Agent 工具审阅（更慢，但能看上下文、能追问、能跑测试）',
         'pull.sessionReviewStarted': '已在新会话中开始深度审阅（{id}），可直接在那里追问或让它继续跑测试。',
         'pull.aiPreparing': '正在准备本地代码：查找仓库、切换分支（已在该提交上会跳过拉取）…',
         'pull.aiReviewing': '正在读取完整文件并审阅…',
-        'pull.aiDeepInfo': '深度审阅：已读取 {count} 个完整文件',
-        'pull.aiDeepLocal': '复用了本地仓库 {repo} 的对象（已存在的提交不会重下）',
-        'pull.aiDeepTemp': '临时拉取（项目里没有这个仓库的本地克隆）',
         'pull.aiFilesTruncated': '这个 PR 的文件数量超过平台单次上限，文件清单不完整：可能有改动未被审阅。',
-        'pull.aiCleanupWarn': '临时目录清理失败（{message}）：可以手动删掉系统临时目录下的 dsh-deep-review-* 目录。',
-        'pull.aiDeepSkipped': '有 {count} 个文件没读到完整内容：',
         'pull.aiStepsTitle': '执行步骤',
         'pull.aiLogHint': '完整日志：{path}',
         'pull.aiStart': '开始审阅',
@@ -2092,6 +2198,7 @@ window.__ModuleLoader__.load({
         'pull.severity.minor': '次要',
         'pull.severity.nit': '细节',
         'pull.commitsTitle': '提交',
+        'pull.commitsLimited': '只列出最近 {shown} / {total} 个提交',
         'pull.closeRun': '关闭 PR',
         'pull.closeConfirm': '确认关闭',
         'pull.reopenRun': '重新打开',
@@ -2123,14 +2230,26 @@ window.__ModuleLoader__.load({
         'pull.testRun': '标记测试通过',
         'pull.testHint': '部分仓库要求 PR 测试通过才允许合并',
         'pull.testDone': '已标记测试通过',
+        'pull.passPartial': '已完成：{steps}；没做成：{failures}',
+        'pull.conflict': '这个 PR 和目标分支有冲突：{message}',
+        'pull.conflictOpenWeb': '到网页上解决冲突',
         'pull.mergeRun': '合并 PR',
+        'pull.mergeConfirm': '确认合并（可能删除源分支）',
         'pull.merging': '正在合并…',
         'pull.working': '正在提交…',
         'pull.merged': '已合并',
         'pull.reviewDone': '已提交审查（{verdict}）',
         'pull.mergedDone': '已合并，源分支 {branch}',
+        'pull.mergedButBranchKept': '已合并（{branch}），但删源分支失败：{message}',
         'pull.mergedClosed': '已合并 PR #{number}（{branch}），已返回仓库详情',
         'pull.filesChanged': '{count} 个文件',
+        'pull.filesTitle': '变动的文件',
+        'pull.filesEmpty': '这个 PR 没有改动文件。',
+        'pull.filesUnavailable': '读取文件列表失败：{message}',
+        'pull.filesTruncated': '文件较多，平台只返回了前 {count} 个：可能还有未列出的改动。',
+        'pull.fileDiffLoading': '正在读取这个文件的 diff…',
+        'pull.fileDiffFailed': '读取这个文件的 diff 失败',
+        'pull.fileDiffUnsupported': '当前面板不支持读取单个文件的 diff',
         'pull.commits': '{count} 个提交',
         'pull.state.open': '打开',
         'pull.state.closed': '已关闭',
@@ -2163,6 +2282,7 @@ window.__ModuleLoader__.load({
         'remote.openSettings': '去设置',
         'remote.loading': '正在读取仓库…',
         'remote.failed': '读取失败：{message}',
+        'remote.failedTitle': '读取失败',
         'remote.empty': '这个账号下没有仓库',
         'remote.loadMore': '加载更多',
         'remote.private': '私有',
@@ -2214,13 +2334,23 @@ window.__ModuleLoader__.load({
         'pr.head': '源分支',
         'pr.base': '目标分支',
         'pr.baseHint': '记住上次选择，下次默认用它',
-        'push.title': '这条分支还只在你电脑上',
-        'push.why': '远端没有它的最新提交：别人看不到你的改动，也没法在平台上开 PR。',
-        'push.run': '推送到远端',
-        'push.pushing': '正在推送…',
-        'push.done': '已推送 {branch}',
-        'push.command': 'git push -u origin {branch}',
-        'push.after': '推完这里会自动消失；以后有了新提交，再点一次推送就行。',
+        'sync.neverTitle': '这条分支还只在你电脑上',
+        'sync.aheadTitle': '本地还有 {count} 个提交没推到远端',
+        'sync.pushWhy': '远端没有它的最新提交：别人看不到你的改动，也没法在平台上开 PR。',
+        'sync.pushRun': '推送到远端',
+        'sync.pushing': '正在推送…',
+        'sync.pushed': '已推送 {branch}',
+        'sync.pushCommand': 'git push -u origin {branch}',
+        'sync.pushAfter': '推完这里会自动消失；以后有了新提交，再点一次推送就行。',
+        'sync.deletedTitle': '远端分支已被删除（本地还留着 {branch}）',
+        'sync.deletedWhy': 'origin 上已经没有这条分支了，通常是 PR 合并后自动删掉的。不要在这里继续推送 —— 那会把已合并的分支重新建出来。',
+        'sync.cleanupRun': '收尾：切到默认分支并删除本地分支',
+        'sync.cleaning': '正在收尾…',
+        'sync.cleaned': '已收尾：切到 {base}，并删除本地分支 {branch}',
+        'sync.deletedAfter': '收尾会先取远程更新、切回默认分支，再删掉这条本地分支；如果它还有没合并的提交，会拒绝删除并告诉你。',
+        'sync.deletedNext': '要接着改：从最新默认分支新建一个分支，别在这条已合并的分支上提交。',
+        'sync.prBlockedPush': '分支还没和远端同步：先在左侧推送，再创建 PR',
+        'sync.prBlockedDeleted': '远端分支已被删除：先在左侧「收尾」，再从默认分支新建分支',
         'pr.subject': '标题与描述',
         'pr.generate': '生成标题与描述',
         'pr.generating': '正在生成…',
@@ -2229,7 +2359,6 @@ window.__ModuleLoader__.load({
         'pr.bodyPlaceholder': 'PR 描述（Markdown）',
         'pr.create': '创建 PR',
         'pr.creating': '正在创建…',
-        'pr.blockedNotPushed': '分支还没推送到远端，先在左侧点「推送到远端」',
         'pr.cancel': '取消',
         'pr.done': '完成',
         'pr.openCreated': '打开 PR',
@@ -2247,7 +2376,7 @@ window.__ModuleLoader__.load({
         'commit.noModel': '还没有配置生成提交说明的模型，先到右上角的设置里选一个',
         'commit.nothing': '没有可提交的改动',
         'commit.unmerged': '有未解决的冲突，先把冲突解决掉再提交',
-        'commit.generateFailed': '生成提交说明失败：{message}',
+        'commit.openSettings': '去设置换模型',
 
         'accounts.guideTitle': '怎么拿到令牌',
         'accounts.guideGithub1': '点右上角「获取令牌」，会打开已预填 repo 的令牌创建页',
@@ -2272,6 +2401,7 @@ window.__ModuleLoader__.load({
         'accounts.adding': '正在验证令牌…',
         'accounts.edit': '编辑账号 {name}',
         'accounts.saveLabel': '保存',
+        'accounts.saving': '正在保存…',
         'accounts.editLabel': '备注名',
         'accounts.tokenLabel': '令牌',
         'accounts.reveal': '显示令牌',
@@ -2292,12 +2422,25 @@ window.__ModuleLoader__.load({
         'settings.untrackedLabel': '未跟踪文件的分组',
         'settings.untrackedMerge': '并进「未暂存」（与 VS Code 一致）',
         'settings.untrackedSeparate': '单列「未跟踪」组',
+        'settings.postPushLabel': '提交后自动推送',
+        'settings.postPushOn': '开（默认）',
+        'settings.postPushOff': '关',
+        'settings.postPushHint': '提交成功就把当前分支推到 origin。推送失败不会影响这次提交，原因显示在变更页签的提示条里。',
         'settings.viewLabel': '变更文件的显示方式',
         'settings.viewList': '列表：一行一个文件，文件名在前、路径在后',
         'settings.viewTree': '树形：按文件夹展开/折叠',
         'settings.modelLabel': '生成提交说明的模型',
         'settings.modelHint': '模型来自 DeepSeek Harness 当前配置的模型目录。',
         'settings.modelNone': '未选择',
+        'settings.commitThinkingLabel': '提交说明思考模式',
+        'settings.thinkingOff': '关闭（默认）',
+        'settings.thinkingOn': '开启',
+        'settings.commitThinkingHint': '开启后按所选档位思考，可能增加生成时间和用量。',
+        'settings.thinkingUnsupported': '该模型未提供可选的思考档位。',
+        'settings.thinkingRequired': '该模型不支持关闭思考；需要关闭时请选择支持关闭的模型。',
+        'settings.thinkingSelectModel': '请先选择生成提交说明的模型。',
+        'settings.commitEffortLabel': '思考档位',
+        'settings.effortDefault': '模型默认',
         'settings.saved': '已保存',
         'settings.noLlm': '当前 profile 没有挂载 LLM 服务，无法列出模型',
         'settings.partialModels': '这些 provider 读取失败：{list}',
@@ -2337,13 +2480,16 @@ window.__ModuleLoader__.load({
         'viewer.noChanges': '这个文件在此侧没有内容差异',
         'viewer.expandAll': '展开全部',
         'action.retry': '重试',
+        'action.cancel': '取消',
+        'action.close': '关闭',
 
         'error.gitMissing': '系统里找不到 git，可执行文件缺失',
         'error.notRepository': '这个目录不是 Git 仓库',
         'error.timeout': '操作超时',
         'error.outsideRoot': '路径超出仓库范围',
         'error.openFailed': '无法打开链接（浏览器拦截或环境不支持）：{url}',
-        'error.generic': '出错了：{message}'
+        'error.generic': '出错了：{message}',
+        'error.modelFailed': '模型调用失败：{message}'
       }
 
       const en = {
@@ -2398,18 +2544,25 @@ window.__ModuleLoader__.load({
         'toolbar.addRoot': 'Add a local folder…',
         'toolbar.removeRoot': 'Remove "{name}" from list',
         'toolbar.collapseAll': 'Collapse all',
+        'toolbar.resize': 'Drag to resize (←/→ moves 16px)',
 
         'filter.placeholder': 'Filter files…',
         'filter.clear': 'Clear filter',
         'filter.loadedOnly': 'Only loaded folders are searched',
 
         'roots.hiddenShow': 'Show hidden repositories ({count})',
+        'roots.statsTitle': '{files} files · +{adds} −{dels}',
+        'roots.statsTitleBinary': '{files} files ({binary} binary) · +{adds} −{dels}',
         'roots.hiddenCollapse': 'Collapse hidden repositories',
         'roots.hide': 'Hide "{name}" (only from the repository list)',
         'roots.unhide': 'Unhide "{name}"',
 
         'root.noBranch': 'no branch',
         'root.addPlaceholder': 'Absolute path of a folder, e.g. D:\\code\\my-repo',
+        'root.pathLabel': 'Repository path',
+        'root.pickPath': 'Browse…',
+        'root.picking': 'Choosing…',
+        'root.pickFailed': 'Could not choose a folder: {message}. Retry or enter the path manually.',
         'root.addConfirm': 'Add',
         'root.addCancel': 'Cancel',
         'root.addHint': 'Only this folder is used (it must contain .git). No parent lookup, no scanning inside it. Pasted quotes are stripped.',
@@ -2417,6 +2570,8 @@ window.__ModuleLoader__.load({
         'branch.hint': 'On {branch} · click to switch or create',
         'branch.title': 'Branches · {name}',
         'branch.loading': 'Loading branches…',
+        'branch.filterPlaceholder': 'Filter branches…',
+        'branch.noMatch': 'No branch matches "{filter}"',
         'branch.localTag': 'local',
         'branch.remoteTag': 'remote',
         'branch.trackHint': 'No local branch yet — clicking creates a local tracking branch for {ref}',
@@ -2501,6 +2656,7 @@ window.__ModuleLoader__.load({
         'pull.review': 'Review',
         'pull.reviewCount': '{count} reviews',
         'pull.reviewUnsupported': 'This platform exposes no review list',
+        'pull.reviewsUnavailable': 'Could not load reviews: {message}',
         'pull.approve': 'Approve',
         'pull.requestChanges': 'Request changes',
         'pull.comment': 'Comment',
@@ -2523,17 +2679,11 @@ window.__ModuleLoader__.load({
         'pull.aiClonePlaceholder': 'Absolute path, e.g. D:\\code\\repo',
         'pull.aiCloneNoPath': 'Enter an absolute path first',
         'pull.aiDeepRun': 'Deep review',
-        'pull.aiDeepRerun': 'Deep review again',
         'pull.aiDeepHint': 'Switch the PR branch in your local workspace and review it in a new Agent session (slower, but sees context, can follow up and run tests)',
         'pull.sessionReviewStarted': 'Deep review started in a new session ({id}); follow up there or ask it to run tests.',
         'pull.aiPreparing': 'Preparing local code: locating the repo and switching branches (skips fetching if already at that commit)…',
         'pull.aiReviewing': 'Reading full files and reviewing…',
-        'pull.aiDeepInfo': 'Deep review: read {count} full files',
-        'pull.aiDeepLocal': 'reused objects from your local clone {repo}',
-        'pull.aiDeepTemp': 'fetched into a temporary repo (no matching local clone)',
         'pull.aiFilesTruncated': 'This PR has more files than the platform returns in one page: the file list is incomplete, so some changes may not have been reviewed.',
-        'pull.aiCleanupWarn': 'Failed to clean up the temp folder ({message}); you can delete dsh-deep-review-* folders under your system temp dir.',
-        'pull.aiDeepSkipped': '{count} file(s) had no full content:',
         'pull.aiStepsTitle': 'Steps',
         'pull.aiLogHint': 'Full log: {path}',
         'pull.aiStart': 'Start review',
@@ -2553,6 +2703,7 @@ window.__ModuleLoader__.load({
         'pull.severity.minor': 'minor',
         'pull.severity.nit': 'nit',
         'pull.commitsTitle': 'Commits',
+        'pull.commitsLimited': 'Showing {shown} of {total} commits',
         'pull.closeRun': 'Close PR',
         'pull.closeConfirm': 'Confirm close',
         'pull.reopenRun': 'Reopen',
@@ -2584,14 +2735,26 @@ window.__ModuleLoader__.load({
         'pull.testRun': 'Mark tested',
         'pull.testHint': 'Some repositories require a passed test before merging',
         'pull.testDone': 'Marked as tested',
+        'pull.passPartial': 'Done: {steps}; failed: {failures}',
+        'pull.conflict': 'This pull request conflicts with the base branch: {message}',
+        'pull.conflictOpenWeb': 'Resolve on the web',
         'pull.mergeRun': 'Merge pull request',
+        'pull.mergeConfirm': 'Confirm merge (may delete source branch)',
         'pull.merging': 'Merging…',
         'pull.working': 'Submitting…',
         'pull.merged': 'Merged',
         'pull.reviewDone': 'Review submitted ({verdict})',
         'pull.mergedDone': 'Merged, source branch {branch}',
+        'pull.mergedButBranchKept': 'Merged ({branch}), but deleting the source branch failed: {message}',
         'pull.mergedClosed': 'Merged #{number} ({branch}) — back to the repository',
         'pull.filesChanged': '{count} files',
+        'pull.filesTitle': 'Changed files',
+        'pull.filesEmpty': 'This pull request changes no files.',
+        'pull.filesUnavailable': 'Could not load the changed files: {message}',
+        'pull.filesTruncated': 'The PR has many files; the platform returned only the first {count}. Some changes may be missing.',
+        'pull.fileDiffLoading': 'Loading the diff for this file…',
+        'pull.fileDiffFailed': 'Could not load this file’s diff',
+        'pull.fileDiffUnsupported': 'This panel cannot load a single file’s diff',
         'pull.commits': '{count} commits',
         'pull.state.open': 'Open',
         'pull.state.closed': 'Closed',
@@ -2624,6 +2787,7 @@ window.__ModuleLoader__.load({
         'remote.openSettings': 'Open settings',
         'remote.loading': 'Loading repositories…',
         'remote.failed': 'Could not load: {message}',
+        'remote.failedTitle': 'Could not load',
         'remote.empty': 'No repositories on this account',
         'remote.loadMore': 'Load more',
         'remote.private': 'Private',
@@ -2675,13 +2839,23 @@ window.__ModuleLoader__.load({
         'pr.head': 'From branch',
         'pr.base': 'Into branch',
         'pr.baseHint': 'Remembers your last choice',
-        'push.title': 'This branch is not on the remote yet',
-        'push.why': 'The remote does not have its latest commit: nobody else can see your work, and no pull request can be opened.',
-        'push.run': 'Push to remote',
-        'push.pushing': 'Pushing…',
-        'push.done': 'Pushed {branch}',
-        'push.command': 'git push -u origin {branch}',
-        'push.after': 'This hint disappears once pushed; after more commits just click push again.',
+        'sync.neverTitle': 'This branch is not on the remote yet',
+        'sync.aheadTitle': '{count} local commits are not on the remote yet',
+        'sync.pushWhy': 'The remote does not have its latest commit: nobody else can see your work, and no pull request can be opened.',
+        'sync.pushRun': 'Push to remote',
+        'sync.pushing': 'Pushing…',
+        'sync.pushed': 'Pushed {branch}',
+        'sync.pushCommand': 'git push -u origin {branch}',
+        'sync.pushAfter': 'This hint disappears once pushed; after more commits just click push again.',
+        'sync.deletedTitle': 'The remote branch was deleted (local {branch} remains)',
+        'sync.deletedWhy': 'origin no longer has this branch — usually deleted automatically after the pull request was merged. Do not push from here: that would recreate the merged branch.',
+        'sync.cleanupRun': 'Clean up: switch to the default branch and delete the local branch',
+        'sync.cleaning': 'Cleaning up…',
+        'sync.cleaned': 'Cleaned up: switched to {base} and deleted local branch {branch}',
+        'sync.deletedAfter': 'Cleanup fetches updates, switches back to the default branch, then deletes this local branch; if it still has unmerged commits, deletion is refused and you are told why.',
+        'sync.deletedNext': 'To keep working, create a new branch from the latest default branch instead of committing on this merged one.',
+        'sync.prBlockedPush': 'Branch is not in sync with the remote yet: push from the left hint first',
+        'sync.prBlockedDeleted': 'The remote branch was deleted: clean up from the left hint, then create a branch from the default branch',
         'pr.subject': 'Title & description',
         'pr.generate': 'Generate title & description',
         'pr.generating': 'Generating…',
@@ -2690,7 +2864,6 @@ window.__ModuleLoader__.load({
         'pr.bodyPlaceholder': 'Pull request description (Markdown)',
         'pr.create': 'Create PR',
         'pr.creating': 'Creating…',
-        'pr.blockedNotPushed': 'Branch is not on the remote yet — push it from the hint on the left',
         'pr.cancel': 'Cancel',
         'pr.done': 'Done',
         'pr.openCreated': 'Open PR',
@@ -2708,7 +2881,7 @@ window.__ModuleLoader__.load({
         'commit.noModel': 'No model is configured for commit messages. Pick one in Settings.',
         'commit.nothing': 'Nothing to commit',
         'commit.unmerged': 'Resolve the conflicts before committing',
-        'commit.generateFailed': 'Could not generate a commit message: {message}',
+        'commit.openSettings': 'Choose another model',
 
         'accounts.guideTitle': 'How to get a token',
         'accounts.guideGithub1': 'Click "Get a token" at the top right; the page opens with the repo scope pre-filled',
@@ -2733,6 +2906,7 @@ window.__ModuleLoader__.load({
         'accounts.adding': 'Validating token…',
         'accounts.edit': 'Edit account {name}',
         'accounts.saveLabel': 'Save',
+        'accounts.saving': 'Saving…',
         'accounts.editLabel': 'Label',
         'accounts.tokenLabel': 'Token',
         'accounts.reveal': 'Show token',
@@ -2753,12 +2927,25 @@ window.__ModuleLoader__.load({
         'settings.untrackedLabel': 'Untracked files',
         'settings.untrackedMerge': 'Inside Changes (like VS Code)',
         'settings.untrackedSeparate': 'As their own group',
+        'settings.postPushLabel': 'Push automatically after commit',
+        'settings.postPushOn': 'On (default)',
+        'settings.postPushOff': 'Off',
+        'settings.postPushHint': 'Pushes the current branch to origin right after a successful commit. A failed push does not undo the commit; the reason shows in the hint on the Changes tab.',
         'settings.viewLabel': 'Changes list layout',
         'settings.viewList': 'List: one file per row, name first then its folder',
         'settings.viewTree': 'Tree: files grouped by folder',
         'settings.modelLabel': 'Model for commit messages',
         'settings.modelHint': 'Models come from the catalog configured in DeepSeek Harness.',
         'settings.modelNone': 'None selected',
+        'settings.commitThinkingLabel': 'Commit message thinking mode',
+        'settings.thinkingOff': 'Off (default)',
+        'settings.thinkingOn': 'On',
+        'settings.commitThinkingHint': 'Uses the selected thinking level; generation may take longer and use more tokens.',
+        'settings.thinkingUnsupported': 'This model does not offer selectable thinking levels.',
+        'settings.thinkingRequired': 'This model cannot turn thinking off. Choose a model that supports off to disable it.',
+        'settings.thinkingSelectModel': 'Select a commit message model first.',
+        'settings.commitEffortLabel': 'Thinking level',
+        'settings.effortDefault': 'Model default',
         'settings.saved': 'Saved',
         'settings.noLlm': 'This profile has no LLM service mounted, so models cannot be listed',
         'settings.partialModels': 'These providers failed: {list}',
@@ -2798,13 +2985,16 @@ window.__ModuleLoader__.load({
         'viewer.noChanges': 'No content difference on this side',
         'viewer.expandAll': 'Show all',
         'action.retry': 'Retry',
+        'action.cancel': 'Cancel',
+        'action.close': 'Close',
 
         'error.gitMissing': 'git executable not found',
         'error.notRepository': 'Not a Git repository',
         'error.timeout': 'Operation timed out',
         'error.outsideRoot': 'Path outside the repository',
         'error.openFailed': 'Could not open the link (blocked or unsupported): {url}',
-        'error.generic': 'Something went wrong: {message}'
+        'error.generic': 'Something went wrong: {message}',
+        'error.modelFailed': 'The model call failed: {message}'
       }
 
       Object.assign(exports, { NS, zh, en });
@@ -2814,10 +3004,8 @@ window.__ModuleLoader__.load({
       /**
        * src/components/GitPanelSurface.js —— 两个宿主外壳共用的面板入口
        *
-       * 同一个 Panel 出现在两处：
-       *   · 会话视图 tab（`conversation.view`，会话区顶部那排视图标签）
-       *   · 右侧栏 tab（`sidebar.right.pane.tab`）
-       * 两处都是 session 作用域，框架都直接给 `sessionId` 与 `t`，所以这里只做转发。
+       * 面板只挂在右侧栏 tab（`sidebar.right.pane.tab`）：Git 变动与「当前会话所在项目」强绑定，
+       * 右侧栏是 session 作用域，框架直接给 `sessionId` 与 `t`，所以这里只做转发。
        */
       const { h } = __m("./platform.js");
       const { Panel } = __m("./components/Panel.js");
@@ -2843,12 +3031,18 @@ window.__ModuleLoader__.load({
        *   │ 左列（树/列表）        ‖ 右栏（diff / 文件内容）      │
        *   └──────────────────────────────────────────────────────┘
        *
-       * 刷新策略：挂载 / 切根 / 切模式 / 窗口重新可见+聚焦 / 手动 ⟳ / 可选 8s 轮询；
-       * 每次请求带序号守护，切根时 abort 掉旧请求。
+       * 刷新策略：
+       *  · 轮询（8s）/ 窗口重新可见+聚焦 → status + 储存库汇总；status 内容没变就不落状态，
+       *    所以也不会连带重取 diff；
+       *  · 手动刷新（R / 立即刷新）→ 额外重读当前 diff、文件内容与文件树（外部改动是显式意图）；
+       *  · 任何写操作（暂存 / 提交 / 保存 / 分支）→ 一次 refreshRepository（status + 汇总）。
+       * 每次请求带序号守护与 AbortController，切根 / 卸载时旧请求会被真正取消。
        */
       const { h, useCallback, useEffect, useMemo, useRef, useState, getPluginContext } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
       const { PopupMenu, MenuItem, MenuLabel, MenuSeparator } = __m("./ui/Menu.js");
+      const { useTimedNotice } = __m("./ui/useTimedNotice.js");
+      const { useSnapshotResource } = __m("./ui/useSnapshotResource.js");
       const { RepoList } = __m("./components/RepoList.js");
       const { ChangesList } = __m("./components/ChangesList.js");
       const { FileTree } = __m("./components/FileTree.js");
@@ -2866,15 +3060,21 @@ window.__ModuleLoader__.load({
       const { MODE, readPrefs, writePref, readRemoteAccount, saveRemoteAccount, usePref, useLatestGuard } = __m("./store.js");
       const api = __m("./api.js");
       const { openExternalUrl } = __m("./util/openUrl.js");
-      const { reconcileSelection } = __m("./util/changes.js");
+      const { reconcileSelection, statusSignature } = __m("./util/changes.js");
+      const { readSnapshot, writeSnapshot, snapshotAge } = __m("./util/resource-cache.js");
+      const { readDrafts, writeDraft, dropDraft } = __m("./util/draft-cache.js");
       const { webUrlOf } = __m("./util/remote.js");
       const { formatClock } = __m("./util/time.js");
 
       const POLL_INTERVAL_MS = 8000
-      /** 提交成功提示的存活时间：看一眼就够，别一直占着位置。 */
-      const COMMIT_NOTE_TTL_MS = 8000
+      /** 工具条与提交框的信息类提示：看一眼就够，别一直占着位置。 */
+      const NOTE_TTL_MS = 8000
       const MIN_LEFT = 180
       const MIN_RIGHT = 280
+      /** 需要展示提示条的 sync 状态：该推送的两种 + 远端已被删除（要收尾）。 */
+      const SYNC_HINT_STATES = ['never-pushed', 'ahead', 'remote-deleted']
+
+      const NO_ROOTS = { projectRoot: null, roots: [], warnings: [] }
 
       function documentVisible() {
         return document.visibilityState !== 'hidden'
@@ -2884,12 +3084,25 @@ window.__ModuleLoader__.load({
         return document.hasFocus()
       }
 
-
-      function initialSide(entry) {
-        if (entry === null) return 'unstaged'
-        if (entry.untracked) return 'untracked'
-        if (entry.unstaged) return 'unstaged'
-        return 'staged'
+      /**
+       * 两份「改动规模」是否一样。
+       *
+       * 轮询每 8 秒回来一次，内容一致时不该让整张储存库列表重渲染 —— 那会连带
+       * 重新计算行布局，并让「有数字」的视觉稳定感碎掉。
+       */
+      function sameRootStats(previous, next) {
+        const previousKeys = Object.keys(previous)
+        if (previousKeys.length !== Object.keys(next).length) return false
+        for (const key of previousKeys) {
+          const before = previous[key]
+          const after = next[key]
+          if (after === undefined || before.error !== after.error) return false
+          if (before.error !== undefined) continue
+          if (before.counts.total !== after.counts.total) return false
+          if (before.counts.conflicted !== after.counts.conflicted) return false
+          if (before.adds !== after.adds || before.dels !== after.dels || before.binary !== after.binary) return false
+        }
+        return true
       }
 
       function Panel(props) {
@@ -2897,9 +3110,20 @@ window.__ModuleLoader__.load({
         const tRef = useRef(t)
         tRef.current = t
         /** loadAccounts 定义在 openSettings 之后，这里留一个最新引用供打开设置时调用。 */
-        const loadAccountsRef = useRef(null)
 
         const sessionId = props.sessionId
+
+        /**
+         * 首屏快照的键。
+         *
+         * 切走再切回来时组件会重新挂载：先拿上次的成功结果渲染，再后台刷新。
+         * 项目根按会话分键（不同会话可能是不同项目），status 按仓库路径分键
+         * （同一仓库被多个会话打开时共用一份快照）。
+         */
+        const projectKey = 'project:' + String(sessionId)
+        const statusKeyOf = (rootPath) => 'status:' + rootPath
+        const selectionKeyOf = (rootPath) => 'changes-selection:' + rootPath
+        const fileSelectionKeyOf = (rootPath) => 'file-selection:' + rootPath
 
         /* ------------------------------- 偏好 ------------------------------- */
         const [mode, setMode] = usePref('mode')
@@ -2913,6 +3137,8 @@ window.__ModuleLoader__.load({
         const [repositoriesOpen, setRepositoriesOpen] = usePref('repositoriesOpen')
         const [changesView, setChangesView] = usePref('changesView')
         const [untrackedMode, setUntrackedMode] = usePref('untrackedMode')
+        /** 提交成功后自动推送（默认开；对应 VS Code 的 git.postCommitCommand）。 */
+        const [postCommitPush, setPostCommitPush] = usePref('postCommitPush')
 
         /* ------------------------------ 远端账号 ------------------------------ */
         const [accounts, setAccounts] = useState([])
@@ -2928,20 +3154,14 @@ window.__ModuleLoader__.load({
         const [providers, setProviders] = useState([])
         // 每个远端仓库未合并 PR 数：{ 'owner/name': n }
         const [prCounts, setPrCounts] = useState({})
-        // 右侧详情：选中的仓库与它的数据
+        // 右侧详情：选中的仓库
         const [remoteSelection, setRemoteSelection] = useState(null)
-        const [remoteDetail, setRemoteDetail] = useState(null)
-        // 选中仓库的分支全貌：{ loading, error, data }（data 来自 remote/branches）
-        const [remoteBranches, setRemoteBranches] = useState(null)
-        const remoteBranchesRef = useRef(null)
-        remoteBranchesRef.current = remoteBranches
-        // 分支数据是「按仓库」的：记住上次拉的是哪个 fullName，避免切页签/关 PR 时重复请求
+        // 分支数据是「按账号+仓库」的：记住上次拉的是哪一份，避免切页签/关 PR 时重复请求
         const branchSelectionRef = useRef(null)
         const remoteReposRef = useRef([])
         remoteReposRef.current = remoteRepos
-        // 面板内打开的 PR：{ number } + 它的详情
+        // 面板内打开的 PR
         const [openPull, setOpenPull] = useState(null)
-        const [pullDetail, setPullDetail] = useState(null)
         const [accountsBusy, setAccountsBusy] = useState(false)
         const [accountsError, setAccountsError] = useState(null)
         const [accountsNotice, setAccountsNotice] = useState(null)
@@ -2949,9 +3169,10 @@ window.__ModuleLoader__.load({
         const [remoteNotice, setRemoteNotice] = useState(null)
 
         /* ------------------------------- 根 ------------------------------- */
-        const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
+        // 挂载时先吃上次的快照：有就零延迟出画面，没有才骨架屏
+        const [project, setProject] = useState(() => readSnapshot(projectKey) ?? NO_ROOTS)
         const [activeRootId, setActiveRootId] = useState(null)
-        const [rootsLoading, setRootsLoading] = useState(true)
+        const [rootsLoading, setRootsLoading] = useState(() => readSnapshot(projectKey) === undefined)
         const [rootsError, setRootsError] = useState(null)
 
         const roots = project.roots
@@ -2974,18 +3195,108 @@ window.__ModuleLoader__.load({
         const projectRef = useRef(project)
         projectRef.current = project
 
+        /* ------------------------- 远端资源（快照 + 守护） ------------------------- */
+        /**
+         * 四个「按选中项取数」的资源共用同一套语义，差别只在三个开关：
+         *  · 仓库详情 / PR 详情：失败就清空，让错误态独自占屏；
+         *  · 分支全貌 / 当前分支 PR 卡片：刷新与失败都保留上一份数据，列表与卡片不闪。
+         */
+        const remoteDetailResource = useSnapshotResource({
+          keyOf: (selection) => 'remote-detail:' + selection.accountId + ':' + selection.fullName,
+          // 带上账号 id：同名仓库在不同账号下不能共用一份详情
+          load: (selection) => api.remoteDetail({ accountId: selection.accountId, fullName: selection.fullName })
+            .then((value) => ({ ...value, accountId: selection.accountId })),
+          t
+        })
+        const remoteBranchesResource = useSnapshotResource({
+          keyOf: (selection) => 'remote-branches:' + selection.accountId + ':' + selection.fullName,
+          load: (selection) => api.remoteBranches({
+            accountId: selection.accountId,
+            fullName: selection.fullName,
+            rootPaths: allGitRoots.map((root) => root.path)
+          }),
+          keepPrevious: true,
+          keepOnError: true,
+          t
+        })
+        const pullDetailResource = useSnapshotResource({
+          keyOf: (selection) => 'pull:' + selection.accountId + ':#' + String(selection.number),
+          load: (selection) => api.remotePull({
+            accountId: selection.accountId,
+            fullName: selection.fullName,
+            number: selection.number
+          }),
+          onLoaded: (selection, data) => {
+            // 详情里能看到评论 = 用户已读：记水位供状态卡算未读
+            writePref('pullSeen', {
+              ...(readPrefs().pullSeen ?? {}),
+              [selection.accountId + '#' + selection.number]: data.comments.length
+            })
+          },
+          t
+        })
+        const linkedPullResource = useSnapshotResource({
+          snapshot: false,
+          keepPrevious: true,
+          keepOnError: true,
+          // 带上发起请求时的仓库 id：切根后在途的旧结果不会挂到新仓库的卡片上
+          load: () => api.prLinked({ rootPath: activeRoot.path }).then((value) => ({ ...value, rootId: activeRoot.id })),
+          t
+        })
+
+        const remoteDetail = remoteDetailResource.state
+        const remoteBranches = remoteBranchesResource.state
+        const pullDetail = pullDetailResource.state
+        const linkedPull = linkedPullResource.state
+        const loadRemoteDetail = remoteDetailResource.reload
+        const loadRemoteBranches = remoteBranchesResource.reload
+        const loadPullDetail = pullDetailResource.reload
+        const loadLinkedPull = linkedPullResource.reload
+        const clearRemoteBranches = remoteBranchesResource.clear
+        const clearPullDetail = pullDetailResource.clear
+        const remoteBranchesRef = useRef(remoteBranches)
+        remoteBranchesRef.current = remoteBranches
+
+        /** 打开某个 PR 时清掉上次合并的提示。 */
+        const openPullWith = useCallback((selection) => {
+          setRemoteNotice(null)
+          setOpenPull(selection)
+        }, [])
+
         /* ------------------------------ status ------------------------------ */
         const [status, setStatus] = useState(null)
+        /** 最新 status 的同步引用：判断「要不要显示骨架屏」时不用把它塞进 useCallback 依赖。 */
+        const statusRef = useRef(status)
+        statusRef.current = status
         const [statusLoading, setStatusLoading] = useState(false)
         const [statusError, setStatusError] = useState(null)
+        /** 上一次 status 的内容指纹：没变就不落状态（否则每 8 秒重渲染整张列表并重取 diff）。 */
+        const statusSignatureRef = useRef(null)
+        /** 储存库列表每行的改动规模：path -> { counts, adds, dels, binary } | { error } */
+        const [rootStats, setRootStats] = useState({})
+        const rootStatsRef = useRef(rootStats)
+        rootStatsRef.current = rootStats
         /** 正在暂存/取消暂存的文件路径；同时只允许一个，避免连点打乱索引。 */
         const [stagePending, setStagePending] = useState(null)
         const stagePendingRef = useRef(null)
         const statusSeq = useLatestGuard()
         const statusAbortRef = useRef(null)
+        const statsSeq = useLatestGuard()
+        const statsAbortRef = useRef(null)
 
         /* ----------------------------- 选中状态 ----------------------------- */
-        const [selection, setSelection] = useState(null) // { path, entry, side }
+        /**
+         * 两个页签各有一份选中项，互不迁移。
+         *
+         * 「变更」里的路径是仓库相对（活动仓库可能是项目里的子仓库），「文件」里的路径是
+         * 项目浏览根相对。共用一份状态时，切页签会把一个根下的相对路径套到另一个根上 ——
+         * 在单仓库项目里碰巧对，多仓库项目里打开的是另一个同名文件。
+         *
+         * changesSelection: { rootPath, path, entry, side }
+         * fileSelection:    { rootPath, path }
+         */
+        const [changesSelection, setChangesSelection] = useState(null)
+        const [fileSelection, setFileSelection] = useState(null)
         const [filter, setFilter] = useState('')
         const filterRef = useRef(null)
 
@@ -3001,6 +3312,18 @@ window.__ModuleLoader__.load({
         const [fileError, setFileError] = useState(null)
         const [fileNonce, setFileNonce] = useState(0)
         const fileSeq = useLatestGuard()
+        /** 文件树的手动刷新序号：+1 时清空目录缓存并重读（否则外部新建的文件永远看不到）。 */
+        const [treeNonce, setTreeNonce] = useState(0)
+
+        /**
+         * 远端仓库列表 / 账号列表的序号守护。
+         *
+         * 它们都「先 setLoading 再 await」：切账号时旧账号的列表不能覆盖新账号的。
+         * 详情 / 分支 / PR 详情各自有序号守护，见 useSnapshotResource。
+         */
+        const remoteReposGuard = useLatestGuard()
+        const pullCountsGuard = useLatestGuard()
+        const accountsGuard = useLatestGuard()
 
         /**
          * 编辑器草稿表：path -> { text, savedText, hash, eol, bom }。
@@ -3010,18 +3333,20 @@ window.__ModuleLoader__.load({
          *  静默丢弃按键是最不能接受的失败方式，所以草稿的生命周期 = 面板实例的生命周期。
          */
         const [drafts, setDrafts] = useState(() => new Map())
+        const draftsRef = useRef(drafts)
+        draftsRef.current = drafts
+        /** 草稿缓存按「仓库根」分桶：切到别的根再切回来，未保存的改动仍在。 */
+        const draftsRootRef = useRef(null)
         const [saveState, setSaveState] = useState({ busy: false, savedAt: 0, error: null, conflict: null })
         const saveSeq = useLatestGuard()
         /**
-         * 检测更新（git fetch）的状态。
-         * fetchedAt 为 0 表示还没检测过；checkSeq 保证只有最新一次结果落地。
+         * 插件自身版本与更新检查（与本仓库的 git 状态无关）。
          */
-        /** 插件自身版本与更新检查（与本仓库的 git 状态无关）。 */
         const [pluginState, setPluginState] = useState({
           version: null, busy: false, latestVersion: null, url: '', publishedAt: '', newer: false, checkedAt: 0, error: null
         })
         /** 工具条提示：插件检查结果与上游检查结果共用一条，谁最后动作显示谁。 */
-        const [toolbarNote, setToolbarNote] = useState(null)
+        const [toolbarNote, setToolbarNote] = useTimedNotice(NOTE_TTL_MS)
         const checkSeq = useLatestGuard()
 
         // 派生值只依赖 state，放在动作之前：checkUpdates/openRemote 要用到它们
@@ -3029,8 +3354,6 @@ window.__ModuleLoader__.load({
         const remoteWebUrl = webUrlOf(status === null ? null : status.remoteUrl)
         const versionTitle = buildVersionTitle(pluginState, t)
         const updateNote = toolbarNote
-        const draftsRef = useRef(drafts)
-        draftsRef.current = drafts
 
         /* --------------------------- 提交 / 设置 --------------------------- */
         const [commitMessage, setCommitMessage] = useState('')
@@ -3038,26 +3361,25 @@ window.__ModuleLoader__.load({
         const [commitGenerating, setCommitGenerating] = useState(false)
         /** 生成中的已等待毫秒数：每 200ms 刷新一次，让用户看得见它在跑。 */
         const [generateElapsed, setGenerateElapsed] = useState(0)
-        const [commitNote, setCommitNote] = useState(null)
-        /** 推送当前分支的状态：{ busy, error }。error 直接显示在「还只在你电脑上」提示块里。 */
-        const [pushState, setPushState] = useState({ busy: false, error: null })
-        const pushStateRef = useRef(pushState)
-        pushStateRef.current = pushState
+        const [commitNote, setCommitNote] = useTimedNotice(NOTE_TTL_MS)
+        /**
+         * 「推送 / 收尾」这类远端动作的状态：{ busy, error }。
+         * error 直接显示在提示块里，不弹窗；推送与收尾共用这一份（同一时刻只会做一个）。
+         */
+        const [remoteAction, setRemoteAction] = useState({ busy: false, error: null })
+        const remoteActionRef = useRef(remoteAction)
+        remoteActionRef.current = remoteAction
         const [showSettings, setShowSettings] = useState(false)
         /**
          * 创建 PR 表单（右侧面板）：
-         * { loading, error, repo, head, bases, accounts, accountId, base, title, body, bodyHeight,
+         * { loading, error, repo, head, bases, accounts, accountId, base, title, body,
          *   generating, creating, created, notice }
          *
-         * 这里没有 pushed：「分支推没推上去」属于仓库状态，唯一来源是 status.pushed。
+         * 这里没有推送状态：「分支与远端的关系」属于仓库状态，唯一来源是 `status.sync`。
          * 表单另存一份快照只会有两个后果 —— 同一屏出现两块同样的提示、以及推送后两边对不上。
          */
         const [pullForm, setPullForm] = useState(null)
-        /** 当前分支的 PR 状态卡：{ loading, error, data } */
-        const [linkedPull, setLinkedPull] = useState(null)
-        // 状态卡的刷新函数：createPull 等更早定义的回调用它，避免依赖顺序（TDZ）
-        const refreshLinkedRef = useRef(null)
-        const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
+        const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, reviewModel: null, commitThinking: false, commitReasoningEffort: null, error: null, saved: false })
 
         const [moreOpen, setMoreOpen] = useState(false)
         const moreAnchorRef = useRef(null)
@@ -3065,16 +3387,18 @@ window.__ModuleLoader__.load({
 
         const rootRef = useRef(null)
         const bodyRef = useRef(null)
-        const [dragging, setDragging] = useState(false)
+        const dividerRef = useRef(null)
 
         /* ============================ 解析项目根 ============================ */
         const resolveProject = useCallback(async (signal) => {
-          setRootsLoading(true)
+          // 有快照时这是「后台重新验证」：不把画面切回骨架屏
+          if (readSnapshot(projectKey) === undefined) setRootsLoading(true)
           setRootsError(null)
           try {
             const value = await api.resolveProject({ sessionId }, { signal })
             if (signal !== undefined && signal.aborted) return
             const next = { projectRoot: value.projectRoot, roots: value.roots, warnings: value.warnings }
+            writeSnapshot(projectKey, next)
             setProject(next)
             setActiveRootId((previous) => {
               if (typeof previous === 'string' && next.roots.some((root) => root.id === previous)) return previous
@@ -3090,7 +3414,7 @@ window.__ModuleLoader__.load({
           } finally {
             if (!(signal !== undefined && signal.aborted)) setRootsLoading(false)
           }
-        }, [sessionId])
+        }, [sessionId, projectKey])
 
         useEffect(() => {
 
@@ -3100,7 +3424,7 @@ window.__ModuleLoader__.load({
         }, [resolveProject, sessionId])
 
         /* ============================== 刷新 status ============================== */
-        const refreshStatus = useCallback(async () => {
+        const refreshActiveStatus = useCallback(async () => {
           const root = activeRootRef.current
           if (root === null || root.isGit === false) {
             setStatus(null)
@@ -3111,79 +3435,162 @@ window.__ModuleLoader__.load({
           const token = statusSeq.begin()
           // 每次刷新都换一个 AbortController：新请求打断旧请求，切根/卸载时也能真正取消
           const controller = new AbortController()
-          const previousController = statusAbortRef.current
+          statusAbortRef.current?.abort()
           statusAbortRef.current = controller
-          if (previousController !== null && typeof previousController.abort === 'function') {
-            try {
-              previousController.abort()
-            } catch {
-              /* ignore */
-            }
-          }
-          setStatusLoading(true)
+          // 已经有画面时不再显示加载态：轮询每 8 秒一次，闪一下骨架屏比不刷新还糟。
+          const showLoading = statusRef.current === null
+          if (showLoading) setStatusLoading(true)
           setStatusError(null)
           try {
             const value = await api.readStatus({ rootPath: root.path }, { signal: controller.signal })
             if (!statusSeq.isLatest(token)) return
+            // 内容没变就不落状态：否则每一轮轮询都会重渲染整张列表、把选中项换成新对象、
+            // 再连带把 diff 重新取一遍 —— 什么都没有变，只是又跑了一圈。
+            const signature = statusSignature(value)
+            if (signature === statusSignatureRef.current) return
+            statusSignatureRef.current = signature
             setStatus(value)
-            setSelection((previous) => reconcileSelection(previous, value.files))
+            writeSnapshot(statusKeyOf(root.path), value)
+            setChangesSelection((previous) => reconcileSelection(previous, value.files))
           } catch (error) {
-            if (!statusSeq.isLatest(token)) return
-            if (error !== null && error !== undefined && error.code === 'aborted') return
+            if (!statusSeq.isLatest(token) || error.code === 'aborted') return
             setStatusError(api.describeError(error, tRef.current))
           } finally {
             if (statusAbortRef.current === controller) statusAbortRef.current = null
-            if (statusSeq.isLatest(token)) setStatusLoading(false)
+            if (showLoading && statusSeq.isLatest(token)) setStatusLoading(false)
           }
         }, [statusSeq])
 
+        /* ============================ 刷新储存库汇总 ============================ */
         /**
-         * 用户主动刷新（工具条按钮 / R 键）：除了 status，还要重读"当前正在看的内容"。
-         *
-         * - 变更模式：status 刷新后 `reconcileSelection` 会给出**新的** selection 对象，
-         *   diff 的 effect 依赖 selection 身份，所以 diff 自动重取 —— 这里不需要额外动作。
-         * - 文件模式：选中项代表一个路径，`reconcileSelection` 原样返回同一个对象（这是对的，
-         *   否则未修改的文件会被清空），因此文件内容必须靠 fileNonce 显式重读。
+         * 储存库列表每行要显示「改动文件数 + 增删行数」：一次请求把所有仓库查完，
+         * 宿主那边还能命中 status 缓存。内容没变就不落状态（否则列表会跟着轮询重渲染）。
          */
+        const refreshRootStats = useCallback(async () => {
+          const paths = projectRef.current.roots.filter((root) => root.isGit === true).map((root) => root.path)
+          if (paths.length === 0) {
+            if (Object.keys(rootStatsRef.current).length > 0) setRootStats({})
+            return
+          }
+          const token = statsSeq.begin()
+          const controller = new AbortController()
+          statsAbortRef.current?.abort()
+          statsAbortRef.current = controller
+          try {
+            const value = await api.rootStats({ paths }, { signal: controller.signal })
+            if (!statsSeq.isLatest(token)) return
+            const next = {}
+            for (const summary of value.summaries) next[summary.path] = summary
+            if (sameRootStats(rootStatsRef.current, next)) return
+            setRootStats(next)
+          } catch (error) {
+            if (!statsSeq.isLatest(token) || error.code === 'aborted') return
+            setStatusError(api.describeError(error, tRef.current))
+          } finally {
+            if (statsAbortRef.current === controller) statsAbortRef.current = null
+          }
+        }, [statsSeq])
+
+        /** 一次仓库操作之后要同时跟上的两件事：活动仓库的 status、所有仓库的改动规模。 */
+        const refreshRepository = useCallback(async () => {
+          await Promise.all([refreshActiveStatus(), refreshRootStats()])
+        }, [refreshActiveStatus, refreshRootStats])
+
+        /** 根集合本身变了（新增 / 隐藏 / 取消隐藏 / 移除）：汇总数字要跟着换一批。 */
+        const gitRootPathsKey = useMemo(
+          () => project.roots.filter((root) => root.isGit === true).map((root) => root.path).join('\u0000'),
+          [project.roots]
+        )
+        useEffect(() => {
+          refreshRootStats()
+        }, [gitRootPathsKey, refreshRootStats])
+
+        /**
+         * 用户主动刷新（工具条 / R 键）：重读 status、储存库汇总、当前 diff、文件内容与文件树。
+         *
+         * 轮询不碰 diff / 文件树：那两样只有内容真的变了才需要重来，而 status 指纹
+         * 已经负责判断「变没变」；手动刷新是用户的显式意图，一律重读。
+         */
+        // 卸载时取消还在跑的汇总请求（status 由根 effect 负责）。
+        useEffect(() => () => {
+          statsAbortRef.current?.abort()
+          statsAbortRef.current = null
+        }, [])
+
         const refreshAll = useCallback(() => {
           setFileNonce((count) => count + 1)
-          refreshStatus()
-        }, [refreshStatus])
+          setDiffNonce((count) => count + 1)
+          setTreeNonce((count) => count + 1)
+          refreshRepository()
+        }, [refreshRepository])
 
         useEffect(() => {
-          setStatus(null)
-          setSelection(null)
+          // 换根：先把上次看过的快照摆上来，再后台刷新 —— 切回来不再白屏
+          const rootPath = activeRoot === null || activeRoot.isGit !== true ? null : activeRoot.path
+          const cachedStatus = rootPath === null ? undefined : readSnapshot(statusKeyOf(rootPath))
+          const cachedSelection = rootPath === null ? undefined : readSnapshot(selectionKeyOf(rootPath))
+          statusSignatureRef.current = cachedStatus === undefined ? null : statusSignature(cachedStatus)
+          setStatus(cachedStatus ?? null)
+          setChangesSelection(reconcileSelection(cachedSelection ?? null, cachedStatus === undefined ? [] : cachedStatus.files))
           setDiff(null)
-          setFileData(null)
-          // 换根 = 换了一批文件：草稿（按相对路径存）不再有意义
-          setDrafts(new Map())
-          setSaveState({ busy: false, savedAt: 0, error: null, conflict: null })
-          // 推送错误属于上一个仓库：换根就清掉，别让它挂在另一个仓库的提示块里
-          setPushState({ busy: false, error: null })
+          // 换仓库 = 换了一份上下文：提交说明、创建 PR 表单、操作结果都不属于新仓库
+          setRemoteAction({ busy: false, error: null })
+          setCommitMessage('')
+          setCommitNote(null)
+          setPullForm(null)
           if (activeRoot === null || activeRoot.isGit === false) {
             setStatusLoading(false)
             return undefined
           }
-          refreshStatus()
+          refreshActiveStatus()
           // 切根/卸载：取消这个根还没回来的 status 请求
           return () => {
-            const controller = statusAbortRef.current
-            if (controller !== null && typeof controller.abort === 'function') {
-              try {
-                controller.abort()
-              } catch {
-                /* ignore */
-              }
-            }
+            statusAbortRef.current?.abort()
             statusAbortRef.current = null
           }
-        }, [activeRootId, activeRoot === null ? null : activeRoot.isGit, refreshStatus])
+        }, [activeRootId, activeRoot === null ? null : activeRoot.isGit, refreshActiveStatus])
+
+        /* ---------------------------- 选中项快照 ---------------------------- */
+        // 切走再切回来时要回到「上次看的那个文件」，否则每次都要重新点一遍
+        useEffect(() => {
+          if (changesSelection === null) return
+          writeSnapshot(selectionKeyOf(changesSelection.rootPath), changesSelection)
+        }, [changesSelection])
+
+        useEffect(() => {
+          if (fileSelection === null) return
+          writeSnapshot(fileSelectionKeyOf(fileSelection.rootPath), fileSelection)
+        }, [fileSelection])
+
+        /**
+         * 文件页签的根与草稿。
+         *
+         * 草稿按「浏览根 + 相对路径」存进模块级缓存：切右侧栏页签会卸载组件，
+         * 只放在组件 state 里的话，一次 unmount 就把没保存的改动丢光。
+         */
+        useEffect(() => {
+          const browsePath = browseRoot === null ? null : browseRoot.path
+          draftsRootRef.current = browsePath
+          setDrafts(browsePath === null ? new Map() : readDrafts(browsePath))
+          setFileData(null)
+          setFileError(null)
+          setSaveState({ busy: false, savedAt: 0, error: null, conflict: null })
+          if (browsePath !== null) setFileSelection(readSnapshot(fileSelectionKeyOf(browsePath)) ?? null)
+        }, [browseRoot === null ? null : browseRoot.path])
 
         /* ---------------------------- 自适应 refresh ---------------------------- */
         useEffect(() => {
-          const onFocus = () => refreshStatus()
+          // 切回窗口/页签时，只有快照已经凉了才真的发请求：
+          // 刚挂载时的 refreshRepository 已经发过一次，这里再发就是同一份数据的第二次往返。
+          const shouldRefresh = () => {
+            const root = activeRootRef.current
+            return root === null ? true : snapshotAge(statusKeyOf(root.path)) > 500
+          }
+          const onFocus = () => {
+            if (shouldRefresh()) refreshRepository()
+          }
           const onVisibility = () => {
-            if (documentVisible()) refreshStatus()
+            if (documentVisible() && shouldRefresh()) refreshRepository()
           }
           window.addEventListener('focus', onFocus)
           document.addEventListener('visibilitychange', onVisibility)
@@ -3191,15 +3598,15 @@ window.__ModuleLoader__.load({
             window.removeEventListener('focus', onFocus)
             document.removeEventListener('visibilitychange', onVisibility)
           }
-        }, [refreshStatus])
+        }, [refreshRepository])
 
         useEffect(() => {
           if (autoRefresh !== true || mode !== MODE.changes) return undefined
           const timer = setInterval(() => {
-            if (documentVisible() && documentFocused()) refreshStatus()
+            if (documentVisible() && documentFocused()) refreshRepository()
           }, POLL_INTERVAL_MS)
           return () => clearInterval(timer)
-        }, [autoRefresh, mode, refreshStatus])
+        }, [autoRefresh, mode, refreshRepository])
 
         /**
          * 「储存库」行上的分支名是 project/resolve 的快照，而 status 是活动仓库的实时状态。
@@ -3219,9 +3626,17 @@ window.__ModuleLoader__.load({
         }, [status, resolveProject])
 
         /* ============================== 取 diff ============================== */
+        /**
+         * 依赖是「请求的身份」而不是 selection 对象：决定 diff 的只有
+         * `rootPath + path + side + 上下文设置`。轮询换掉了 selection 对象但内容没变时，
+         * 这里不会重取（这是把 8 秒一次的 diff 请求彻底关掉的关键）。
+         */
+        const diffRootPath = changesSelection === null ? '' : changesSelection.rootPath
+        const diffPath = changesSelection === null ? '' : changesSelection.path
+        const diffSide = changesSelection === null ? '' : changesSelection.side
         useEffect(() => {
           if (mode !== MODE.changes) return undefined
-          if (selection === null || activeRoot === null) {
+          if (diffPath === '') {
             setDiff(null)
             setDiffLoading(false)
             setDiffError(null)
@@ -3229,13 +3644,15 @@ window.__ModuleLoader__.load({
           }
           const controller = new AbortController()
           const token = diffSeq.begin()
+          // 换文件/换侧立刻清空：否则新标题会和上一个文件的 diff 同屏一小会儿
+          setDiff(null)
           setDiffLoading(true)
           setDiffError(null)
           api.readDiff({
-            rootPath: activeRoot.path,
-            path: selection.path,
-            staged: selection.side === 'staged',
-            untracked: selection.side === 'untracked',
+            rootPath: diffRootPath,
+            path: diffPath,
+            staged: diffSide === 'staged',
+            untracked: diffSide === 'untracked',
             contextLines,
             ignoreWhitespace
           }, { signal: controller.signal })
@@ -3244,17 +3661,29 @@ window.__ModuleLoader__.load({
               setDiff(value)
             })
             .catch((error) => {
-              if (!diffSeq.isLatest(token)) return
-              if (error && error.code === 'aborted') return
+              if (!diffSeq.isLatest(token) || error.code === 'aborted') return
               setDiffError(api.describeError(error, tRef.current))
             })
             .finally(() => {
               if (diffSeq.isLatest(token)) setDiffLoading(false)
             })
           return () => controller.abort()
-        }, [mode, selection, activeRootId, contextLines, ignoreWhitespace, diffSeq, diffNonce])
+        }, [mode, diffRootPath, diffPath, diffSide, contextLines, ignoreWhitespace, diffSeq, diffNonce])
 
         /* ====================== 编辑器草稿 / 保存（文件模式） ====================== */
+
+        /** 更新一个草稿并同步写进模块级缓存（null = 丢掉这个文件的草稿）。 */
+        const patchDraft = useCallback((path, draft) => {
+          setDrafts((previous) => {
+            const next = new Map(previous)
+            if (draft === null) next.delete(path)
+            else next.set(path, draft)
+            return next
+          })
+          const root = draftsRootRef.current
+          if (draft === null) dropDraft(root, path)
+          else writeDraft(root, path, draft)
+        }, [])
 
         /**
          * 读取结果与草稿对账。
@@ -3267,14 +3696,9 @@ window.__ModuleLoader__.load({
          *  · 读到的不是可编辑文本 → 丢掉该 path 的草稿
          */
         const adoptRead = useCallback((path, value) => {
-          const editable = value !== null && typeof value === 'object'
-            && value.kind === 'text' && typeof value.text === 'string'
           const existing = draftsRef.current.get(path)
-          if (editable !== true) {
-            if (existing === undefined) return
-            const cleaned = new Map(draftsRef.current)
-            cleaned.delete(path)
-            setDrafts(cleaned)
+          if (value.kind !== 'text') {
+            if (existing !== undefined) patchDraft(path, null)
             return
           }
           const fresh = {
@@ -3282,40 +3706,34 @@ window.__ModuleLoader__.load({
             savedText: value.text,
             hash: value.hash,
             eol: value.eol,
-            bom: value.bom === true
+            bom: value.bom
           }
           if (existing === undefined) {
-            const created = new Map(draftsRef.current)
-            created.set(path, fresh)
-            setDrafts(created)
+            patchDraft(path, fresh)
             return
           }
           if (existing.hash === value.hash) return
-          const dirty = existing.text !== existing.savedText
-          const next = new Map(draftsRef.current)
-          next.set(path, dirty ? existing : fresh)
-          setDrafts(next)
-          if (dirty) setSaveState((previous) => ({ ...previous, conflict: { path } }))
-        }, [])
+          if (existing.text !== existing.savedText) {
+            setSaveState((previous) => ({ ...previous, conflict: { path } }))
+            return
+          }
+          patchDraft(path, fresh)
+        }, [patchDraft])
 
         /** 编辑器输入 → 更新草稿。 */
         const changeDraft = useCallback((path, text) => {
-          setDrafts((previous) => {
-            const draft = previous.get(path)
-            if (draft === undefined || draft.text === text) return previous
-            const next = new Map(previous)
-            next.set(path, { ...draft, text })
-            return next
-          })
-        }, [])
+          const draft = draftsRef.current.get(path)
+          if (draft === undefined || draft.text === text) return
+          patchDraft(path, { ...draft, text })
+        }, [patchDraft])
 
         /**
          * 保存当前文件。
          * `force === true` 只由「覆盖保存」按钮传入 —— 那是用户看过冲突提示后的显式决定。
          */
         const saveDraft = useCallback(async (force) => {
-          if (mode !== MODE.files || browseRoot === null || selection === null) return
-          const path = selection.path
+          if (mode !== MODE.files || browseRoot === null || fileSelection === null) return
+          const path = fileSelection.path
           const draft = draftsRef.current.get(path)
           if (draft === undefined) return
           if (force !== true && draft.text === draft.savedText) return
@@ -3328,50 +3746,35 @@ window.__ModuleLoader__.load({
               ? await api.writeFile({ ...body, force: true })
               : await api.writeFile({ ...body, expectedHash: draft.hash })
             if (!saveSeq.isLatest(token)) return
-            setDrafts((previous) => {
-              const current = previous.get(path)
-              if (current === undefined) return previous
-              const next = new Map(previous)
-              next.set(path, { ...current, savedText: current.text, hash: result.hash })
-              return next
-            })
+            const current = draftsRef.current.get(path)
+            if (current !== undefined) patchDraft(path, { ...current, savedText: current.text, hash: result.hash })
             setSaveState({ busy: false, savedAt: Date.now(), error: null, conflict: null })
-            // 保存后工作区变了：刷新 status，让变更列表/计数跟上（选中项是路径型，不会被清掉）
-            refreshStatus()
+            // 保存后工作区变了：变更列表与储存库行的数字都要跟上
+            refreshRepository()
           } catch (error) {
             if (!saveSeq.isLatest(token)) return
-            if (error !== null && error !== undefined && error.code === 'conflict') {
+            if (error.code === 'conflict') {
               setSaveState({ busy: false, savedAt: 0, error: null, conflict: { path } })
               return
             }
-            if (error !== null && error !== undefined && error.code === 'aborted') {
+            if (error.code === 'aborted') {
               setSaveState((previous) => ({ ...previous, busy: false }))
               return
             }
             setSaveState({ busy: false, savedAt: 0, error: api.describeError(error, tRef.current), conflict: null })
           }
-        }, [mode, browseRoot, selection, saveSeq, refreshStatus])
+        }, [mode, browseRoot, fileSelection, saveSeq, patchDraft, refreshRepository])
 
         /** 冲突条的「重新加载」：丢掉本地改动，重新从磁盘读。 */
         const reloadDraft = useCallback(() => {
-          if (selection === null) return
-          const path = selection.path
-          setDrafts((previous) => {
-            if (!previous.has(path)) return previous
-            const next = new Map(previous)
-            next.delete(path)
-            return next
-          })
+          if (fileSelection === null) return
+          patchDraft(fileSelection.path, null)
           setSaveState({ busy: false, savedAt: 0, error: null, conflict: null })
           setFileNonce((count) => count + 1)
-        }, [selection])
+        }, [fileSelection, patchDraft])
 
         /* -------------------------- 检测更新 / 打开仓库 -------------------------- */
 
-        /**
-         * 检测更新 = 让宿主执行一次 git fetch，再回来看 ahead/behind。
-         * 这是只读操作（只更新远端跟踪引用），所以不需要二次确认。
-         */
         /** 检查插件是否最新（当前安装版本 vs GitHub 最新 release）。 */
         const checkUpdates = useCallback(async () => {
           const token = checkSeq.begin()
@@ -3385,11 +3788,11 @@ window.__ModuleLoader__.load({
               latestVersion: value.latestVersion,
               url: value.url,
               publishedAt: value.publishedAt,
-              newer: value.newer === true,
+              newer: value.newer,
               checkedAt: Date.now(),
               error: null
             })
-            setToolbarNote(value.newer === true
+            setToolbarNote(value.newer
               ? {
                 tone: 'warn',
                 text: tRef.current('update.pluginNewer', { version: value.latestVersion, current: value.currentVersion }),
@@ -3412,7 +3815,7 @@ window.__ModuleLoader__.load({
           api.pluginInfo().then((value) => {
             if (!alive) return
             setPluginState((previous) => ({ ...previous, version: value.version }))
-          }).catch((error) => {
+          }, (error) => {
             if (!alive) return
             setPluginState((previous) => ({ ...previous, error: api.describeError(error, tRef.current) }))
           })
@@ -3423,10 +3826,11 @@ window.__ModuleLoader__.load({
 
         /** 打开远端仓库网页（本地路径类远端没有网页，按钮此时是禁用的）。 */
         const openRemote = useCallback(() => {
-          if (remoteWebUrl === null) return
-          window.open(remoteWebUrl, '_blank', 'noopener,noreferrer')
-        }, [remoteWebUrl])
-
+          const result = openExternalUrl(remoteWebUrl)
+          if (result.opened !== true) {
+            setToolbarNote({ tone: 'error', text: tRef.current('error.openFailed', { url: remoteWebUrl }) })
+          }
+        }, [remoteWebUrl, setToolbarNote])
 
         /** 有未保存改动的文件（给文件树画脏点）。 */
         const dirtyPaths = useMemo(() => {
@@ -3434,10 +3838,12 @@ window.__ModuleLoader__.load({
           for (const [path, draft] of drafts) if (draft.text !== draft.savedText) set.add(path)
           return set
         }, [drafts])
+
         /* ============================ 取文件内容 ============================ */
+        const filePath = fileSelection === null ? null : fileSelection.path
         useEffect(() => {
           if (mode !== MODE.files) return undefined
-          if (selection === null || activeRoot === null) {
+          if (filePath === null) {
             setFileData(null)
             setFileLoading(false)
             setFileError(null)
@@ -3447,44 +3853,36 @@ window.__ModuleLoader__.load({
           const token = fileSeq.begin()
           setFileLoading(true)
           setFileError(null)
-          const path = selection.path
-          api.readFile({ rootPath: browseRoot.path, path }, { signal: controller.signal })
+          api.readFile({ rootPath: browseRoot.path, path: filePath }, { signal: controller.signal })
             .then((value) => {
               if (!fileSeq.isLatest(token)) return
               setFileData(value)
-              adoptRead(path, value)
+              adoptRead(filePath, value)
             })
             .catch((error) => {
-              if (!fileSeq.isLatest(token)) return
-              if (error && error.code === 'aborted') return
+              if (!fileSeq.isLatest(token) || error.code === 'aborted') return
               setFileError(api.describeError(error, tRef.current))
             })
             .finally(() => {
               if (fileSeq.isLatest(token)) setFileLoading(false)
             })
           return () => controller.abort()
-        }, [mode, selection, browseRoot === null ? null : browseRoot.id, fileSeq, fileNonce])
+        }, [mode, filePath, browseRoot === null ? null : browseRoot.path, fileSeq, fileNonce])
 
         /* ============================== 交互 ============================== */
         const selectEntry = useCallback((entry, groupKey) => {
-          if (entry === null || entry === undefined) return
-          const side = groupKey === 'staged' && entry.staged === true
-            ? 'staged'
-            : groupKey === 'unstaged' && entry.unstaged === true
-              ? 'unstaged'
-              : groupKey === 'untracked'
-                ? 'untracked'
-                : initialSide(entry)
-          setSelection({ path: entry.path, entry, side })
+          const side = groupKey === 'untracked'
+            ? 'untracked'
+            : (groupKey === 'staged' && entry.staged === true ? 'staged' : 'unstaged')
+          setChangesSelection({ rootPath: activeRootRef.current.path, path: entry.path, entry, side })
         }, [])
 
         const selectFile = useCallback((relPath) => {
-          if (typeof relPath !== 'string' || relPath === '') return
-          setSelection({ path: relPath, entry: null, side: 'unstaged' })
+          setFileSelection({ rootPath: browseRootRef.current.path, path: relPath })
         }, [])
 
         const switchSide = useCallback((side) => {
-          setSelection((previous) => (previous === null ? previous : { ...previous, side }))
+          setChangesSelection((previous) => (previous === null ? null : { ...previous, side }))
         }, [])
 
         /**
@@ -3494,49 +3892,91 @@ window.__ModuleLoader__.load({
          */
         const stageEntry = useCallback(async (relPath, action) => {
           if (activeRoot === null || activeRoot.isGit === false) return
-          if (typeof relPath !== 'string' || relPath === '') return
-          if (action !== 'stage' && action !== 'unstage') return
           if (stagePendingRef.current !== null) return
           stagePendingRef.current = relPath
           setStagePending(relPath)
           setStatusError(null)
           try {
             await api.stageFile({ rootPath: activeRoot.path, path: relPath, action })
-            await refreshStatus()
+            await refreshRepository()
             setDiffNonce((previous) => previous + 1)
           } catch (error) {
-            if (error === null || error === undefined || error.code !== 'aborted') {
+            if (error.code !== 'aborted') {
               setStatusError(api.describeError(error, tRef.current))
             }
           } finally {
             stagePendingRef.current = null
             setStagePending(null)
           }
-        }, [activeRoot, refreshStatus])
+        }, [activeRoot, refreshRepository])
 
         /** 分组头的批量按钮：一次暂存或取消暂存整组。 */
         const stageGroup = useCallback(async (scope) => {
           if (activeRoot === null || activeRoot.isGit === false) return
-          if (scope !== 'stage-unstaged' && scope !== 'stage-untracked' && scope !== 'stage-all' && scope !== 'unstage') return
           if (stagePendingRef.current !== null) return
           stagePendingRef.current = scope
           setStagePending(scope)
           setStatusError(null)
           try {
             await api.stageGroup({ rootPath: activeRoot.path, scope })
-            await refreshStatus()
+            await refreshRepository()
             setDiffNonce((previous) => previous + 1)
           } catch (error) {
-            if (error === null || error === undefined || error.code !== 'aborted') {
+            if (error.code !== 'aborted') {
               setStatusError(api.describeError(error, tRef.current))
             }
           } finally {
             stagePendingRef.current = null
             setStagePending(null)
           }
-        }, [activeRoot, refreshStatus])
+        }, [activeRoot, refreshRepository])
 
-        /** 提交已暂存内容。未暂存的改动不参与。 */
+        /**
+         * 推送当前分支（`branch/push`）。成功就刷新仓库状态 —— 提示条由 `status.sync` 驱动，
+         * 刷新后自己消失/换成别的状态；失败把原因留在提示条里，不弹窗。
+         * 正在执行时用 ref 挡住重复点击（state 要等下一遍渲染才生效）。
+         */
+        const pushBranchNow = useCallback(async () => {
+          const root = activeRootRef.current
+          if (root === null || root.isGit !== true || remoteActionRef.current.busy === true) return null
+          setRemoteAction({ busy: true, error: null })
+          try {
+            const value = await api.pushBranch({ rootPath: root.path })
+            setRemoteAction({ busy: false, error: null })
+            setToolbarNote({ tone: 'info', text: tRef.current('sync.pushed', { branch: value.branch }) })
+            await refreshRepository()
+            return value
+          } catch (error) {
+            setRemoteAction({ busy: false, error: api.describeError(error, tRef.current) })
+            return null
+          }
+        }, [refreshRepository])
+
+        /**
+         * 收尾「远端分支已被删除」的本地分支（`branch/cleanup`）：宿主一次做完
+         * 取远程更新 → 切回默认分支 → 快进 → 删本地分支。
+         * 成功会切换分支，所以要重新解析根（行尾分支名）并重读 status。
+         */
+        const cleanupBranchNow = useCallback(async () => {
+          const root = activeRootRef.current
+          if (root === null || root.isGit !== true || remoteActionRef.current.busy === true) return null
+          setRemoteAction({ busy: true, error: null })
+          try {
+            const value = await api.cleanupBranch({ rootPath: root.path })
+            setRemoteAction({ busy: false, error: null })
+            setToolbarNote({
+              tone: 'info',
+              text: tRef.current('sync.cleaned', { branch: value.branch, base: value.base })
+            })
+            await resolveProject()
+            await refreshRepository()
+            return value
+          } catch (error) {
+            setRemoteAction({ busy: false, error: api.describeError(error, tRef.current) })
+            return null
+          }
+        }, [resolveProject, refreshRepository])
+
         const commitStaged = useCallback(async () => {
           if (activeRoot === null || activeRoot.isGit === false) return
           const message = commitMessage.trim()
@@ -3546,36 +3986,30 @@ window.__ModuleLoader__.load({
           try {
             const result = await api.commitChanges({ rootPath: activeRoot.path, message })
             setCommitMessage('')
-            const subject = typeof result.subject === 'string' ? result.subject.trim() : ''
+            const subject = result.subject.trim()
             setCommitNote({
               tone: 'info',
               text: subject === ''
                 ? tRef.current('commit.done', { head: result.head })
                 : tRef.current('commit.doneSubject', { head: result.head, subject })
             })
-            await refreshStatus()
             setDiffNonce((previous) => previous + 1)
+            // 提交成功后按偏好自动推送；推送成功时它自己会刷新 status（提示条随之消失/换状态）。
+            // 没推或推失败时补一次刷新，让提示条按新的 ahead 状态出现（失败原因会显示在里面）。
+            const pushedAfterCommit = postCommitPush === true ? await pushBranchNow() : null
+            if (pushedAfterCommit === null) await refreshRepository()
           } catch (error) {
             setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current) })
           } finally {
             setCommitBusy(false)
           }
-        }, [activeRoot, commitMessage, commitBusy, refreshStatus])
+        }, [activeRoot, commitMessage, commitBusy, refreshRepository, postCommitPush, pushBranchNow])
 
         /** 改输入就清掉上一次的结果提示：用户已经在写新的说明了。 */
         const changeCommitMessage = useCallback((text) => {
           setCommitMessage(text)
           setCommitNote(null)
         }, [])
-
-        /**
-         * 提交成功的提示会自己消失（8s）；错误提示留着，用户读完自己动手再试。
-         */
-        useEffect(() => {
-          if (commitNote === null || commitNote.tone === 'error') return undefined
-          const timer = setTimeout(() => setCommitNote(null), COMMIT_NOTE_TTL_MS)
-          return () => clearTimeout(timer)
-        }, [commitNote])
 
         // 生成期间每 200ms 刷新一次已等待时间；结束（成功或失败）立刻归零。
         useEffect(() => {
@@ -3598,7 +4032,7 @@ window.__ModuleLoader__.load({
             const result = await api.commitMessage({ rootPath: activeRoot.path })
             setCommitMessage(result.message)
           } catch (error) {
-            setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current) })
+            setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current), code: error?.code ?? null })
           } finally {
             setCommitGenerating(false)
           }
@@ -3614,11 +4048,11 @@ window.__ModuleLoader__.load({
         /** 打开创建 PR 表单：先向宿主要仓库/账号/分支信息。 */
         const openCreatePull = useCallback(async () => {
           if (activeRoot === null || activeRoot.isGit !== true) return
-          setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', generating: false, creating: false, created: null, notice: null })
+          setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', generating: false, creating: false, created: null, notice: null })
           try {
             const prepared = await api.prPrepare({ rootPath: activeRoot.path })
             const remembered = readPrefs().pullTargets?.[pullTargetKey(prepared.repo)] ?? ''
-            const base = prepared.bases.includes(remembered) ? remembered : prepared.bases[0]
+            const base = prepared.bases.includes(remembered) ? remembered : (prepared.bases[0] ?? '')
             setPullForm({
               loading: false,
               error: null,
@@ -3630,14 +4064,13 @@ window.__ModuleLoader__.load({
               base,
               title: '',
               body: '',
-              bodyHeight: '160px',
               generating: false,
               creating: false,
               created: null,
               notice: null
             })
           } catch (error) {
-            setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', generating: false, creating: false, created: null, notice: null })
+            setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', generating: false, creating: false, created: null, notice: null })
           }
         }, [activeRoot])
 
@@ -3646,10 +4079,6 @@ window.__ModuleLoader__.load({
         const changePullField = useCallback((field, value) => {
           setPullForm((previous) => {
             if (previous === null || previous.created !== null) return previous
-            if (field === 'body') {
-              const lines = String(value).split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)), 0)
-              return { ...previous, body: value, bodyHeight: Math.min(Math.max(lines, 6), 30) * 19 + 24 + 'px' }
-            }
             return { ...previous, [field]: value, notice: null }
           })
         }, [])
@@ -3659,7 +4088,7 @@ window.__ModuleLoader__.load({
           if (pullForm === null || activeRoot === null) return
           // 没有目标分支就不发请求：`{ base: undefined }` 序列化后字段会整个消失，
           // 宿主只会回一句「缺少参数 base」，看起来像生成功能坏了，其实模型根本没被调用。
-          if (typeof pullForm.base !== 'string' || pullForm.base === '') return
+          if (pullForm.base === '') return
           setPullForm({ ...pullForm, generating: true, error: null, notice: null })
           try {
             const generated = await api.prGenerate({ rootPath: activeRoot.path, base: pullForm.base })
@@ -3681,7 +4110,7 @@ window.__ModuleLoader__.load({
         const createPull = useCallback(async () => {
           if (pullForm === null || activeRoot === null) return
           // 同 generatePullText：没有目标分支（或还没准备出 repo）时不发这个注定被拒的请求
-          if (typeof pullForm.base !== 'string' || pullForm.base === '') return
+          if (pullForm.base === '') return
           if (pullForm.repo === null) return
           setPullForm({ ...pullForm, creating: true, error: null, notice: null })
           try {
@@ -3694,21 +4123,37 @@ window.__ModuleLoader__.load({
               body: pullForm.body
             })
             writePref('pullTargets', { ...(readPrefs().pullTargets ?? {}), [pullTargetKey(pullForm.repo)]: pullForm.base })
-            await refreshLinkedRef.current?.()
-            await refreshStatus()
+            await loadLinkedPull()
+            await refreshRepository()
             setPullForm((previous) => (previous === null ? previous : { ...previous, creating: false, created }))
           } catch (error) {
             setPullForm((previous) => (previous === null ? previous : {
               ...previous, creating: false, error: api.describeError(error, tRef.current)
             }))
           }
-        }, [pullForm, activeRoot, refreshStatus])
+        }, [pullForm, activeRoot, refreshRepository])
+
+        /** 读账号列表（token 不会下发到客户端，只有 id/login/label）。 */
+        const loadAccounts = useCallback(async () => {
+          const token = accountsGuard.begin()
+          try {
+            const value = await api.listAccounts({})
+            if (!accountsGuard.isLatest(token)) return
+            setAccounts(value.accounts)
+            setProviders(value.providers)
+            setAccountsLoaded(true)
+          } catch (error) {
+            if (!accountsGuard.isLatest(token)) return
+            setAccountsLoaded(true)
+            setRemoteError(api.describeError(error, tRef.current))
+          }
+        }, [accountsGuard])
 
         const openSettings = useCallback(async () => {
           setShowSettings(true)
-          setSettingsState({ loading: true, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
+          setSettingsState({ loading: true, models: [], commitModel: null, reviewModel: null, commitThinking: false, commitReasoningEffort: null, error: null, saved: false })
           // 设置页也管理账号：进来就确保账号列表是最新的（只读列表接口，很便宜）
-          loadAccountsRef.current?.()
+          loadAccounts()
           try {
             const [catalog, settings] = await Promise.all([api.listModels({}), api.readSettings({})])
             const modelError = Array.isArray(catalog.failed) && catalog.failed.length > 0
@@ -3719,22 +4164,39 @@ window.__ModuleLoader__.load({
               models: catalog.models,
               commitModel: refOfPair(settings.commitModel),
               reviewModel: refOfPair(settings.reviewModel),
+              commitThinking: settings.commitThinking === true,
+              commitReasoningEffort: settings.commitReasoningEffort ?? null,
               error: modelError,
               saved: false
             })
           } catch (error) {
-            setSettingsState({ loading: false, models: [], commitModel: null, reviewModel: null, error: api.describeError(error, tRef.current), saved: false })
+            setSettingsState({ loading: false, models: [], commitModel: null, reviewModel: null, commitThinking: false, commitReasoningEffort: null, error: api.describeError(error, tRef.current), saved: false })
           }
         }, [])
 
         /** 选择模型即保存。空值表示清除。 */
         const changeCommitModel = useCallback(async (ref) => {
           const commitModel = ref === '' ? null : ref
-          setSettingsState((previous) => ({ ...previous, commitModel, saved: false, error: null }))
+          setSettingsState((previous) => ({ ...previous, commitModel, commitThinking: false, commitReasoningEffort: null, saved: false, error: null }))
           try {
-            const saved = await api.writeSettings({ commitModel })
-            setSettingsState((previous) => ({ ...previous, commitModel: refOfPair(saved.commitModel), saved: true }))
+            const saved = await api.writeSettings({ commitModel, commitThinking: false, commitReasoningEffort: null })
+            setSettingsState((previous) => ({ ...previous, commitModel: refOfPair(saved.commitModel), commitThinking: saved.commitThinking === true, commitReasoningEffort: saved.commitReasoningEffort ?? null, saved: true }))
           } catch (error) {
+            setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
+          }
+        }, [])
+
+        /** 思考模式与档位单独保存；失败时恢复服务器上的值。 */
+        const changeCommitThinking = useCallback(async (patch) => {
+          setSettingsState((previous) => ({ ...previous, ...patch, saved: false, error: null }))
+          try {
+            const saved = await api.writeSettings(patch)
+            setSettingsState((previous) => ({ ...previous, commitThinking: saved.commitThinking === true, commitReasoningEffort: saved.commitReasoningEffort ?? null, saved: true }))
+          } catch (error) {
+            try {
+              const settings = await api.readSettings({})
+              setSettingsState((previous) => ({ ...previous, commitThinking: settings.commitThinking === true, commitReasoningEffort: settings.commitReasoningEffort ?? null }))
+            } catch { /* 保留原始保存错误 */ }
             setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
           }
         }, [])
@@ -3764,7 +4226,7 @@ window.__ModuleLoader__.load({
 
         const toggleGroup = useCallback((groupKey) => {
           setCollapsedGroups((previous) => {
-            const next = { ...(previous && typeof previous === 'object' ? previous : {}) }
+            const next = { ...previous }
             if (next[groupKey] === true) delete next[groupKey]
             else next[groupKey] = true
             return next
@@ -3772,20 +4234,20 @@ window.__ModuleLoader__.load({
         }, [setCollapsedGroups])
 
         const selectRoot = useCallback((root) => {
-          if (root === null || root === undefined) return
+          if (root === null) return
           setActiveRootId(root.id)
         }, [])
 
         const addExternalRoot = useCallback(async (dir) => {
           const projectRoot = projectRef.current.projectRoot
-          if (typeof projectRoot !== 'string' || projectRoot === '') {
+          if (projectRoot === null || projectRoot === '') {
             throw new Error(tRef.current('status.noCwd'))
           }
           try {
             const value = await api.addRoot({ projectRoot, path: dir })
             const nextRoots = value.roots
             setProject({ projectRoot: value.projectRoot, roots: nextRoots, warnings: value.warnings })
-            const added = nextRoots.find((root) => typeof root.path === 'string' && root.path.toLowerCase() === dir.replace(/\\/g, '/').toLowerCase())
+            const added = nextRoots.find((root) => root.path.toLowerCase() === dir.replace(/\\/g, '/').toLowerCase())
             if (added !== undefined) setActiveRootId(added.id)
             else if (nextRoots.length > 0) setActiveRootId(nextRoots[nextRoots.length - 1].id)
             return value
@@ -3796,7 +4258,7 @@ window.__ModuleLoader__.load({
 
         const removeExternalRoot = useCallback(async (root) => {
           const projectRoot = projectRef.current.projectRoot
-          if (root === null || typeof projectRoot !== 'string') return
+          if (root === null || projectRoot === null) return
           try {
             const value = await api.removeRoot({ projectRoot, path: root.path })
             const nextRoots = value.roots
@@ -3822,7 +4284,7 @@ window.__ModuleLoader__.load({
 
         const hideRoot = useCallback(async (root) => {
           const projectRoot = projectRef.current.projectRoot
-          if (root === null || typeof projectRoot !== 'string') return
+          if (root === null || projectRoot === null) return
           try {
             applyRootsChange(await api.hideRoot({ projectRoot, path: root.path }), root)
           } catch (error) {
@@ -3832,7 +4294,7 @@ window.__ModuleLoader__.load({
 
         const unhideRoot = useCallback(async (root) => {
           const projectRoot = projectRef.current.projectRoot
-          if (root === null || typeof projectRoot !== 'string') return
+          if (root === null || projectRoot === null) return
           try {
             applyRootsChange(await api.unhideRoot({ projectRoot, path: root.path }), root)
           } catch (error) {
@@ -3851,8 +4313,8 @@ window.__ModuleLoader__.load({
             throw new Error(api.describeError(error, tRef.current))
           }
           await resolveProject()
-          await refreshStatus()
-        }, [resolveProject, refreshStatus])
+          await refreshRepository()
+        }, [resolveProject, refreshRepository])
 
         /** 分支菜单里的「获取远程更新」：git fetch 后重读分支列表。 */
         /** 拉取该仓库当前分支的最新代码（fetch + 只允许快进，不做自动合并）。 */
@@ -3881,9 +4343,9 @@ window.__ModuleLoader__.load({
           }
           // fetch 只更新远端跟踪引用：把 ahead/behind 报出来，用户才知道要不要真的拉取
           setToolbarNote(buildUpstreamNote(fetched, tRef.current))
-          if (activeRoot !== null && activeRoot.id === root.id) refreshStatus()
+          if (activeRoot !== null && activeRoot.id === root.id) refreshRepository()
           return api.listBranches({ rootPath: root.path })
-        }, [activeRoot, refreshStatus])
+        }, [activeRoot, refreshRepository])
 
         const switchBranch = useCallback(async (root, name) => {
           try {
@@ -3893,8 +4355,8 @@ window.__ModuleLoader__.load({
           }
           // 切分支会改 HEAD 与工作区：重新解析根（分支名要更新）并重读状态
           await resolveProject()
-          await refreshStatus()
-        }, [resolveProject, refreshStatus])
+          await refreshRepository()
+        }, [resolveProject, refreshRepository])
 
         /**
          * 创建分支（可携带未提交改动）。
@@ -3910,164 +4372,63 @@ window.__ModuleLoader__.load({
             value = await api.createBranch({ rootPath: root.path, ...request })
           } catch (error) {
             const wrapped = new Error(api.describeError(error, tRef.current))
-            wrapped.code = error === null || error === undefined ? 'internal' : error.code
-            wrapped.details = error === null || error === undefined ? {} : error.details
+            wrapped.code = error.code
+            wrapped.details = error.details
             throw wrapped
           }
           setToolbarNote(buildBranchCreatedNote(value, tRef.current))
           // 建/切分支会改 HEAD（可能还改了工作区）：行尾分支名与 status 都要重读
           await resolveProject()
-          await refreshStatus()
+          await refreshRepository()
           return value
-        }, [resolveProject, refreshStatus])
+        }, [resolveProject, refreshRepository])
 
-        /**
-         * 推送当前分支（`branch/push`）。成功就刷新 status —— 「还只在你电脑上」那条提示
-         * 由 `status.pushed` 驱动，刷新后自己消失；失败把原因留在提示块里，不弹窗。
-         * 正在推送时用 ref 挡住重复点击（state 要等下一遍渲染才生效）。
-         */
-        const pushBranchNow = useCallback(async () => {
-          const root = activeRootRef.current
-          if (root === null || root.isGit !== true || pushStateRef.current.busy === true) return null
-          setPushState({ busy: true, error: null })
-          try {
-            const value = await api.pushBranch({ rootPath: root.path })
-            setPushState({ busy: false, error: null })
-            setToolbarNote({ tone: 'info', text: tRef.current('push.done', { branch: value.branch }) })
-            await refreshStatus()
-            return value
-          } catch (error) {
-            setPushState({ busy: false, error: api.describeError(error, tRef.current) })
-            return null
-          }
-        }, [refreshStatus])
-
-        const loadDir = useCallback(async (relPath, signal) => {
-          const root = browseRootRef.current
-          if (root === null) return { entries: [], truncated: false }
-          return api.listDirectory({ rootPath: root.path, path: relPath ?? '' }, { signal })
-        }, [])
+        const loadDir = useCallback(async (relPath, signal) => (
+          api.listDirectory({ rootPath: browseRootRef.current.path, path: relPath }, { signal })
+        ), [])
 
         /* ------------------------------ 远端账号 ------------------------------ */
 
-        /** 读账号列表（token 不会下发到客户端，只有 id/login/label）。 */
-        const loadAccounts = useCallback(async () => {
-          try {
-            const value = await api.listAccounts({})
-            setAccounts(value.accounts)
-            setProviders(value.providers)
-            setAccountsLoaded(true)
-          } catch (error) {
-            setAccountsLoaded(true)
-            setRemoteError(api.describeError(error, tRef.current))
-          }
-        }, [])
-        loadAccountsRef.current = loadAccounts
 
         /** 读某个账号的仓库；append 用于「加载更多」。 */
         const loadRepos = useCallback(async (accountId, page, append) => {
-          if (typeof accountId !== 'string') return
+          if (accountId === null) return
+          const token = remoteReposGuard.begin()
           setRemoteLoading(true)
           if (append !== true) setRemoteError(null)
           try {
             const value = await api.listRemoteRepos({ accountId, page })
+            if (!remoteReposGuard.isLatest(token)) return
             setRemoteRepos((previous) => (append === true ? [...previous, ...value.repos] : value.repos))
             setRemoteHasMore(value.hasMore === true)
           } catch (error) {
+            if (!remoteReposGuard.isLatest(token)) return
             setRemoteError(api.describeError(error, tRef.current))
             if (append !== true) setRemoteRepos([])
           } finally {
-            setRemoteLoading(false)
+            if (remoteReposGuard.isLatest(token)) setRemoteLoading(false)
           }
-        }, [])
+        }, [remoteReposGuard])
 
         /** 批量取当前列表的未合并 PR 数（宿主限制 50 个/次）。 */
         const loadPullCounts = useCallback(async (accountId, repos) => {
-          if (typeof accountId !== 'string' || repos.length === 0) {
+          if (accountId === null || repos.length === 0) {
             setPrCounts({})
             return
           }
+          const token = pullCountsGuard.begin()
           try {
             const value = await api.remotePullCounts({
               accountId,
               fullNames: repos.map((repo) => repo.fullName)
             })
-            setPrCounts(value.counts ?? {})
+            if (!pullCountsGuard.isLatest(token)) return
+            setPrCounts(value.counts)
           } catch {
             // 计数只是角标：失败就不显示，不打断列表（详情接口会暴露真实错误）
-            setPrCounts({})
+            if (pullCountsGuard.isLatest(token)) setPrCounts({})
           }
-        }, [])
-
-        /** 读选中仓库的详情（代码 / issues / PR）。 */
-        const loadRemoteDetail = useCallback(async (selection) => {
-          if (selection === null) {
-            setRemoteDetail(null)
-            return
-          }
-          setRemoteDetail({ loading: true, error: null, data: null })
-          try {
-            const data = await api.remoteDetail({ accountId: selection.accountId, fullName: selection.fullName })
-            setRemoteDetail({ loading: false, error: null, data })
-          } catch (error) {
-            setRemoteDetail({ loading: false, error: api.describeError(error, tRef.current), data: null })
-          }
-        }, [])
-
-        /**
-         * 读选中远端仓库的分支全貌：远端分支走平台 API，本地同名分支状态由宿主在
-         * rootPaths 里按 origin 匹配到本地仓库后读出来，合成一条列表返回。
-         * 刷新时保留上一份数据：列表不会先消失再出现。
-         */
-        const loadRemoteBranches = useCallback(async (selection) => {
-          if (selection === null) {
-            setRemoteBranches(null)
-            return
-          }
-          setRemoteBranches((previous) => ({
-            loading: true,
-            error: null,
-            data: previous === null ? null : previous.data
-          }))
-          try {
-            const data = await api.remoteBranches({
-              accountId: selection.accountId,
-              fullName: selection.fullName,
-              rootPaths: allGitRoots.map((root) => root.path)
-            })
-            setRemoteBranches({ loading: false, error: null, data })
-          } catch (error) {
-            setRemoteBranches((previous) => ({
-              loading: false,
-              error: error instanceof Error ? error.message : String(error),
-              data: previous === null ? null : previous.data
-            }))
-          }
-        }, [allGitRoots])
-
-        /** 读一个 PR 的详情（含平台能力与审查记录）。 */
-        const loadPullDetail = useCallback(async (selection) => {    if (selection === null) {
-            setPullDetail(null)
-            return
-          }
-          setPullDetail({ loading: true, error: null, data: null })
-          try {
-            const data = await api.remotePull({
-              accountId: selection.accountId,
-              fullName: selection.fullName,
-              number: selection.number
-            })
-            setPullDetail({ loading: false, error: null, data })
-            // 详情里能看到评论 = 用户已读：记水位供状态卡算未读
-            const count = Array.isArray(data.comments) ? data.comments.length : 0
-            writePref('pullSeen', {
-              ...(readPrefs().pullSeen ?? {}),
-              [selection.accountId + '#' + selection.number]: count
-            })
-          } catch (error) {
-            setPullDetail({ loading: false, error: api.describeError(error, tRef.current), data: null })
-          }
-        }, [])
+        }, [pullCountsGuard])
 
         /** 从仓库详情点开某个 PR。 */
         const openPullNumber = useCallback((number) => {
@@ -4079,44 +4440,12 @@ window.__ModuleLoader__.load({
           }
           openPullWith(selection)
           loadPullDetail(selection)
-        }, [remoteSelection, loadPullDetail])
+        }, [remoteSelection, loadPullDetail, openPullWith])
 
         const closePull = useCallback(() => {
           setOpenPull(null)
-          setPullDetail(null)
-        }, [])
-
-        /** 打开某个 PR 时清掉上次合并的提示。 */
-        const openPullWith = useCallback((selection) => {
-          setRemoteNotice(null)
-          setOpenPull(selection)
-        }, [])
-
-        /** 读当前分支的 PR 状态（变更页签顶部卡片）。 */
-        const loadLinkedPull = useCallback(async () => {
-          if (activeRoot === null || activeRoot.isGit !== true) {
-            setLinkedPull(null)
-            return
-          }
-          // 刷新时保留上一份数据：卡片不会先消失再出现
-          setLinkedPull((previous) => ({
-            loading: true,
-            error: null,
-            data: previous === null ? null : previous.data
-          }))
-          try {
-            const data = await api.prLinked({ rootPath: activeRoot.path })
-            setLinkedPull({ loading: false, error: null, data })
-          } catch (error) {
-            setLinkedPull((previous) => ({
-              loading: false,
-              error: api.describeError(error, tRef.current),
-              data: previous === null ? null : previous.data
-            }))
-          }
-        }, [activeRoot])
-
-        refreshLinkedRef.current = loadLinkedPull
+          clearPullDetail()
+        }, [clearPullDetail])
 
         // 切到变更页签或分支变化时刷新；不轮询（面板没有后台任务）
         useEffect(() => {
@@ -4135,6 +4464,19 @@ window.__ModuleLoader__.load({
           await loadPullDetail(selection)
         }, [linkedPull, setMode, loadPullDetail, openPullWith])
 
+        /**
+         * 从 PR 卡片跳进远端页签 / 关掉 PR 回到仓库详情时，补一次仓库详情请求。
+         * 只按「账号+仓库」比较，避免同一个仓库名在两个账号下共用一份详情。
+         */
+        useEffect(() => {
+          if (mode !== MODE.remote || openPull !== null || remoteSelection === null) return
+          const data = remoteDetail === null ? null : remoteDetail.data
+          if (data !== null && data.accountId === remoteSelection.accountId && data.repo.fullName === remoteSelection.fullName) return
+          loadRemoteDetail(remoteSelection)
+          // 故意不依赖 remoteDetail：失败后等用户点重试，不自动循环请求
+          // eslint-disable-next-line -- 只跟随选中项
+        }, [mode, openPull, remoteSelection, loadRemoteDetail])
+
         /* --------------------------- 远端仓库详情 · 分支 --------------------------- */
 
         /**
@@ -4147,22 +4489,23 @@ window.__ModuleLoader__.load({
           if (mode !== MODE.remote) return
           if (remoteSelection === null) {
             branchSelectionRef.current = null
-            setRemoteBranches(null)
+            clearRemoteBranches()
             return
           }
           if (openPull !== null) return
-          if (branchSelectionRef.current === remoteSelection.fullName) return
-          branchSelectionRef.current = remoteSelection.fullName
+          const key = branchKeyOf(remoteSelection)
+          if (branchSelectionRef.current === key) return
+          branchSelectionRef.current = key
           // 换了仓库：先把上一个仓库的分支清掉，避免新数据回来前右侧挂着别人的分支
-          setRemoteBranches(null)
+          clearRemoteBranches()
           loadRemoteBranches(remoteSelection)
-        }, [mode, openPull, remoteSelection, loadRemoteBranches])
+        }, [mode, openPull, remoteSelection, loadRemoteBranches, clearRemoteBranches])
 
         /** 分支操作统一返回 { ok, error, code }：组件据 code 判断要不要露出「强制删除」。 */
         const branchFailure = useCallback((error) => ({
           ok: false,
           error: api.describeError(error, tRef.current),
-          code: error !== null && error !== undefined && typeof error.code === 'string' ? error.code : null
+          code: error.code ?? null
         }), [])
 
         /** 本地没有克隆时，本地分支操作明确报出来，不做无声失败。 */
@@ -4182,10 +4525,10 @@ window.__ModuleLoader__.load({
             return branchFailure(error)
           }
           await resolveProject()
-          await refreshStatus()
+          await refreshRepository()
           if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
           return { ok: true }
-        }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+        }, [resolveProject, refreshRepository, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
 
         /** 远端独有的分支：在本地建跟踪分支并切过去（与储存库分支菜单里的行为一致）。 */
         const trackRemoteBranch = useCallback(async (branch) => {
@@ -4197,10 +4540,10 @@ window.__ModuleLoader__.load({
             return branchFailure(error)
           }
           await resolveProject()
-          await refreshStatus()
+          await refreshRepository()
           if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
           return { ok: true }
-        }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+        }, [resolveProject, refreshRepository, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
 
         /** 删除本地分支（force 只会在用户点「强制删除」时传 true）。 */
         const deleteLocalBranchAt = useCallback(async (branch, force) => {
@@ -4212,10 +4555,10 @@ window.__ModuleLoader__.load({
             return branchFailure(error)
           }
           await resolveProject()
-          await refreshStatus()
+          await refreshRepository()
           if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
           return { ok: true }
-        }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+        }, [resolveProject, refreshRepository, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
 
         /** 删除远端分支：它是破坏性操作，界面已二次确认过；成功后只重读分支列表。 */
         const deleteRemoteBranchAt = useCallback(async (branch) => {
@@ -4242,20 +4585,30 @@ window.__ModuleLoader__.load({
           } catch (error) {
             return branchFailure(error)
           }
-          await refreshStatus()
+          await refreshRepository()
           if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
           return { ok: true }
-        }, [refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+        }, [refreshRepository, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
 
 
-        /** 审查：统一把失败包成 { ok:false, error }，界面就地显示。 */
+        /** PR 里单个文件的 diff：点开文件行时才读，失败就地给 PullDetail 显示。 */
+        const pullFile = useCallback(async (input) => {
+          try {
+            const result = await api.remotePullFile(input)
+            return { ok: true, ...result }
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current) }
+          }
+        }, [])
+
+        /** 审查：统一把失败包成 { ok:false, error, code }，界面就地显示。 */
         const reviewPull = useCallback(async (input) => {
           try {
             const result = await api.remotePullReview(input)
             await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
             return { ok: true, message: tRef.current('pull.reviewDone', { verdict: input.verdict }) }
           } catch (error) {
-            return { ok: false, error: api.describeError(error, tRef.current) }
+            return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
           }
         }, [loadPullDetail])
 
@@ -4288,7 +4641,7 @@ window.__ModuleLoader__.load({
             if (prepared.mode === 'local') {
               // 切了分支：储存库行的分支名与 status 都要跟着刷新
               await resolveProject()
-              await refreshStatus()
+              await refreshRepository()
             }
             return { ok: true, ...prepared }
           } catch (error) {
@@ -4299,25 +4652,7 @@ window.__ModuleLoader__.load({
               details: error?.details ?? null
             }
           }
-        }, [resolveProject, refreshStatus])
-
-        const deepReviewPull = useCallback(async (input) => {
-          try {
-            const review = await api.remotePullDeepReview(input)
-            if (review.deep === true) {
-              await resolveProject()
-              await refreshStatus()
-            }
-            return { ok: true, ...review }
-          } catch (error) {
-            return {
-              ok: false,
-              error: api.describeError(error, tRef.current),
-              code: error?.code ?? null,
-              details: error?.details ?? null
-            }
-          }
-        }, [resolveProject, refreshStatus])
+        }, [resolveProject, refreshRepository])
 
         /** 会话级深度审阅：主工作区切分支后新建会话，把审阅指令发过去并自动打开。 */
         const sessionReviewPull = useCallback(async (input) => {
@@ -4326,7 +4661,7 @@ window.__ModuleLoader__.load({
             const started = await api.remotePullSessionReview({ ...input, sessionId })
             if (started?.sessionId) {
               await resolveProject()
-              await refreshStatus()
+              await refreshRepository()
               getPluginContext()?.uiWorkspace?.openSession?.(started.sessionId)
             }
             return { ok: true, ...started }
@@ -4338,7 +4673,7 @@ window.__ModuleLoader__.load({
               details: error?.details ?? null
             }
           }
-        }, [resolveProject, refreshStatus])
+        }, [resolveProject, refreshRepository])
 
         /** 把 PR 克隆到用户选的目录（深度审阅前的准备步骤）。 */
         const cloneForReviewPull = useCallback(async (input) => {
@@ -4384,9 +4719,17 @@ window.__ModuleLoader__.load({
           try {
             const result = await api.remotePullPass(input)
             await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
-            return { ok: true, message: tRef.current('pull.passDone', { steps: result.completed.join(' / ') }) }
+            // 部分成功也要说清哪一步没做成：只报「已通过：review」会让人以为测试也过了
+            const failed = Array.isArray(result.failures) ? result.failures : []
+            const message = failed.length === 0
+              ? tRef.current('pull.passDone', { steps: result.completed.join(' / ') })
+              : tRef.current('pull.passPartial', {
+                steps: result.completed.join(' / '),
+                failures: failed.map((item) => item.message).join('；')
+              })
+            return { ok: true, message }
           } catch (error) {
-            return { ok: false, error: api.describeError(error, tRef.current) }
+            return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
           }
         }, [loadPullDetail])
 
@@ -4397,7 +4740,7 @@ window.__ModuleLoader__.load({
             await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
             return { ok: true, message: tRef.current('pull.testDone') }
           } catch (error) {
-            return { ok: false, error: api.describeError(error, tRef.current) }
+            return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
           }
         }, [loadPullDetail])
 
@@ -4413,15 +4756,21 @@ window.__ModuleLoader__.load({
             await loadRemoteDetail({ accountId: input.accountId, fullName: input.fullName })
             // 合并可以顺带删掉源分支：回到详情时分支区要重读，不能留着已删除的那一行
             branchSelectionRef.current = null
-            setRemoteBranches(null)
+            clearRemoteBranches()
             // 合并后未合并数量会变，角标要跟着刷新
             await loadPullCounts(input.accountId, remoteReposRef.current)
             // closed:true 让 PullDetail 不要在被卸载后再写自己的提示
-          return { ok: true, closed: true, message: tRef.current('pull.mergedDone', { branch: result.headBranch }) }
-          } catch (error) {
-            return { ok: false, error: api.describeError(error, tRef.current) }
+          return {
+            ok: true,
+            closed: true,
+            message: result.branchDeleteError === null || result.branchDeleteError === undefined
+              ? tRef.current('pull.mergedDone', { branch: result.headBranch })
+              : tRef.current('pull.mergedButBranchKept', { branch: result.headBranch, message: result.branchDeleteError })
           }
-        }, [loadPullDetail, loadRemoteDetail])
+          } catch (error) {
+            return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
+          }
+        }, [loadPullDetail, loadRemoteDetail, closePull, clearRemoteBranches, loadPullCounts])
 
         /** 选中账号：记到当前工作区（切到别的工作区再回来仍是它）。账号 chip 只在面板内容渲染后才会出现，那时 projectRoot 一定有值。 */
         const selectRemoteAccount = useCallback((accountId) => {
@@ -4433,15 +4782,22 @@ window.__ModuleLoader__.load({
         const selectRemoteRepo = useCallback((repo) => {
           const selection = { accountId: repo.accountId, fullName: repo.fullName, name: repo.name }
           setRemoteSelection(selection)
+          // 切仓库时关掉上一个仓库里打开的 PR：右栏优先渲染 openPull，
+          // 不清的话会出现「左边选 B、右边显示 A 的 PR」。
+          setOpenPull(null)
+          clearPullDetail()
+          setRemoteNotice(null)
           loadRemoteDetail(selection)
-          // 点的是已经选中的仓库 = 手动刷新：分支数据按 fullName 去重，这里显式再读一次
-          if (branchSelectionRef.current === selection.fullName) loadRemoteBranches(selection)
-        }, [loadRemoteDetail, loadRemoteBranches])
+          // 点的是已经选中的仓库 = 手动刷新：分支数据按账号+仓库去重，这里显式再读一次
+          if (branchSelectionRef.current === branchKeyOf(selection)) loadRemoteBranches(selection)
+        }, [loadRemoteDetail, loadRemoteBranches, clearPullDetail])
 
         const openExternal = useCallback((url) => {
           const result = openExternalUrl(url)
-          if (result.opened !== true) setStatusError(tRef.current('error.openFailed', { url }))
-        }, [])
+          if (result.opened !== true) {
+            setToolbarNote({ tone: 'error', text: tRef.current('error.openFailed', { url }) })
+          }
+        }, [setToolbarNote])
 
         /** 进「远端」页签且还没读过账号时读一次。 */
         useEffect(() => {
@@ -4457,11 +4813,14 @@ window.__ModuleLoader__.load({
 
         /** 仓库列表刷新后：当前选中不在列表里就选第一个，右侧不留空。 */
         useEffect(() => {
-          if (mode !== MODE.remote || remoteRepos.length === 0) return
-          const exists = remoteSelection !== null && remoteRepos.some((repo) => repo.fullName === remoteSelection.fullName)
+          // 正在看某个 PR 时不要因为列表刷新把左栏选中项改掉（右栏仍是那个 PR）
+          if (mode !== MODE.remote || openPull !== null || remoteRepos.length === 0) return
+          const exists = remoteSelection !== null && remoteRepos.some((repo) => (
+            repo.accountId === remoteSelection.accountId && repo.fullName === remoteSelection.fullName
+          ))
           if (exists) return
           selectRemoteRepo(remoteRepos[0])
-        }, [mode, remoteRepos, remoteSelection, selectRemoteRepo])
+        }, [mode, openPull, remoteRepos, remoteSelection, selectRemoteRepo])
 
         /** 切账号或首次进入时读第一页。 */
         useEffect(() => {
@@ -4518,14 +4877,14 @@ window.__ModuleLoader__.load({
             setCloneState(null)
             // 项目里多了这个仓库：下次回到远端页签时分支区要重新判断「本地有没有克隆」
             branchSelectionRef.current = null
-            setRemoteBranches(null)
+            clearRemoteBranches()
             await resolveProject()
-            await refreshStatus()
+            await refreshRepository()
             setMode(MODE.changes)
           } catch (error) {
             setCloneState({ fullName: repo.fullName, startedAt: 0, error: api.describeError(error, tRef.current) })
           }
-        }, [resolveProject, refreshStatus, setMode])
+        }, [resolveProject, refreshRepository, setMode, clearRemoteBranches])
 
         /** 设置页里新增/移除账号后刷新列表。 */
         const reloadAccounts = useCallback(async () => {
@@ -4591,57 +4950,80 @@ window.__ModuleLoader__.load({
         }, [reloadAccounts])
 
         /* ------------------------------ 分栏拖拽 ------------------------------ */
-        const beginDrag = useCallback((event) => {
-          if (event.button !== undefined && event.button !== 0) return
-          event.preventDefault()
-          setDragging(true)
-        }, [])
+        /**
+         * 拖拽只把一个 CSS 变量写到 DOM 上，pointerup 才落一次 state（并持久化）。
+         *
+         * 原先每次 pointermove 都 setLeftWidth：整面板重渲染（最多 5000 行 diff）
+         * 加同步写 localStorage，拖起来会抖。拖拽是视觉变换，不是应用状态。
+         */
+        const dragCleanupRef = useRef(null)
+        const dragWidthRef = useRef(leftWidth)
 
-        useEffect(() => {
-          if (!dragging) return undefined
-          const onMove = (event) => {
-            const body = bodyRef.current
-            if (body === null) return
-            const rect = body.getBoundingClientRect()
-            const raw = event.clientX - rect.left
-            const max = Math.max(MIN_LEFT, rect.width - MIN_RIGHT)
-            const next = Math.min(max, Math.max(MIN_LEFT, Math.round(raw)))
-            setLeftWidth(next)
-          }
-          const onUp = () => setDragging(false)
-          window.addEventListener('pointermove', onMove)
-          window.addEventListener('pointerup', onUp)
-          window.addEventListener('pointercancel', onUp)
-          const previousCursor = document.body.style.cursor
-          const previousSelect = document.body.style.userSelect
+        const beginDrag = useCallback((event) => {
+          if (event.button !== 0) return
+          event.preventDefault()
+          const body = bodyRef.current
+          const divider = dividerRef.current
+          dragWidthRef.current = leftWidth
+          divider.setAttribute('data-dragging', 'true')
           document.body.style.cursor = 'col-resize'
           document.body.style.userSelect = 'none'
-          return () => {
+
+          const onMove = (moveEvent) => {
+            const rect = body.getBoundingClientRect()
+            const max = Math.max(MIN_LEFT, rect.width - MIN_RIGHT)
+            const raw = moveEvent.clientX - rect.left
+            const next = Math.min(max, Math.max(MIN_LEFT, Math.round(raw)))
+            dragWidthRef.current = next
+            body.style.setProperty('--dgp-left-width', next + 'px')
+          }
+          const cleanup = () => {
             window.removeEventListener('pointermove', onMove)
             window.removeEventListener('pointerup', onUp)
             window.removeEventListener('pointercancel', onUp)
-            document.body.style.cursor = previousCursor
-            document.body.style.userSelect = previousSelect
+            divider.removeAttribute('data-dragging')
+            document.body.style.cursor = ''
+            document.body.style.userSelect = ''
+            dragCleanupRef.current = null
           }
-        }, [dragging, setLeftWidth])
+          const onUp = () => {
+            cleanup()
+            setLeftWidth(dragWidthRef.current)
+          }
+          dragCleanupRef.current = cleanup
+          window.addEventListener('pointermove', onMove)
+          window.addEventListener('pointerup', onUp)
+          window.addEventListener('pointercancel', onUp)
+        }, [leftWidth, setLeftWidth])
+
+        // 卸载时把可能还挂着的拖拽监听收掉（不落 state）。
+        useEffect(() => () => {
+          dragCleanupRef.current?.()
+          document.body.style.cursor = ''
+          document.body.style.userSelect = ''
+        }, [])
+
+        /** 键盘调宽：同样受「右侧至少 MIN_RIGHT」约束。 */
+        const resizeBy = useCallback((delta) => {
+          const rect = bodyRef.current.getBoundingClientRect()
+          const max = Math.max(MIN_LEFT, rect.width - MIN_RIGHT)
+          setLeftWidth(Math.min(max, Math.max(MIN_LEFT, leftWidth + delta)))
+        }, [leftWidth, setLeftWidth])
 
         /* ------------------------------ 键盘 ------------------------------ */
         const onKeyDown = useCallback((event) => {
           const target = event.target
-          const inField = target !== null && (
-            target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true
-          )
+          const inField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true
           if (event.key === '/' && !inField) {
             event.preventDefault()
-            const node = filterRef.current
-            if (node !== null && node.focus !== undefined) node.focus()
+            filterRef.current.focus()
             return
           }
           if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key === 's' || event.key === 'S')) {
-            // 焦点在编辑器里时由 FileEditor 处理（它能拿到光标位置）；这里管"焦点在文件树/工具条"的情况
-            if (inField || mode !== MODE.files) return
+            // 文件页签的保存：焦点在编辑器里时由 FileEditor 处理（它能拿到光标位置），
+            // 这里负责焦点在文件树 / 工具条的情况。任何模式下都不让浏览器弹「保存网页」。
             event.preventDefault()
-            if (selection !== null) saveDraft(false)
+            if (!inField && mode === MODE.files && fileSelection !== null) saveDraft(false)
             return
           }
           if (inField) return
@@ -4649,70 +5031,25 @@ window.__ModuleLoader__.load({
             event.preventDefault()
             refreshAll()
           }
-        }, [refreshAll, mode])
-
-
-      /** 版本号按钮的 tooltip：插件版本 · 最新版本 · 检测时间（与仓库状态无关）。 */
-      function buildVersionTitle(pluginState, t) {
-        const parts = [t('toolbar.checkUpdates')]
-        if (pluginState.version !== null) parts.push(t('update.currentVersion', { version: pluginState.version }))
-        if (pluginState.checkedAt > 0 && pluginState.error === null) {
-          parts.push(pluginState.newer
-            ? t('update.latestVersion', { version: pluginState.latestVersion })
-            : t('update.pluginUpToDate', { version: pluginState.version }))
-          parts.push(t('update.checkedAt', { time: formatClock(pluginState.checkedAt) }))
-        }
-        return parts.join(' \u00b7 ')
-      }
-
-      /**
-       * 上游检查的一句话结果。
-       * 落后优先于领先：同时有分叉时更重要的是"你落后了"。
-       */
-      function buildUpstreamNote(value, t) {
-        const upstream = value.upstream === null || value.upstream === undefined ? '' : value.upstream
-        if (value.behind > 0) return { tone: 'warn', text: t('update.behind', { count: value.behind, upstream }) }
-        if (value.ahead > 0) return { tone: 'info', text: t('update.ahead', { count: value.ahead, upstream }) }
-        return { tone: 'info', text: t('update.upToDate', { upstream }) }
-      }
-
-      /**
-       * 创建分支后的那句话。
-       *
-       * 用户最不确定的就是「我的改动去哪了」，所以这里必须把三种结局分开说：
-       * 切过去并带走了改动 / 切过去但本来就没有改动 / 只建了分支没切换（改动留在原处）。
-       */
-      function buildBranchCreatedNote(value, t) {
-        if (value.switched !== true) return { tone: 'info', text: t('branch.createdOnly', { name: value.branch }) }
-        if (value.carried.total > 0) {
-          return { tone: 'info', text: t('branch.createdFollow', { name: value.branch, total: value.carried.total }) }
-        }
-        return { tone: 'info', text: t('branch.created', { name: value.branch }) }
-      }
-
+        }, [refreshAll, mode, fileSelection, saveDraft])
 
         /* ------------------------------ 派生 ------------------------------ */
-        const selectedPath = selection === null ? null : selection.path
-        const selectedEntry = selection === null ? null : selection.entry
-        const entryHasBothSides = selectedEntry !== null
-          && selectedEntry.staged === true
-          && selectedEntry.unstaged === true
+        const selectedChangePath = changesSelection === null ? null : changesSelection.path
+        const selectedChangeEntry = changesSelection === null ? null : changesSelection.entry
+        const entryHasBothSides = selectedChangeEntry !== null
+          && selectedChangeEntry.staged === true
+          && selectedChangeEntry.unstaged === true
         const counts = status === null ? null : status.counts
-        const isNarrow = typeof leftWidth === 'number' && leftWidth < 220
         const warnings = useMemo(() => {
           const list = []
           for (const warning of project.warnings) {
             if (warning !== '') list.push(warning)
           }
-          if (activeRoot !== null && typeof activeRoot.error === 'string' && activeRoot.error !== '') {
-            list.push(activeRoot.error)
-          }
+          if (activeRoot !== null && activeRoot.error !== null) list.push(activeRoot.error)
           return list
         }, [project.warnings, activeRoot])
 
         /* ------------------------------ 渲染 ------------------------------ */
-        const noSession = typeof sessionId !== 'string'
-
         // 仓库切换只发生在变更模式的「储存库」列表里；文件模式固定浏览项目根，不放选择器。
         const toolbar = h('div', { className: 'dgp-toolbar' },
           h('div', { className: 'dgp-tbar-row' },
@@ -4724,6 +5061,7 @@ window.__ModuleLoader__.load({
                 'data-active': mode === MODE.changes ? 'true' : undefined,
                 'aria-selected': mode === MODE.changes ? 'true' : 'false',
                 title: t('mode.changesHint'),
+                disabled: showSettings,
                 onClick: () => setMode(MODE.changes)
               }, t('mode.changes'), counts !== null && counts.total > 0
                 ? h('span', { className: 'dgp-pill-count', style: { marginLeft: 4 } }, String(counts.total))
@@ -4735,6 +5073,7 @@ window.__ModuleLoader__.load({
                 'data-active': mode === MODE.files ? 'true' : undefined,
                 'aria-selected': mode === MODE.files ? 'true' : 'false',
                 title: t('mode.filesHint'),
+                disabled: showSettings,
                 onClick: () => setMode(MODE.files)
               }, t('mode.files')),
               h('button', {
@@ -4745,6 +5084,7 @@ window.__ModuleLoader__.load({
                 'aria-selected': mode === MODE.remote ? 'true' : 'false',
                 'data-dgp-tab': 'remote',
                 title: t('mode.remoteHint'),
+                disabled: showSettings,
                 onClick: () => setMode(MODE.remote)
               }, t('mode.remote'))),
             h('div', { className: 'dgp-spacer' }),
@@ -4809,7 +5149,9 @@ window.__ModuleLoader__.load({
               ref: moreAnchorRef
             }, h(Icon, { name: 'more', size: 15 }))))
 
-        const filterRow = h('div', { className: 'dgp-filter' },
+        const filterRow = showSettings || mode === MODE.remote
+          ? null
+          : h('div', { className: 'dgp-filter' },
           h('div', { className: 'dgp-search' },
             h(Icon, { name: 'search', size: 13 }),
             h('input', {
@@ -4824,7 +5166,7 @@ window.__ModuleLoader__.load({
                 if (event.key === 'Escape') {
                   event.preventDefault()
                   setFilter('')
-                  if (event.target && event.target.blur) event.target.blur()
+                  event.target.blur()
                 }
               }
             }),
@@ -4841,26 +5183,22 @@ window.__ModuleLoader__.load({
               h('button', {
                 type: 'button',
                 className: 'dgp-seg-btn',
-                'data-active': selection.side === 'unstaged' ? 'true' : undefined,
+                'data-active': changesSelection.side === 'unstaged' ? 'true' : undefined,
                 title: t('group.unstaged'),
                 onClick: () => switchSide('unstaged')
               }, t('group.unstaged')),
               h('button', {
                 type: 'button',
                 className: 'dgp-seg-btn',
-                'data-active': selection.side === 'staged' ? 'true' : undefined,
+                'data-active': changesSelection.side === 'staged' ? 'true' : undefined,
                 title: t('group.staged'),
                 onClick: () => switchSide('staged')
               }, t('group.staged')))
             : null)
 
-        const stagedCount = status !== null && status.counts !== null && status.counts !== undefined
-          ? status.counts.staged
-          : 0
+        const stagedCount = status === null ? 0 : status.counts.staged
         /** 只要有改动就能提交（没有暂存时提交会先把全部改动暂存）。 */
-        const changeCount = status !== null && status.counts !== null && status.counts !== undefined
-          ? status.counts.total
-          : 0
+        const changeCount = status === null ? 0 : status.counts.total
 
         /** 远端页签的仓库列表：本地筛选只作用在已拉取的那几页上。 */
         const visibleRemoteRepos = remoteFilter.trim() === ''
@@ -4913,8 +5251,7 @@ window.__ModuleLoader__.load({
                 className: 'dgp-btn',
                 'data-size': 'sm',
                 onClick: () => setMode(MODE.files)
-              }, t('mode.files'))],
-              t
+              }, t('mode.files'))]
             })
           } else {
             // VS Code 的排布：上面「储存库」，下面「变更」（提交框 + 分组）。
@@ -4935,9 +5272,10 @@ window.__ModuleLoader__.load({
                 onPullBranch: pullBranchNow,
                 onTrackBranch: trackBranchAt,
                 onCreateBranch: createBranch,
+                stats: rootStats,
                 t
               }),
-              mode === MODE.changes && linkedPull !== null
+              linkedPull !== null && (linkedPull.data === null || linkedPull.data.rootId === (activeRoot === null ? null : activeRoot.id))
                 ? h(PullStatusCard, {
                   card: linkedPull,
                   unread: linkedPull.data !== null && linkedPull.data.linked === true
@@ -4950,17 +5288,21 @@ window.__ModuleLoader__.load({
                 })
                 : null,
               /**
-               * 当前分支的最新提交不在远端时，常驻一行「要不要推送」的提示 —— 带按钮，点了就推。
-               * 只认 `pushed === false`：没有 origin / 游离 HEAD 时宿主给的是 null（无从判断），不提示。
-               * 推完之后 status 刷新（这里点了按钮就刷、也会轮询），`pushed` 变 true，提示自己消失。
+               * 本地分支与远端不同步时的常驻提示。三种状态各自下一步不同：
+               *   never-pushed / ahead → 推送（带按钮）
+               *   remote-deleted       → 收尾（切回默认分支并删除本地分支，绝不普通推送重建已合并分支）
+               *   behind / diverged    → 不提示推送（那是该拉取/处理分叉），交给分支菜单的「拉取」。
+               * synced / unknown 什么都不显示。
                */
-              status !== null && status.pushed === false
+              status !== null && SYNC_HINT_STATES.includes(status.sync.state)
                 ? h(PushHint, {
                   branch: status.branch,
+                  sync: status.sync,
                   t,
                   onPush: pushBranchNow,
-                  busy: pushState.busy,
-                  error: pushState.error
+                  onCleanup: cleanupBranchNow,
+                  busy: remoteAction.busy,
+                  error: remoteAction.error
                 })
                 : null,
               h(CommitBox, {
@@ -4974,21 +5316,18 @@ window.__ModuleLoader__.load({
                 onChange: changeCommitMessage,
                 onCommit: commitStaged,
                 onGenerate: generateMessage,
-                onCreatePull: mode === MODE.changes && activeRoot !== null && activeRoot.isGit === true
-                  ? openCreatePull
-                  : undefined,
+                onOpenSettings: openSettings,
+                onCreatePull: activeRoot.isGit === true ? openCreatePull : undefined,
                 t
               }),
               h(ChangesList, {
                 status,
                 loading: statusLoading && status === null,
-                error: null,
                 view: changesView,
                 untrackedMode,
-                selectedPath,
+                selectedPath: selectedChangePath,
                 onSelect: selectEntry,
                 filter,
-                onFilterChange: setFilter,
                 collapsedGroups,
                 onToggleGroup: toggleGroup,
                 onStage: stageEntry,
@@ -5001,12 +5340,12 @@ window.__ModuleLoader__.load({
         } else {
           leftPane = h(FileTree, {
             rootPath: browseRoot === null ? null : browseRoot.path,
-            selectedPath,
+            selectedPath: fileSelection === null ? null : fileSelection.path,
             onSelectFile: selectFile,
             filter,
-            onFilterChange: setFilter,
             loadDir,
             dirtyPaths,
+            reloadNonce: treeNonce,
             t
           })
         }
@@ -5023,9 +5362,9 @@ window.__ModuleLoader__.load({
             onGenerate: generatePullText,
             onCreate: createPull,
             onOpenUrl: openExternal,
-            // 推没推上去只认 status.pushed：推完 refreshStatus 一刷新，创建按钮自己就亮了，
-            // 不需要「表单里再推一次」这条独立通路
-            pushed: status !== null && status.pushed === true,
+            // 创建 PR 只认「本地与远端一致」：不一致时表单说明原因，左侧提示条给下一步动作
+            synced: status !== null && status.sync.state === 'synced',
+            syncState: status === null ? 'unknown' : status.sync.state,
             t
           })
         } else if (mode === MODE.remote && openPull !== null) {
@@ -5040,8 +5379,8 @@ window.__ModuleLoader__.load({
             onTest: testPull,
             onPass: passPull,
             onAiReview: aiReviewPull,
+            onPullFile: pullFile,
             onPrepareReview: prepareReviewPull,
-            onDeepReview: deepReviewPull,
             onSessionReview: sessionReviewPull,
             onCommentSession: sessionReviewPull,
             onCloneForReview: cloneForReviewPull,
@@ -5079,42 +5418,38 @@ window.__ModuleLoader__.load({
             t
           })
         } else if (mode === MODE.changes) {
-          if (selection === null) {
+          if (changesSelection === null) {
             // 和 DiffView 用同一个容器壳，空态与有内容时的几何完全一致（居中，不贴左上角）
             rightPane = h('div', { className: 'dgp-viewer' },
               h(EmptyState, {
                 icon: 'file-diff',
                 title: t('viewer.placeholderDiff'),
-                description: activeRoot === null ? t('status.noRootsHint') : undefined,
-                t
+                description: activeRoot === null ? t('status.noRootsHint') : undefined
               }))
           } else {
             rightPane = h(DiffView, {
               diff,
               loading: diffLoading,
               error: diffError,
-              path: selection.path,
-              entry: selection.entry,
+              path: changesSelection.path,
+              entry: changesSelection.entry,
               view: diffView,
               wrap: wrap === true && diffView === 'unified',
               onRetry: () => setDiffNonce((previous) => previous + 1),
               t
             })
           }
-        } else if (selection === null) {
+        } else if (fileSelection === null) {
           rightPane = h('div', { className: 'dgp-viewer' },
             h(EmptyState, {
               icon: 'file',
               title: t('viewer.placeholder'),
-              description: activeRoot === null ? t('status.noRootsHint') : undefined,
-              t
+              description: activeRoot === null ? t('status.noRootsHint') : undefined
             }))
         } else {
-          const path = selection.path
+          const path = fileSelection.path
           const draft = drafts.get(path)
-          const conflict = saveState.conflict !== null && saveState.conflict !== undefined && saveState.conflict.path === path
-            ? saveState.conflict
-            : null
+          const conflict = saveState.conflict !== null && saveState.conflict.path === path ? saveState.conflict : null
           rightPane = h(FileEditor, {
             record: fileData,
             // 编辑器显示的是草稿内容；草稿还没有时退回磁盘内容
@@ -5154,7 +5489,6 @@ window.__ModuleLoader__.load({
         h(MenuSeparator),
         h(MenuLabel, null, t('mode.changes')),
         h(MenuItem, {
-          icon: 'unified',
           label: t('toolbar.unified'),
           checked: diffView === 'unified',
           onClick: () => {
@@ -5163,7 +5497,6 @@ window.__ModuleLoader__.load({
           }
         }),
         h(MenuItem, {
-          icon: 'split',
           label: t('toolbar.split'),
           checked: diffView === 'split',
           onClick: () => {
@@ -5172,7 +5505,6 @@ window.__ModuleLoader__.load({
           }
         }),
         h(MenuItem, {
-          icon: 'wrap',
           label: t('toolbar.wrap'),
           // 并排视图下两列各自堆叠，折行长度不同会导致行错位；宿主自己也是统一视图才允许换行。
           sub: diffView === 'split' ? t('toolbar.wrapUnavailable') : undefined,
@@ -5193,7 +5525,6 @@ window.__ModuleLoader__.load({
         })),
         h(MenuSeparator),
         h(MenuItem, {
-          icon: 'filter',
           label: t('toolbar.ignoreWhitespace'),
           checked: ignoreWhitespace === true,
           onClick: () => setIgnoreWhitespace(!ignoreWhitespace)
@@ -5230,20 +5561,21 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dgp-pane-left' }, leftPane),
         h('div', {
           className: 'dgp-divider',
+          ref: dividerRef,
           role: 'separator',
           'aria-orientation': 'vertical',
           'aria-valuenow': leftWidth,
-          'data-dragging': dragging ? 'true' : undefined,
+          'aria-valuemin': MIN_LEFT,
           tabIndex: 0,
-          title: 'Drag to resize',
+          title: t('toolbar.resize'),
           onPointerDown: beginDrag,
           onKeyDown: (event) => {
             if (event.key === 'ArrowLeft') {
               event.preventDefault()
-              setLeftWidth(Math.max(MIN_LEFT, leftWidth - 16))
+              resizeBy(-16)
             } else if (event.key === 'ArrowRight') {
               event.preventDefault()
-              setLeftWidth(leftWidth + 16)
+              resizeBy(16)
             }
           }
         }),
@@ -5262,9 +5594,7 @@ window.__ModuleLoader__.load({
           rightPane))
 
         let content
-        if (noSession) {
-          content = h(EmptyState, { icon: 'warning', title: t('status.noSession'), t })
-        } else if (rootsLoading && roots.length === 0) {
+        if (rootsLoading && roots.length === 0) {
           content = h(LoadingState, { label: t('status.discovering'), t })
         } else if (rootsError !== null && roots.length === 0) {
           content = h(EmptyState, {
@@ -5276,8 +5606,7 @@ window.__ModuleLoader__.load({
               type: 'button',
               className: 'dgp-btn',
               onClick: () => resolveProject(undefined)
-            }, t('action.retry'))],
-            t
+            }, t('action.retry'))]
           })
         } else if (roots.length === 0) {
           content = h(EmptyState, {
@@ -5289,8 +5618,7 @@ window.__ModuleLoader__.load({
               type: 'button',
               className: 'dgp-btn',
               onClick: () => resolveProject(undefined)
-            }, t('action.retry'))],
-            t
+            }, t('action.retry'))]
           })
         } else {
           content = body
@@ -5300,6 +5628,9 @@ window.__ModuleLoader__.load({
           content = h(SettingsView, {
             models: settingsState.models,
             commitModel: settingsState.commitModel,
+            commitThinking: settingsState.commitThinking === true,
+            commitReasoningEffort: settingsState.commitReasoningEffort,
+            onChangeCommitThinking: changeCommitThinking,
             reviewModel: settingsState.reviewModel,
             onChangeReviewModel: changeReviewModel,
             loading: settingsState.loading,
@@ -5310,6 +5641,8 @@ window.__ModuleLoader__.load({
             onChangeChangesView: setChangesView,
             untrackedMode,
             onChangeUntrackedMode: setUntrackedMode,
+            postCommitPush,
+            onChangePostCommitPush: setPostCommitPush,
             accounts,
             providers,
             accountsBusy,
@@ -5327,7 +5660,6 @@ window.__ModuleLoader__.load({
         return h('div', {
           className: 'dgp-root',
           ref: rootRef,
-          'data-narrow': isNarrow ? 'true' : undefined,
           'data-mode': mode,
           onKeyDown
         },
@@ -5343,11 +5675,54 @@ window.__ModuleLoader__.load({
               type: 'button',
               className: 'dgp-btn',
               'data-size': 'sm',
-              onClick: () => refreshStatus()
+              onClick: () => refreshRepository()
             }, t('action.retry')))
           : null,
         content,
         moreMenu)
+      }
+
+      /** 版本号按钮的 tooltip：插件版本 · 最新版本 · 检测时间（与仓库状态无关）。 */
+      function buildVersionTitle(pluginState, t) {
+        const parts = [t('toolbar.checkUpdates')]
+        if (pluginState.version !== null) parts.push(t('update.currentVersion', { version: pluginState.version }))
+        if (pluginState.checkedAt > 0 && pluginState.error === null) {
+          parts.push(pluginState.newer
+            ? t('update.latestVersion', { version: pluginState.latestVersion })
+            : t('update.pluginUpToDate', { version: pluginState.version }))
+          parts.push(t('update.checkedAt', { time: formatClock(pluginState.checkedAt) }))
+        }
+        return parts.join(' \u00b7 ')
+      }
+
+      /**
+       * 上游检查的一句话结果。
+       * 落后优先于领先：同时有分叉时更重要的是"你落后了"。
+       */
+      function buildUpstreamNote(value, t) {
+        const upstream = value.upstream === null ? '' : value.upstream
+        if (value.behind > 0) return { tone: 'warn', text: t('update.behind', { count: value.behind, upstream }) }
+        if (value.ahead > 0) return { tone: 'info', text: t('update.ahead', { count: value.ahead, upstream }) }
+        return { tone: 'info', text: t('update.upToDate', { upstream }) }
+      }
+
+      /**
+       * 创建分支后的那句话。
+       *
+       * 用户最不确定的就是「我的改动去哪了」，所以这里必须把三种结局分开说：
+       * 切过去并带走了改动 / 切过去但本来就没有改动 / 只建了分支没切换（改动留在原处）。
+       */
+      function buildBranchCreatedNote(value, t) {
+        if (value.switched !== true) return { tone: 'info', text: t('branch.createdOnly', { name: value.branch }) }
+        if (value.carried.total > 0) {
+          return { tone: 'info', text: t('branch.createdFollow', { name: value.branch, total: value.carried.total }) }
+        }
+        return { tone: 'info', text: t('branch.created', { name: value.branch }) }
+      }
+
+      /** 分支数据的去重键：同一个仓库名在不同账号下是两份数据。 */
+      function branchKeyOf(selection) {
+        return selection.accountId + '#' + selection.fullName
       }
 
       /**
@@ -5355,10 +5730,10 @@ window.__ModuleLoader__.load({
        * 没有本地克隆（或还没读到）时返回 null：分支区的本地操作一律以它为前提。
        */
       function localRootPathOfBranches(state) {
-        if (state === null || state === undefined) return null
-        if (state.data === null || state.data === undefined) return null
+        if (state === null) return null
+        if (state.data === null) return null
         const local = state.data.local
-        if (local === null || local === undefined) return null
+        if (local === null) return null
         return typeof local.rootPath === 'string' && local.rootPath !== '' ? local.rootPath : null
       }
 
@@ -5412,10 +5787,12 @@ window.__ModuleLoader__.load({
         more: [[3, 8], [8, 8], [13, 8]]
       }
 
-      const warned = new Set()
-
       /**
        * 渲染一个图标。
+       *
+       * 未知名字是编程错误：图标表就是契约，缺了就应该在开发时炸出来，
+       * 而不是静默返回 null 让界面少一块（那种「少了个图标」的问题极难发现）。
+       *
        * @param {{name: string, size?: number, className?: string, title?: string}} props
        */
       function Icon(props) {
@@ -5424,12 +5801,7 @@ window.__ModuleLoader__.load({
         const paths = ICONS[name]
 
         if (filledDots === undefined && paths === undefined) {
-          if (!warned.has(name)) {
-            warned.add(name)
-            // eslint-disable-next-line no-console
-            console.error('[dsh-git-panel] 未知图标: ' + name)
-          }
-          return null
+          throw new Error('[dsh-git-panel] 未知图标: ' + name)
         }
 
         const children = filledDots === undefined
@@ -5492,10 +5864,10 @@ window.__ModuleLoader__.load({
             return
           }
           const node = menuRef.current
-          const viewportW = typeof window === 'undefined' ? 1024 : window.innerWidth
-          const viewportH = typeof window === 'undefined' ? 768 : window.innerHeight
+          const viewportW = window.innerWidth
+          const viewportH = window.innerHeight
           const anchor = anchorRect
-          const box = node === null ? { width: minWidth, height: 0 } : node.getBoundingClientRect()
+          const box = node.getBoundingClientRect()
           const width = Math.max(box.width, minWidth)
           const height = box.height
 
@@ -5547,7 +5919,7 @@ window.__ModuleLoader__.load({
           }, children))
       }
 
-      /** 菜单项。 */
+      /** 菜单项。`checked` 有值时显示勾选位（此时不再画 icon）；两种标记不要同时传。 */
       function MenuItem(props) {
         const { icon, label, sub, checked, disabled, onClick, danger, dataKey, badges } = props
         const left = checked === undefined
@@ -5566,7 +5938,7 @@ window.__ModuleLoader__.load({
           onClick: (event) => {
             event.preventDefault()
             event.stopPropagation()
-            if (disabled !== true && typeof onClick === 'function') onClick(event)
+            if (disabled !== true) onClick(event)
           }
         },
         left,
@@ -5595,6 +5967,856 @@ window.__ModuleLoader__.load({
       Object.assign(exports, { PopupMenu, MenuItem, MenuLabel, MenuSeparator });
 
     });
+    __define("./ui/useTimedNotice.js", (exports, module) => {
+      /**
+       * src/ui/useTimedNotice.js —— 会自己过期的操作结果提示
+       *
+       * 面板里有两种「操作结果」：工具条上一句（推送成功 / 检查更新结果 / 建分支结果），
+       * 提交框状态行上一句（已提交 / 生成失败）。它们原先各写了一套定时清理，
+       * 结果两边的存活时间不一样：提交结果 8 秒后消失，推送结果却一直挂在工具条上。
+       *
+       * 这里只定义一条规则，两处共用：
+       *  · tone === 'info'（做成了什么事）→ 看一眼就够，ttl 后自动消失；
+       *  · tone === 'warn' / 'error'（需要用户处理）→ 留着，直到下一次动作或用户自己关掉。
+       */
+      const { useCallback, useEffect, useRef, useState } = __m("./platform.js");
+
+      /**
+       * @param {number} ttlMs info 类提示的存活时间
+       * @returns {[object|null, (notice: object|null) => void]}
+       */
+      function useTimedNotice(ttlMs) {
+        const [notice, setNotice] = useState(null)
+        const timerRef = useRef(null)
+
+        const clearTimer = useCallback(() => {
+          if (timerRef.current === null) return
+          clearTimeout(timerRef.current)
+          timerRef.current = null
+        }, [])
+
+        const show = useCallback((next) => {
+          clearTimer()
+          setNotice(next)
+          if (next === null || next.tone !== 'info') return
+          timerRef.current = setTimeout(() => {
+            timerRef.current = null
+            setNotice(null)
+          }, ttlMs)
+        }, [clearTimer, ttlMs])
+
+        // 卸载时别把定时器留在后台（面板会被右侧栏页签切换反复挂载/卸载）。
+        useEffect(() => clearTimer, [clearTimer])
+
+        return [notice, show]
+      }
+
+      Object.assign(exports, { useTimedNotice });
+
+    });
+    __define("./ui/useSnapshotResource.js", (exports, module) => {
+      /**
+       * src/ui/useSnapshotResource.js —— 一个「有首屏快照、有请求序号、失败留在原地」的资源
+       *
+       * 远端详情、分支全貌、PR 详情、当前分支 PR 卡片原先各写了一遍同样的代码：
+       * 读快照 → 置 loading → await → 序号守护 → 写快照 → catch 转人话。
+       * 四份实现里已经有细微漂移（错误该不该保留上一份数据、loading 该不该保留旧画面）。
+       * 这里把语义定死成三个开关，调用方只描述「key 怎么算、怎么取数、取到后做什么」：
+       *
+       *   snapshot     有快照就先渲染（默认 true）
+       *   keepPrevious 刷新时保留上一份数据，列表/卡片不会先消失再出现
+       *   keepOnError  失败时保留上一份数据（否则清空，让错误态独自占屏）
+       *
+       * 请求序号用 `useLatestGuard`：切仓库/切 PR 时，晚到的旧响应不会写进新选中项。
+       * 快照只存成功结果（失败进缓存会把错误画面当成首屏）。
+       */
+      const { useCallback, useRef, useState } = __m("./platform.js");
+      const { readSnapshot, writeSnapshot } = __m("./util/resource-cache.js");
+      const { useLatestGuard } = __m("./store.js");
+      const { describeError } = __m("./api.js");
+
+      /**
+       * @param {{
+       *   keyOf?: (input: any) => string,        // 快照键；不传 = 不用快照
+       *   load: (input: any) => Promise<any>,    // 取数；失败时抛 RpcError
+       *   snapshot?: boolean,                     // 默认 true
+       *   keepPrevious?: boolean,                 // 默认 false
+       *   keepOnError?: boolean,                  // 默认 false
+       *   onLoaded?: (input: any, data: any) => void,
+       *   t: (key: string, params?: object) => string
+       * }} options
+       * @returns {{ state: {loading: boolean, error: string|null, data: any}|null, reload: (input: any) => Promise<any|null>, clear: () => void }}
+       */
+      function useSnapshotResource(options) {
+        const { keyOf, load, snapshot = true, keepPrevious = false, keepOnError = false, onLoaded, t } = options
+        const [state, setState] = useState(null)
+        const stateRef = useRef(state)
+        stateRef.current = state
+        /**
+         * 同步更新 state 与它的 ref。
+         * 同一轮里先 clear() 再 reload() 时，reload 必须看到「已经清空」，
+         * 否则 keepPrevious 会把上一个仓库的数据当成这一份继续渲染。
+         */
+        const apply = useCallback((next) => {
+          stateRef.current = next
+          setState(next)
+        }, [])
+        const guard = useLatestGuard()
+
+        // 回调与翻译函数放进 ref：reload 的引用必须稳定，否则依赖它的 effect 每次渲染都重跑。
+        const keyOfRef = useRef(keyOf)
+        keyOfRef.current = keyOf
+        const loadRef = useRef(load)
+        loadRef.current = load
+        const onLoadedRef = useRef(onLoaded)
+        onLoadedRef.current = onLoaded
+        const tRef = useRef(t)
+        tRef.current = t
+
+        const reload = useCallback(async (input) => {
+          const token = guard.begin()
+          if (input === null) {
+            apply(null)
+            return null
+          }
+          const key = keyOfRef.current === undefined ? null : keyOfRef.current(input)
+          const cached = snapshot && key !== null ? readSnapshot(key) : undefined
+          const previous = stateRef.current
+          const previousData = keepPrevious && previous !== null ? previous.data : null
+          const data = cached === undefined ? previousData : cached
+          apply({ loading: data === null, error: null, data })
+          try {
+            const value = await loadRef.current(input)
+            if (!guard.isLatest(token)) return null
+            if (key !== null) writeSnapshot(key, value)
+            if (onLoadedRef.current !== undefined) onLoadedRef.current(input, value)
+            apply({ loading: false, error: null, data: value })
+            return value
+          } catch (error) {
+            if (!guard.isLatest(token)) return null
+            apply({
+              loading: false,
+              error: describeError(error, tRef.current),
+              data: keepOnError ? previousData : null
+            })
+            return null
+          }
+        }, [guard, snapshot, keepPrevious, keepOnError, apply])
+
+        // clear 也要让在途请求作废，否则旧响应会在清空之后把状态又写回来。
+        const clear = useCallback(() => {
+          guard.begin()
+          apply(null)
+        }, [guard, apply])
+
+        return { state, reload, clear }
+      }
+
+      Object.assign(exports, { useSnapshotResource });
+
+    });
+    __define("./util/resource-cache.js", (exports, module) => {
+      /**
+       * src/util/resource-cache.js —— 首屏快照缓存（内存，模块级）
+       *
+       * 解决的是「切走再切回来」的卡顿：
+       *   右侧栏 tab 被切走时组件会卸载，切回来时重新挂载 —— 状态全部归零，
+       *   于是先骨架屏、再等 `project/resolve`、再等 `status`，一屏白两次。
+       *
+       * 这里存的是**上次成功结果的快照**：挂载时先同步渲染旧画面（零延迟），
+       * 同时在后台重新验证。只有「从来没有过快照」时才显示骨架屏。
+       *
+       * 三条硬约束：
+       *  1. 只放内存，不落 localStorage（快照是缓存，不是持久化数据）；
+       *  2. 只存成功结果（失败不进缓存，否则会把错误画面当成首屏）；
+       *  3. 有上限，满了淘汰最旧的键（Map 的插入序 + 重新 set 刷新位置）。
+       */
+
+      /** 缓存的键数量上限：面板一次会话也就几十个键，120 足够，且不会无限增长。 */
+      const MAX_ENTRIES = 120
+
+      /** key -> { value, at } */
+      const entries = new Map()
+
+      /** 读快照；没有就是 undefined（调用方据此决定要不要显示骨架屏）。 */
+      function readSnapshot(key) {
+        const entry = entries.get(key)
+        return entry === undefined ? undefined : entry.value
+      }
+
+      /** 写入快照（成功结果才写）。已存在的键会被移到队尾，等价于 LRU 的「最近使用」。 */
+      function writeSnapshot(key, value) {
+        if (entries.has(key)) entries.delete(key)
+        else if (entries.size >= MAX_ENTRIES) {
+          const oldest = entries.keys().next()
+          if (oldest.done !== true) entries.delete(oldest.value)
+        }
+        entries.set(key, { value, at: Date.now() })
+      }
+
+      /** 删除一个快照（例如根被移除、账号被删）。 */
+      function dropSnapshot(key) {
+        entries.delete(key)
+      }
+
+      /** 快照年龄（毫秒）；没有快照返回 Infinity。 */
+      function snapshotAge(key) {
+        const entry = entries.get(key)
+        return entry === undefined ? Infinity : Date.now() - entry.at
+      }
+
+      /** 清空（测试用：保证每个用例从「没有快照」开始）。 */
+      function clearSnapshots() {
+        entries.clear()
+      }
+
+      Object.assign(exports, { readSnapshot, writeSnapshot, dropSnapshot, snapshotAge, clearSnapshots });
+
+    });
+    __define("./store.js", (exports, module) => {
+      /**
+       * src/store.js —— 显示偏好 + 每个工作区记住的选中项 + 两个通用 hook
+       *
+       * 放两类「跨会话应该记住」的东西：
+       *   · 显示偏好（mode/diffView/leftWidth…）：全局一份，见 usePref；
+       *   · 每个工作区自己的选中项（目前是「远端」页签选中的账号）：按项目根分开记，
+       *     见 readRemoteAccount / saveRemoteAccount。
+       * status/diff 数据与文件/仓库选中项都是每次重新取的组件状态，不进这里。
+       *
+       * 都存在 localStorage 里；读取时只做「结构校验 + 数值钳制」，
+       * 保证手改/旧版本残留的坏数据不会把面板布局搞坏。
+       */
+      const { useCallback, useEffect, useMemo, useRef, useState } = __m("./platform.js");
+
+      const MODE = { changes: 'changes', files: 'files', remote: 'remote' }
+
+      /** 三个页签的顺序（工具条与偏好校验共用）。 */
+      const MODES = [MODE.changes, MODE.files, MODE.remote]
+
+      const STORAGE_KEY = 'dsh-git-panel:prefs:v1'
+
+      const DEFAULTS = {
+        mode: MODE.changes,
+        diffView: 'unified',
+        wrap: false,
+        contextLines: 3,
+        ignoreWhitespace: false,
+        autoRefresh: true,
+        leftWidth: 264,
+        collapsedGroups: {},
+        /** 「储存库」区域的展开状态（只在有多个仓库时出现）。 */
+        repositoriesOpen: true,
+        /** 变更列表显示方式：list = 一行一个文件（文件名 + 弱化路径），tree = 按文件夹展开。 */
+        changesView: 'list',
+        /** 未跟踪文件：merge = 并进「未暂存」（VS Code 行为），separate = 单列「未跟踪」组。 */
+        untrackedMode: 'merge',
+        /** 提交成功后是否自动推送当前分支（对应 VS Code 的 git.postCommitCommand，默认开）。 */
+        postCommitPush: true,
+        /** 创建 PR 时上次选的目标分支：{ '<provider>:<owner/repo>': 'dev' } */
+        pullTargets: {},
+        /** 已读评论水位：{ '<accountId>#<number>': 已读条数 } */
+        pullSeen: {}
+      }
+
+      /** 未跟踪文件的两种呈现方式（设置页与分组逻辑共用）。 */
+      const UNTRACKED_MODES = ['merge', 'separate']
+
+      /** 变更列表的两种显示方式（设置页与 ⋯ 菜单共用）。 */
+      const CHANGES_VIEWS = ['list', 'tree']
+
+      const GROUPS = ['conflicted', 'staged', 'unstaged', 'untracked']
+
+      /** 把任意输入收敛成合法的偏好对象。 */
+      function sanitize(input) {
+        const out = { ...DEFAULTS }
+        if (MODES.includes(input.mode)) out.mode = input.mode
+        if (input.diffView === 'unified' || input.diffView === 'split') out.diffView = input.diffView
+        if (typeof input.wrap === 'boolean') out.wrap = input.wrap
+        if (typeof input.ignoreWhitespace === 'boolean') out.ignoreWhitespace = input.ignoreWhitespace
+        if (typeof input.autoRefresh === 'boolean') out.autoRefresh = input.autoRefresh
+        if (Number.isFinite(input.contextLines)) {
+          out.contextLines = Math.min(20, Math.max(0, Math.round(input.contextLines)))
+        }
+        if (Number.isFinite(input.leftWidth)) {
+          out.leftWidth = Math.min(720, Math.max(180, Math.round(input.leftWidth)))
+        }
+        if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
+        if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
+        if (UNTRACKED_MODES.includes(input.untrackedMode)) out.untrackedMode = input.untrackedMode
+        if (typeof input.postCommitPush === 'boolean') out.postCommitPush = input.postCommitPush
+        if (input.pullSeen !== null && typeof input.pullSeen === 'object' && !Array.isArray(input.pullSeen)) {
+          const seen = {}
+          for (const [key, value] of Object.entries(input.pullSeen)) {
+            if (typeof key === 'string' && key !== '' && Number.isInteger(value) && value >= 0) seen[key] = value
+          }
+          out.pullSeen = seen
+        }
+        if (input.pullTargets !== null && typeof input.pullTargets === 'object' && !Array.isArray(input.pullTargets)) {
+          const targets = {}
+          for (const [key, value] of Object.entries(input.pullTargets)) {
+            if (typeof key === 'string' && key !== '' && typeof value === 'string' && value !== '') targets[key] = value
+          }
+          out.pullTargets = targets
+        }
+        if (input.collapsedGroups && typeof input.collapsedGroups === 'object') {
+          const groups = {}
+          for (const key of GROUPS) if (input.collapsedGroups[key] === true) groups[key] = true
+          out.collapsedGroups = groups
+        }
+        return out
+      }
+
+      /** 读全部偏好（含默认值兜底由 loadPrefs 内部处理）。 */
+      function readPrefs() {
+        return loadPrefs()
+      }
+
+      /** 写一个偏好键（与已有值合并）。 */
+      function writePref(key, value) {
+        savePrefs({ [key]: value })
+      }
+
+      function loadPrefs() {
+        let raw = null
+        try {
+          raw = localStorage.getItem(STORAGE_KEY)
+        } catch {
+          return { ...DEFAULTS }
+        }
+        if (raw === null) return { ...DEFAULTS }
+        try {
+          return sanitize(JSON.parse(raw))
+        } catch {
+          return { ...DEFAULTS }
+        }
+      }
+
+      function savePrefs(patch) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...loadPrefs(), ...patch }))
+        } catch {
+          /* 隐私模式/配额满时静默：偏好存不下不影响当前会话 */
+        }
+      }
+
+      /**
+       * 一个会持久化到 localStorage 的 state。
+       *
+       * 持久化放在 effect 里而不是 setter 的 updater 里：updater 必须是纯函数
+       * （并发渲染 / StrictMode 下会被重复执行），而且拖拽分栏时每一次 pointermove
+       * 都写一遍整个偏好 JSON 会直接拖慢拖动。effect 在一次提交后只跑一次。
+       *
+       * @param {string} key DEFAULTS 的键
+       */
+      function usePref(key) {
+        const [value, setValue] = useState(() => loadPrefs()[key])
+        useEffect(() => {
+          savePrefs({ [key]: value })
+        }, [key, value])
+        return [value, setValue]
+      }
+
+      /* ==================== 每个工作区记住的远端账号 ==================== */
+
+      /**
+       * 「远端」页签选中的账号按工作区记：`{ "<projectRoot>": "<accountId>" }`。
+       *
+       * 为什么按工作区：账号列表是全局的（DSH 凭据服务里一份），但每个项目日常用的账号
+       * 往往不同（工作号 / 私人号 / 内网 Gitee）。只存组件状态的话，切到别的工作区再回来、
+       * 或者重新打开面板，都会退回账号列表的第一个 —— 每切一次就要重选一次。
+       *
+       * 工作区身份直接用宿主下发的 projectRoot：它已经是 `path.resolve` + 正斜杠的绝对路径，
+       * 同一工作区每次解析都是同一个值。客户端不再自己折叠大小写 / 斜杠 —— 那是宿主的事，
+       * 在这边猜反而会出现「同一目录两个键」。
+       *
+       * 只存账号 id（`provider:login`），不存任何令牌。localStorage 可能被手改 / 写坏，
+       * 读的时候只保留「非空字符串 → 非空字符串」的条目；坏数据当作没记过，不抛异常。
+       */
+      const REMOTE_ACCOUNTS_KEY = 'dsh-git-panel:remote-accounts:v1'
+
+      function readRemoteAccounts() {
+        let raw = null
+        try {
+          raw = localStorage.getItem(REMOTE_ACCOUNTS_KEY)
+        } catch {
+          return {}
+        }
+        if (raw === null) return {}
+        let parsed
+        try {
+          parsed = JSON.parse(raw)
+        } catch {
+          return {}
+        }
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+        const out = {}
+        for (const [workspace, accountId] of Object.entries(parsed)) {
+          if (typeof accountId !== 'string' || accountId === '') continue
+          out[workspace] = accountId
+        }
+        return out
+      }
+
+      /**
+       * 某个工作区上次在「远端」页签选中的账号 id。
+       * @param {string} projectRoot 宿主下发的项目根
+       * @returns {string|null} 没记过时返回 null
+       */
+      function readRemoteAccount(projectRoot) {
+        const accountId = readRemoteAccounts()[projectRoot]
+        return accountId === undefined ? null : accountId
+      }
+
+      /**
+       * 记住某个工作区在「远端」页签选中的账号。
+       * @param {string} projectRoot 宿主下发的项目根
+       * @param {string} accountId 账号 id（`provider:login`）
+       */
+      function saveRemoteAccount(projectRoot, accountId) {
+        const accounts = readRemoteAccounts()
+        accounts[projectRoot] = accountId
+        try {
+          localStorage.setItem(REMOTE_ACCOUNTS_KEY, JSON.stringify(accounts))
+        } catch {
+          /* 隐私模式/配额满：记不住不影响当前会话 */
+        }
+      }
+
+      /**
+       * 只保留最新一次异步结果的守护器。
+       *
+       * 返回对象必须**引用稳定**：调用方普遍写成
+       *   const refresh = useCallback(..., [guard]);  useEffect(..., [refresh])
+       * 每次返回新对象会让 refresh 每次渲染都变，effect 就会每渲染重跑 ——
+       * 那会变成「取数 → 渲染 → 再取数」的死循环。
+       */
+      function useLatestGuard() {
+        const seqRef = useRef(0)
+        const begin = useCallback(() => {
+          seqRef.current += 1
+          return seqRef.current
+        }, [])
+        const isLatest = useCallback((token) => token === seqRef.current, [])
+        return useMemo(() => ({ begin, isLatest }), [begin, isLatest])
+      }
+
+      Object.assign(exports, { MODE, readPrefs, writePref, usePref, readRemoteAccount, saveRemoteAccount, useLatestGuard });
+
+    });
+    __define("./api.js", (exports, module) => {
+      /**
+       * src/api.js —— 宿主 RPC 封装
+       *
+       * 线上协议：
+       *   客户端  ctx.connection.rpc.call('/api', 'dsh-git/<endpoint>', payload, signal)
+       *   宿主端  connection.fetch.register({ path: '/api/dsh-git/<endpoint>', … })
+       *   返回封套 { ok: true, value } | { ok: false, error: { code, message, details } }
+       *
+       * 这里只做三件事：拆封套、加超时、把错误归一成带 code 的 RpcError。
+       * 不做通道/服务的降级尝试 —— apply(ctx) 的 inject 已保证 connection 存在。
+       */
+      const { getPluginContext } = __m("./platform.js");
+
+      const RPC_CHANNEL = '/api'
+      /** 本插件的路由命名空间：宿主注册为 `/api/dsh-git/<endpoint>`。 */
+      const RPC_NAMESPACE = 'dsh-git'
+
+      const TIMEOUT_MS = 20_000
+
+      /** 归一化后的 RPC 错误（渲染层只认 code 与 message）。 */
+      class RpcError extends Error {
+        constructor(code, message, details) {
+          super(message)
+          this.name = 'RpcError'
+          this.code = code
+          this.details = details === undefined || details === null ? {} : details
+        }
+      }
+
+      /** 宿主错误码 → 文案 key；没列出的码一律走 error.generic 并带上服务端原文。 */
+      const MESSAGE_KEYS = {
+        'git-missing': 'error.gitMissing',
+        'not-a-repository': 'error.notRepository',
+        'timeout': 'error.timeout',
+        'outside-root': 'error.outsideRoot',
+        'forbidden-path': 'error.outsideRoot',
+        'no-session': 'status.noSession',
+        'no-cwd': 'status.noCwd',
+        'no-commit-model': 'commit.noModel',
+        'nothing-to-commit': 'commit.nothing',
+        'unmerged': 'commit.unmerged',
+        'no-llm': 'settings.noLlm',
+        'unknown-model': 'settings.unknownModel',
+        // 模型失败的原因由宿主翻成人话（余额不足 / 密钥 / 限流 / 断网…），
+        // 这里只加一句上下文；不用提交说明专用的文案，因为同一个码也会出现在 AI 审阅与 PR 文案里。
+        'model-failed': 'error.modelFailed',
+        'model-truncated': 'error.modelFailed',
+        // PR 有冲突不是「鉴权失败」：Gitee 用 403 表达冲突，宿主已按响应体区分成 pull-conflict
+        'pull-conflict': 'pull.conflict'
+      }
+
+      /**
+       * 调一个 host 端点。
+       * @param {string} endpoint
+       * @param {object} payload
+       * @param {{signal?: AbortSignal, timeoutMs?: number}} [options]
+       */
+      async function call(endpoint, payload, options) {
+        const opts = options ?? {}
+        const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), timeoutMs)
+        const forward = () => controller.abort()
+        if (opts.signal !== undefined) opts.signal.addEventListener('abort', forward, { once: true })
+
+        let envelope
+        try {
+          envelope = await getPluginContext().connection.rpc.call(
+            RPC_CHANNEL,
+            RPC_NAMESPACE + '/' + endpoint,
+            payload ?? {},
+            controller.signal
+          )
+        } catch (error) {
+          if (opts.signal !== undefined && opts.signal.aborted) throw new RpcError('aborted', '已取消')
+          if (controller.signal.aborted) throw new RpcError('timeout', '请求超时')
+          throw new RpcError('transport', error instanceof Error ? error.message : String(error))
+        } finally {
+          clearTimeout(timer)
+          if (opts.signal !== undefined) opts.signal.removeEventListener('abort', forward)
+        }
+
+        if (envelope.ok === true) return envelope.value
+        throw new RpcError(envelope.error.code, envelope.error.message, envelope.error.details)
+      }
+
+      /** 给单个端点一个更长的超时；调用方显式传了 timeoutMs 就以它为准。 */
+      function withTimeout(options, timeoutMs) {
+        return { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? timeoutMs }
+      }
+
+      /* ============================ 具体端点 ============================ */
+
+      /** 解析项目的 git 根（primary / 浏览根 / discovered / extra）。 */
+      function resolveProject(payload, options) {
+        return call('project/resolve', payload, options)
+      }
+
+      /** 读某个根的 status。 */
+      function readStatus(payload, options) {
+        return call('status', payload, options)
+      }
+
+      /** 读单个文件的 diff（path 相对 repoRoot）。 */
+      function readDiff(payload, options) {
+        return call('diff', payload, options)
+      }
+
+      /** 读文件文本内容（path 相对 rootPath）。 */
+      function readFile(payload, options) {
+        return call('file/read', payload, options)
+      }
+
+      /** 检测更新：宿主执行 `git fetch` 后返回最新 ahead/behind（只读，不动工作区）。 */
+      function fetchRemote(payload, options) {
+        return call('remote/fetch', payload, options)
+      }
+
+      /** 保存文件内容（path 相对 rootPath；expectedHash 是乐观并发凭据，force 只在确认覆盖后用）。 */
+      function writeFile(payload, options) {
+        return call('file/write', payload, options)
+      }
+
+      /** 暂存 / 取消暂存单个文件（path 相对仓库根；action 为 stage 或 unstage）。 */
+      function stageFile(payload, options) {
+        return call('index/stage', payload, options)
+      }
+
+      /** 整组暂存 / 取消暂存（scope 为 stage-unstaged / stage-untracked / unstage）。 */
+      function stageGroup(payload, options) {
+        return call('index/stage-group', payload, options)
+      }
+
+      /** 代码托管账号列表（列表接口不含 token）。 */
+      function listAccounts(payload, options) {
+        return call('accounts/list', payload, options)
+      }
+
+      function addAccount(payload, options) {
+        return call('accounts/add', payload, options)
+      }
+
+      /** 改备注名 / 换令牌（换令牌会先验证）。 */
+      function updateAccount(payload, options) {
+        return call('accounts/update', payload, options)
+      }
+
+      /** 取令牌原文：只在用户点「显示」时调用。 */
+      function readAccountToken(payload, options) {
+        return call('accounts/token', payload, options)
+      }
+
+      function removeAccount(payload, options) {
+        return call('accounts/remove', payload, options)
+      }
+
+      /** 列某个账号下的仓库（一页 100 条）。 */
+      function listRemoteRepos(payload, options) {
+        return call('remote/repos', payload, options)
+      }
+
+      /** 仓库详情：代码概况 + 未关闭 issue/PR 数量 + 最近条目。 */
+      function remoteDetail(payload, options) {
+        return call('remote/detail', payload, options)
+      }
+
+      /** 批量取若干仓库的未合并 PR 数量。 */
+      function remotePullCounts(payload, options) {
+        return call('remote/pr-counts', payload, options)
+      }
+
+      /** 一个 PR 的详情（含平台能力与审查记录；也带回变动文件清单，最多 300 个）。 */
+      function remotePull(payload, options) {
+        // 详情现在会顺带读文件清单（最多 6 页）：默认 20s 对慢网络不够
+        return call('remote/pull', payload, withTimeout(options, 60_000))
+      }
+
+      /** 提交审查结论。 */
+      function remotePullReview(payload, options) {
+        return call('remote/pull/review', payload, options)
+      }
+
+      /** 标记 PR 测试通过（Gitee 的合并门禁之一）。 */
+      function remotePullTest(payload, options) {
+        return call('remote/pull/test', payload, options)
+      }
+
+      /** PR 里单个文件的 diff（点开文件行时按需读；返回已解析的 hunk）。 */
+      function remotePullFile(payload, options) {
+        return call('remote/pull/file', payload, withTimeout(options, 60_000))
+      }
+
+      /** 调审阅模型给出结构化结论。 */
+      function remotePullAiReview(payload, options) {
+        // 模型调用本身就慢：默认 20s 会让客户端先超时，而宿主还在跑
+        return call('remote/pull/ai-review', payload, withTimeout(options, 240_000))
+      }
+
+      /** 深度审阅：宿主拉取 PR head 到临时 worktree，读完整文件后再让模型审。 */
+      function remotePullPrepareReview(payload, options) {
+        // 阶段一：找仓库 / 判断是否已在 PR 提交 / 切分支（必要时才 fetch）
+        return call('remote/pull/prepare-review', payload, withTimeout(options, 600_000))
+      }
+
+      function remotePullSessionReview(payload, options) {
+        return call('remote/pull/session-review', payload, withTimeout(options, 600_000))
+      }
+
+      /** 把 PR 克隆到指定目录（深度审阅前的准备步骤）。 */
+      function remotePullCloneForReview(payload, options) {
+        return call('remote/pull/clone-for-review', payload, withTimeout(options, 900_000))
+      }
+
+      /** 关闭 / 重新打开 PR（state: 'open' | 'closed'）。 */
+      function remotePullState(payload, options) {
+        return call('remote/pull/state', payload, options)
+      }
+
+      /** 提交用户确认过的 PR 评论。 */
+      function remotePullComment(payload, options) {
+        return call('remote/pull/comment', payload, options)
+      }
+
+      /** 一键「审查与测试都通过」（按平台能力执行）。 */
+      function remotePullPass(payload, options) {
+        return call('remote/pull/pass', payload, options)
+      }
+
+      /** 合并 PR。 */
+      function remotePullMerge(payload, options) {
+        return call('remote/pull/merge', payload, options)
+      }
+
+      /** 把远端仓库克隆到项目根下的子目录。 */
+      function cloneRemoteRepo(payload, options) {
+        return call('remote/clone', payload, options)
+      }
+
+      /** 从储存库隐藏一个根（持久化；项目本身不可隐藏）。 */
+      function hideRoot(payload, options) {
+        return call('roots/hide', payload, options)
+      }
+
+      /** 取消隐藏。 */
+      function unhideRoot(payload, options) {
+        return call('roots/unhide', payload, options)
+      }
+
+      /**
+       * 「储存库」行的改动规模：每个仓库的改动文件数与增删行数。
+       *
+       * 一次请求查完所有仓库（宿主内部限并发，并能命中 status 缓存）；单个仓库失败只影响它自己那一行。
+       */
+      function rootStats(payload, options) {
+        return call('roots/stats', payload, withTimeout(options, 60_000))
+      }
+
+      /** 列出本地分支 + 分支菜单需要的仓库现状（`state`：HEAD / 进行中操作 / 脏计数）。 */
+      function listBranches(payload, options) {
+        return call('branches/list', payload, options)
+      }
+
+      /**
+       * 远端仓库的分支全貌：远端分支（平台 API）+ 本地同名分支状态（rootPaths 里 origin
+       * 匹配到的本地仓库），合成一条列表。远端/本地任一侧失败只记在 failures 里。
+       */
+      function remoteBranches(payload, options) {
+        return call('remote/branches', payload, options)
+      }
+
+      /** 删除本地分支（force 只在用户确认「强制删除」后用）。 */
+      function deleteLocalBranch(payload, options) {
+        return call('branch/delete', payload, options)
+      }
+
+      /** 删除远端分支（破坏性，界面上必须二次确认）。 */
+      function deleteRemoteBranch(payload, options) {
+        return call('remote/branch/delete', payload, options)
+      }
+
+      /** 把「仅远程」的分支建成本地跟踪分支并切过去。 */
+      function trackBranch(payload, options) {
+        return call('branch/track', payload, options)
+      }
+
+      /** 切换分支（工作区怎么处理交给 git）。 */
+      function switchBranch(payload, options) {
+        return call('branch/switch', payload, options)
+      }
+
+      /**
+       * 创建分支：`base` 是创建基准、`checkout` 决定建完是否切过去。
+       *
+       * 基准是当前 HEAD 时未提交改动原样跟随（git 只写 ref 与 HEAD，不碰工作区）；
+       * 跨基准撞车时宿主报 `would-overwrite`（details 里有文件清单，且仓库没被改动），
+       * 界面据此换成「从当前分支创建」或「只建分支」再试一次。
+       */
+      function createBranch(payload, options) {
+        return call('branch/create', payload, options)
+      }
+
+      /**
+       * 推送当前分支到 origin（`git push --set-upstream origin <当前分支>`，用本机 git 凭据）。
+       *
+       * 网络写操作：超时给到 5 分钟。认证失败（`git-auth-failed`）与「远端有你没有的提交」
+       * （`not-fast-forward`）都带可操作原因，界面直接显示宿主原文。
+       */
+      function pushBranch(payload, options) {
+        return call('branch/push', payload, withTimeout(options, 300_000))
+      }
+
+      /**
+       * 收尾「远端分支已被删除」的本地分支：`fetch --prune` → 切回默认分支 → 快进 → 删本地分支。
+       * 是一串网络 + 本地写操作，超时给足；失败时会把已完成的步骤一起返回，界面如实显示。
+       */
+      function cleanupBranch(payload, options) {
+        return call('branch/cleanup', payload, withTimeout(options, 300_000))
+      }
+
+      /** 提交：有暂存只提交暂存，没有则先全部暂存。 */
+      function commitChanges(payload, options) {
+        return call('commit', payload, options)
+      }
+
+      /** 按设置里的模型生成提交说明。 */
+      function commitMessage(payload, options) {
+        return call('commit/message', payload, withTimeout(options, 130_000))
+      }
+
+      /** 创建 PR 前的准备信息（仓库 / 账号 / 源分支 / 目标分支候选 / 是否已推送）。 */
+      function prPrepare(payload, options) {
+        return call('pr/prepare', payload, options)
+      }
+
+      /** 拉取当前分支最新代码（fetch + 只允许快进）。 */
+      function pullBranch(payload, options) {
+        return call('branch/pull', payload, withTimeout(options, 300_000))
+      }
+
+      /** 当前安装的插件版本（本地读，不联网）。 */
+      function pluginInfo(payload, options) {
+        return call('plugin/info', payload, options)
+      }
+
+      /** 检查插件是否有新版本（GitHub 最新 release）。 */
+      function pluginUpdate(payload, options) {
+        return call('plugin/update', payload, withTimeout(options, 30_000))
+      }
+
+      /** 当前分支关联的 PR 摘要（没有关联 PR 时 linked:false + reason）。 */
+      function prLinked(payload, options) {
+        return call('pr/linked', payload, options)
+      }
+
+      /** 用模型生成 PR 标题与描述。 */
+      function prGenerate(payload, options) {
+        return call('pr/generate', payload, withTimeout(options, 120_000))
+      }
+
+      /** 创建 PR。 */
+      function prCreate(payload, options) {
+        return call('pr/create', payload, withTimeout(options, 120_000))
+      }
+
+      /** 模型目录（来自 profile 的 llm-pi-ai 配置）。 */
+      function listModels(payload, options) {
+        return call('models/list', payload, options)
+      }
+
+      /** 读插件设置。 */
+      function readSettings(payload, options) {
+        return call('settings/get', payload, options)
+      }
+
+      /** 保存插件设置。 */
+      function writeSettings(payload, options) {
+        return call('settings/set', payload, options)
+      }
+
+      /** 列目录（path 相对 rootPath）。 */
+      function listDirectory(payload, options) {
+        return call('tree/list', payload, options)
+      }
+
+      /** 添加外部仓库根。 */
+      function addRoot(payload, options) {
+        return call('roots/add', payload, options)
+      }
+
+      /** 移除外部仓库根。 */
+      function removeRoot(payload, options) {
+        return call('roots/remove', payload, options)
+      }
+
+      /**
+       * 把错误渲染成一句用户能懂的话。
+       *
+       * `message` 必须传下去：像「生成提交说明失败：{message}」这种带占位符的文案，
+       * 不传就只剩字面的 `{message}`，用户永远看不到真正原因（曾经就是这样）。
+       */
+      function describeError(error, t) {
+        const code = error === null || error === undefined ? '' : error.code
+        const message = error instanceof Error
+          ? error.message
+          : (typeof error === 'string' ? error : String(error ?? ''))
+        const key = MESSAGE_KEYS[code]
+        if (key !== undefined) return t(key, { message })
+        return t('error.generic', { message })
+      }
+
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullFile, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, rootStats, listBranches, remoteBranches, deleteLocalBranch, deleteRemoteBranch, trackBranch, switchBranch, createBranch, pushBranch, cleanupBranch, commitChanges, commitMessage, prPrepare, pullBranch, pluginInfo, pluginUpdate, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+
+    });
     __define("./components/RepoList.js", (exports, module) => {
       /**
        * src/components/RepoList.js —— 「储存库」区域（VS Code 的 Repositories）
@@ -5608,17 +6830,14 @@ window.__ModuleLoader__.load({
        *   ├─ ul.dgp-level
        *   │  └─ li > div.dgp-row-wrap
        *   │     ├─ button.dgp-repo-row[data-dgp-repo][data-hidden] ← 只选中该仓库，不打开分支菜单
+       *   │     ├─ span.dgp-repo-stats[data-dgp-repo-stats]        ← 改动文件数 + 增删行数（有改动才出现）
        *   │     ├─ button.dgp-repo-branch[data-dgp-branch] ← 贴在行的最右侧；只有点它才打开分支菜单
-       *   │     ├─ button.dgp-row-action[data-dgp-repo-hide]   ← 从储存库隐藏（项目本身不可隐藏）
-       *   │     ├─ button.dgp-row-action[data-dgp-repo-unhide] ← 已隐藏的行：取消隐藏
-       *   │     └─ button.dgp-row-action[data-dgp-repo-remove] ← 仅外部仓库：移除
-       *   ├─ AddRootForm（展开时）
-       *   └─ PopupMenu（分支菜单：切换已有分支，或输入名字创建并切过去）
+       *   │     └─ AddRootForm / 分支菜单（菜单里也能隐藏 / 取消隐藏 / 移除）
        *
        * 分支菜单的取数、切换与创建都通过 props 交给 Panel：这里只负责交互与错误呈现，
        * 切换失败（例如本地改动会被覆盖）原样显示 git 的话，让用户自己决定怎么处理。
        */
-      const { h, useState } = __m("./platform.js");
+      const { h, useRef, useState } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
       const { MenuItem, MenuLabel, PopupMenu } = __m("./ui/Menu.js");
       const { AddRootForm } = __m("./components/AddRootForm.js");
@@ -5630,10 +6849,11 @@ window.__ModuleLoader__.load({
        * 打开菜单与「根操作失败后重开菜单」共用这一份：字段集合（尤其 `state` / `base` /
        * `checkout` / `blocked`）只在这里定义一次，不至于两处各写一遍慢慢长歪。
        */
-      function emptyBranchMenu(root, rect) {
+      function emptyBranchMenu(root, rect, seq) {
         return {
           root,
           rect,
+          seq,
           list: [],
           current: null,      // branches/list 的 current：当前分支名（游离 HEAD 时为 null）
           state: null,        // branches/list 的 state：head / detached / unborn / inProgress / dirty
@@ -5646,7 +6866,8 @@ window.__ModuleLoader__.load({
           base: 'HEAD',       // 创建基准；'HEAD' = 从当前 HEAD 建（零风险路径）
           checkout: true,     // 建完是否立刻切过去
           blocked: null,      // 撞车说明（would-overwrite 的 message），非空时只给两个出口
-          error: null
+          error: null,
+          filter: ''
         }
       }
 
@@ -5656,21 +6877,21 @@ window.__ModuleLoader__.load({
        * 数据全部来自 `branches/list`，所以切换它不需要任何额外请求。
        * 选项带上「（本地）/（远端）」后缀：只写 `origin/dev` 对不熟 git 的人等于天书。
        */
-      function baseOptionsOf(branches, current, translate) {
-        const options = [{ ref: 'HEAD', label: translate('branch.baseHead', { branch: current ?? translate('root.noBranch') }) }]
+      function baseOptionsOf(branches, current, t) {
+        const options = [{ ref: 'HEAD', label: t('branch.baseHead', { branch: current ?? t('root.noBranch') }) }]
         const seen = new Set(['HEAD'])
         // 先本地分支、再远端引用：本地分支是更常用的起点，混在一起会把列表打散
         for (const branch of branches) {
           if (branch.local !== true || branch.current === true || seen.has(branch.name)) continue
           seen.add(branch.name)
-          options.push({ ref: branch.name, label: translate('branch.baseLocalOption', { name: branch.name }) })
+          options.push({ ref: branch.name, label: t('branch.baseLocalOption', { name: branch.name }) })
         }
         for (const branch of branches) {
-          if (typeof branch.remote !== 'string' || branch.remote === '') continue
+          if (branch.remote === null) continue
           const ref = branch.remote + '/' + branch.name
           if (seen.has(ref)) continue
           seen.add(ref)
-          options.push({ ref, label: translate('branch.baseRemoteOption', { ref }) })
+          options.push({ ref, label: t('branch.baseRemoteOption', { ref }) })
         }
         return options
       }
@@ -5680,7 +6901,7 @@ window.__ModuleLoader__.load({
         if (name === '') return null
         for (const branch of branches) {
           if (branch.name !== name || branch.local === true) continue
-          if (typeof branch.remote === 'string' && branch.remote !== '') return branch.remote + '/' + name
+          if (branch.remote !== null) return branch.remote + '/' + name
         }
         return null
       }
@@ -5693,17 +6914,17 @@ window.__ModuleLoader__.load({
         revert: 'branch.progressRevert'
       }
 
+      /** 分支多到这个数才放筛选框：少数分支时它只是噪音。 */
+      const BRANCH_FILTER_THRESHOLD = 8
+
       function RepoList(props) {
-        const source = props
-        const translate = source.t
-        const roots = Array.isArray(source.roots) ? source.roots : []
-        const activeRootId = typeof source.activeRootId === 'string' ? source.activeRootId : null
-        const open = source.open !== false
+        const { roots, activeRootId, open, stats, onToggleOpen, onSelect, onAdd, onHide, onUnhide, onRemove, onLoadBranches, onSwitchBranch, onTrackBranch, onPullBranch, onFetchBranches, onCreateBranch, t } = props
         const [formOpen, setFormOpen] = useState(false)
         /** 已隐藏的仓库默认收起；这里只记「要不要放出来看」，持久化的是隐藏列表本身。 */
         const [showHidden, setShowHidden] = useState(false)
-        // 分支菜单：{ root, rect, list, loading, switching, creating, name, error }
         const [branchMenu, setBranchMenu] = useState(null)
+        /** 菜单世代号：晚到的响应只能写回「发起它的那一次打开」的菜单。 */
+        const menuSeqRef = useRef(0)
 
         if (roots.length === 0) return null
 
@@ -5714,51 +6935,66 @@ window.__ModuleLoader__.load({
         const closeForm = () => setFormOpen(false)
         const closeBranches = () => setBranchMenu(null)
 
+        /**
+         * 打开一份新菜单：seq 自增一次。
+         * 之后所有异步结果都带着这个 seq 回来，只写回同一次打开的菜单 ——
+         * 否则「点 A 建分支 → 关掉 → 再打开 A → 旧响应落地」会把旧错误/旧列表画上去。
+         */
+        const openBranches = (root, rect) => {
+          menuSeqRef.current += 1
+          setBranchMenu(emptyBranchMenu(root, rect, menuSeqRef.current))
+        }
+
+        /** 同步修补当前菜单（输入框、勾选框这类只可能属于屏幕上这一份菜单的操作）。 */
+        const patchMenu = (patch) => {
+          setBranchMenu((previous) => (previous === null ? null : { ...previous, ...patch }))
+        }
+
+        /** 异步结果：只写给「发起它的同一份菜单」。 */
+        const patchMenuFor = (menu, patch) => {
+          setBranchMenu((previous) => (previous !== null && previous.seq === menu.seq ? { ...previous, ...patch } : previous))
+        }
+
+        /** 异步成功：只有菜单还停在发起它的那一份时才关掉。 */
+        const closeMenuFor = (menu) => {
+          setBranchMenu((previous) => (previous !== null && previous.seq === menu.seq ? null : previous))
+        }
+
         /** 隐藏 / 取消隐藏 / 移除：都从分支菜单触发，执行后关掉菜单；失败就把菜单重开在最上面报错。 */
         const runRootAction = (handler, root) => {
-          if (typeof source[handler] !== 'function') return
           closeBranches()
-          Promise.resolve(source[handler](root)).catch((error) => {
+          handler(root).catch((error) => {
+            menuSeqRef.current += 1
             setBranchMenu({
-              ...emptyBranchMenu(root, null),
+              ...emptyBranchMenu(root, null, menuSeqRef.current),
               loading: false,
-              error: error && error.message ? error.message : String(error)
+              error: error.message
             })
           })
         }
 
         const loadBranches = (root, rect) => {
-          setBranchMenu(emptyBranchMenu(root, rect))
-          Promise.resolve(source.onLoadBranches(root))
-            .then((value) => {
-              setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
-                ? previous
-                : {
-                  ...previous,
-                  list: value.branches,
-                  current: value.current,
-                  state: value.state,
-                  loading: false,
-                  // 合并 / 变基进行中 git 不允许切分支：默认就落在「只建分支」上，不摆一个必然失败的勾选
-                  checkout: value.state.inProgress === null
-                }))
+          openBranches(root, rect)
+          const menu = { root, seq: menuSeqRef.current }
+          onLoadBranches(root).then((value) => {
+            patchMenuFor(menu, {
+              list: value.branches,
+              current: value.current,
+              state: value.state,
+              loading: false,
+              // 合并 / 变基进行中 git 不允许切分支：默认就落在「只建分支」上，不摆一个必然失败的勾选
+              checkout: value.state.inProgress === null
             })
-            .catch((error) => {
-              setBranchMenu((previous) => (previous === null || previous.root.id !== root.id
-                ? previous
-                : { ...previous, loading: false, error: error && error.message ? error.message : String(error) }))
-            })
+          }, (error) => {
+            patchMenuFor(menu, { loading: false, error: error.message })
+          })
         }
 
         const chooseBranch = (menu, name) => {
-          setBranchMenu({ ...menu, switching: name, error: null })
-          Promise.resolve(source.onSwitchBranch(menu.root, name))
-            .then(() => setBranchMenu(null))
-            .catch((error) => {
-              setBranchMenu((previous) => (previous === null
-                ? previous
-                : { ...previous, switching: null, error: error && error.message ? error.message : String(error) }))
-            })
+          patchMenu({ switching: name, error: null })
+          onSwitchBranch(menu.root, name).then(() => closeMenuFor(menu), (error) => {
+            patchMenuFor(menu, { switching: null, error: error.message })
+          })
         }
 
         /**
@@ -5766,70 +7002,38 @@ window.__ModuleLoader__.load({
          * 与「获取远程更新」不同：那只是 fetch（更新远端跟踪引用），不会改工作区文件。
          */
         const pullCurrent = (menu) => {
-          if (typeof source.onPullBranch !== 'function') return
-          setBranchMenu({ ...menu, pulling: true, error: null })
-          Promise.resolve(source.onPullBranch(menu.root))
-            .then(() => setBranchMenu(null))
-            .catch((error) => {
-              setBranchMenu((previous) => (previous === null
-                ? previous
-                : { ...previous, pulling: false, error: error && error.message ? error.message : String(error) }))
-            })
+          patchMenu({ pulling: true, error: null })
+          onPullBranch(menu.root).then(() => closeMenuFor(menu), (error) => {
+            patchMenuFor(menu, { pulling: false, error: error.message })
+          })
         }
 
         /** 拉取远程更新（git fetch）后重读分支列表：别人新推的分支这时才会出现。 */
         const fetchRemote = (menu) => {
-          if (typeof source.onFetchBranches !== 'function') return
-          setBranchMenu({ ...menu, fetching: true, error: null, blocked: null })
-          Promise.resolve(source.onFetchBranches(menu.root))
-            .then((value) => {
-              setBranchMenu((previous) => (previous === null
-                ? previous
-                : {
-                  ...previous,
-                  fetching: false,
-                  list: value.branches,
-                  current: value.current,
-                  state: value.state,
-                  loading: false
-                }))
+          patchMenu({ fetching: true, error: null, blocked: null })
+          onFetchBranches(menu.root).then((value) => {
+            patchMenuFor(menu, {
+              fetching: false,
+              list: value.branches,
+              current: value.current,
+              state: value.state
             })
-            .catch((error) => {
-              setBranchMenu((previous) => (previous === null
-                ? previous
-                : { ...previous, fetching: false, error: error && error.message ? error.message : String(error) }))
-            })
+          }, (error) => {
+            patchMenuFor(menu, { fetching: false, error: error.message })
+          })
         }
 
         /** 「仅远程」的分支：建本地跟踪分支并切过去。 */
         const trackBranch = (menu, branch) => {
-          setBranchMenu({ ...menu, switching: branch.ref, error: null })
-          Promise.resolve(source.onTrackBranch(menu.root, branch))
-            .then(() => setBranchMenu(null))
-            .catch((error) => {
-              setBranchMenu((previous) => (previous === null
-                ? previous
-                : { ...previous, switching: null, error: error && error.message ? error.message : String(error) }))
-            })
+          patchMenu({ switching: branch.ref, error: null })
+          onTrackBranch(menu.root, branch).then(() => closeMenuFor(menu), (error) => {
+            patchMenuFor(menu, { switching: null, error: error.message })
+          })
         }
 
-        const changeCreateName = (value) => {
-          setBranchMenu((previous) => (previous === null
-            ? previous
-            : { ...previous, name: value, error: null, blocked: null }))
-        }
-
-        const changeBase = (value) => {
-          setBranchMenu((previous) => (previous === null
-            ? previous
-            : { ...previous, base: value, error: null, blocked: null }))
-        }
-
-        const changeCheckout = (value) => {
-          setBranchMenu((previous) => (previous === null
-            ? previous
-            : { ...previous, checkout: value, error: null, blocked: null }))
-        }
+        const changeCreateName = (value) => patchMenu({ name: value, error: null, blocked: null })
+        const changeBase = (value) => patchMenu({ base: value, error: null, blocked: null })
+        const changeCheckout = (value) => patchMenu({ checkout: value, error: null, blocked: null })
 
         /**
          * 创建分支：默认从当前 HEAD 建并切过去。
@@ -5839,47 +7043,35 @@ window.__ModuleLoader__.load({
          */
         const runCreate = (menu, overrides = {}) => {
           const name = stripWrappingQuotes(menu.name)
-          if (name === '' || menu.creating === true || menu.switching !== null) return
+          if (name === '' || menu.creating || menu.switching !== null) return
           const base = overrides.base ?? menu.base
           const checkout = overrides.checkout ?? menu.checkout
-          setBranchMenu({
-            ...menu,
-            ...overrides,
-            name,
-            creating: true,
-            error: null,
-            blocked: null
+          patchMenuFor(menu, { ...overrides, name, creating: true, error: null, blocked: null })
+          onCreateBranch(menu.root, { name, base, checkout }).then(() => closeMenuFor(menu), (error) => {
+            patchMenuFor(menu, {
+              creating: false,
+              error: error.message,
+              // 撞车不是「失败」而是「需要换个选择」：单独呈现，并给出两个零风险出口
+              blocked: error.code === 'would-overwrite' ? error.message : null
+            })
           })
-          Promise.resolve(source.onCreateBranch(menu.root, { name, base, checkout }))
-            .then(() => setBranchMenu(null))
-            .catch((error) => setBranchMenu((previous) => (previous === null
-              ? previous
-              : {
-                ...previous,
-                creating: false,
-                error: error && error.message ? error.message : String(error),
-                // 撞车不是「失败」而是「需要换个选择」：单独呈现，并给出两个零风险出口
-                blocked: error !== null && error !== undefined && error.code === 'would-overwrite'
-                  ? (error && error.message ? error.message : String(error))
-                  : null
-              })))
         }
 
         const menuBranches = branchMenu === null ? [] : branchMenu.list
         /** 副标题只留会变化的信息：↑n ↓m，或上游被删 */
         const branchMeta = (branch) => {
           const parts = []
-          if (branch.upstreamGone === true) parts.push(translate('branch.upstreamGone'))
-          if (typeof branch.ahead === 'number' && branch.ahead > 0) parts.push('↑' + branch.ahead)
-          if (typeof branch.behind === 'number' && branch.behind > 0) parts.push('↓' + branch.behind)
+          if (branch.upstreamGone === true) parts.push(t('branch.upstreamGone'))
+          if (branch.ahead > 0) parts.push('↑' + branch.ahead)
+          if (branch.behind > 0) parts.push('↓' + branch.behind)
           return parts.join(' ')
         }
         const branchBadges = (branch) => [
-          { label: translate('branch.localTag'), active: branch.local === true },
-          { label: translate('branch.remoteTag'), active: branch.remote !== null && branch.remote !== undefined }
+          { label: t('branch.localTag'), active: branch.local === true },
+          { label: t('branch.remoteTag'), active: branch.remote !== null }
         ]
 
-        const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating === true || branchMenu.fetching === true)
+        const menuBusy = branchMenu !== null && (branchMenu.switching !== null || branchMenu.creating || branchMenu.fetching || branchMenu.pulling)
         const createName = branchMenu === null ? '' : stripWrappingQuotes(branchMenu.name)
         /**
          * 创建区的现状提示。三件事各自独立，所以分开渲染而不是拼一坨：
@@ -5891,11 +7083,11 @@ window.__ModuleLoader__.load({
         const inProgress = branchState === null ? null : branchState.inProgress
         const progressKey = inProgress === null ? null : PROGRESS_KEYS[inProgress]
         const sameRemote = branchMenu === null ? null : sameRemoteOf(branchMenu.list, createName)
-        const baseOptions = branchMenu === null ? [] : baseOptionsOf(branchMenu.list, branchMenu.current, translate)
+        const baseOptions = branchMenu === null ? [] : baseOptionsOf(branchMenu.list, branchMenu.current, t)
         const dirtyHint = branchState === null || branchState.dirty.total === 0
           ? null
-          : translate('branch.dirtyHint', {
-            branch: branchMenu.current ?? translate('root.noBranch'),
+          : t('branch.dirtyHint', {
+            branch: branchMenu.current ?? t('root.noBranch'),
             total: branchState.dirty.total,
             staged: branchState.dirty.staged
           })
@@ -5907,29 +7099,53 @@ window.__ModuleLoader__.load({
         const baseNote = baseIsHead
           ? null
           : (branchState !== null && branchState.dirty.total > 0
-            ? translate('branch.baseNoteDirty', { base: branchMenu.base, total: branchState.dirty.total })
-            : translate('branch.baseNoteClean', { base: branchMenu.base }))
+            ? t('branch.baseNoteDirty', { base: branchMenu.base, total: branchState.dirty.total })
+            : t('branch.baseNoteClean', { base: branchMenu.base }))
+        const branchFilter = branchMenu === null ? '' : branchMenu.filter.trim().toLowerCase()
+        const listedBranches = branchFilter === ''
+          ? menuBranches
+          : menuBranches.filter((branch) => branch.name.toLowerCase().includes(branchFilter))
         const branchMenuNode = branchMenu === null
           ? null
           : h(PopupMenu, { open: true, anchorRect: branchMenu.rect, onClose: closeBranches, minWidth: 240 },
-            h(MenuLabel, null, translate('branch.title', { name: branchMenu.root.name })),
+            h(MenuLabel, null, t('branch.title', { name: branchMenu.root.name })),
             h(MenuItem, {
               icon: 'refresh',
-              label: branchMenu.pulling === true ? translate('branch.pulling') : translate('branch.pull'),
+              label: branchMenu.pulling ? t('branch.pulling') : t('branch.pull'),
               disabled: menuBusy,
               dataKey: 'pull-branch',
               onClick: () => pullCurrent(branchMenu)
             }),
             h(MenuItem, {
               icon: 'sync',
-              label: branchMenu.fetching === true ? translate('branch.fetching') : translate('branch.fetch'),
+              label: branchMenu.fetching ? t('branch.fetching') : t('branch.fetch'),
               disabled: menuBusy,
               dataKey: 'fetch-branches',
               onClick: () => fetchRemote(branchMenu)
             }),
             h('div', { className: 'dgp-menu-sep', role: 'separator' }),
-            branchMenu.loading ? h(MenuLabel, null, translate('branch.loading')) : null,
-            menuBranches.map((branch) => h(MenuItem, {
+            menuBranches.length > BRANCH_FILTER_THRESHOLD
+              ? h('div', { className: 'dgp-branch-filter' },
+                h(Icon, { name: 'search', size: 12 }),
+                h('input', {
+                  className: 'dgp-input',
+                  type: 'search',
+                  'data-dgp-branch-filter': 'true',
+                  placeholder: t('branch.filterPlaceholder'),
+                  value: branchMenu.filter,
+                  spellCheck: false,
+                  onChange: (event) => patchMenu({ filter: event.target.value }),
+                  onKeyDown: (event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      patchMenu({ filter: '' })
+                    }
+                  }
+                }))
+              : null,
+            branchMenu.loading ? h(MenuLabel, null, t('branch.loading')) : null,
+            listedBranches.map((branch) => h(MenuItem, {
               key: branch.name,
               label: branch.name,
               badges: branchBadges(branch),
@@ -5938,15 +7154,18 @@ window.__ModuleLoader__.load({
               disabled: menuBusy,
               dataKey: 'branch:' + branch.name,
               // 只有远程的行：点一下在本地创建并切过去（不写长文案，放 title 里）
-              title: branch.local !== true ? translate('branch.trackHint', { ref: branch.remote + '/' + branch.name }) : undefined,
+              title: branch.local !== true ? t('branch.trackHint', { ref: branch.remote + '/' + branch.name }) : undefined,
               onClick: () => {
                 if (branch.current) closeBranches()
                 else if (branch.local === true) chooseBranch(branchMenu, branch.name)
                 else trackBranch(branchMenu, branch)
               }
             })),
+            menuBranches.length > 0 && listedBranches.length === 0
+              ? h(MenuLabel, null, t('branch.noMatch', { filter: branchMenu.filter }))
+              : null,
             branchMenu.list.length === 0 && branchMenu.loading !== true
-              ? h(MenuLabel, null, translate('branch.empty'))
+              ? h(MenuLabel, null, t('branch.empty'))
               : null,
             h('div', { className: 'dgp-menu-sep', role: 'separator' }),
             h('form', {
@@ -5962,7 +7181,7 @@ window.__ModuleLoader__.load({
                 className: 'dgp-input',
                 'data-dgp-branch-name': 'true',
                 value: branchMenu.name,
-                placeholder: translate('branch.createPlaceholder'),
+                placeholder: t('branch.createPlaceholder'),
                 spellCheck: false,
                 disabled: menuBusy,
                 onChange: (event) => changeCreateName(event.target.value),
@@ -5981,19 +7200,19 @@ window.__ModuleLoader__.load({
                 'data-variant': 'primary',
                 'data-dgp-branch-create-submit': 'true',
                 disabled: menuBusy || createName === '',
-                title: translate(branchMenu.checkout ? 'branch.create' : 'branch.createOnly')
-              }, translate(branchMenu.checkout ? 'branch.create' : 'branch.createOnly'))),
+                title: t(branchMenu.checkout ? 'branch.create' : 'branch.createOnly')
+              }, t(branchMenu.checkout ? 'branch.create' : 'branch.createOnly'))),
             h('div', { className: 'dgp-branch-create-opts' },
-              h('span', { className: 'dgp-branch-base-label' }, translate('branch.baseLabel')),
+              h('span', { className: 'dgp-branch-base-label' }, t('branch.baseLabel')),
               h('select', {
                 className: 'dgp-input dgp-branch-base',
                 'data-dgp-branch-base': 'true',
                 value: branchMenu.base,
                 disabled: menuBusy,
-                title: translate('branch.baseHint'),
+                title: t('branch.baseHint'),
                 onChange: (event) => changeBase(event.target.value)
               }, baseOptions.map((option) => h('option', { key: option.ref, value: option.ref }, option.label))),
-              h('label', { className: 'dgp-branch-check', title: translate('branch.checkoutHint') },
+              h('label', { className: 'dgp-branch-check', title: t('branch.checkoutHint') },
                 h('input', {
                   type: 'checkbox',
                   'data-dgp-branch-checkout': 'true',
@@ -6001,7 +7220,7 @@ window.__ModuleLoader__.load({
                   disabled: menuBusy || inProgress !== null,
                   onChange: (event) => changeCheckout(event.target.checked)
                 }),
-                translate('branch.checkoutLabel'))),
+                t('branch.checkoutLabel'))),
             baseNote === null
               ? null
               : h('p', {
@@ -6014,9 +7233,9 @@ window.__ModuleLoader__.load({
                 className: 'dgp-branch-hint',
                 'data-dgp-branch-dirty': 'in-progress',
                 'data-tone': 'warn'
-              }, translate('branch.inProgressHint', {
-                kind: translate(progressKey),
-                action: translate('branch.createOnlyAction')
+              }, t('branch.inProgressHint', {
+                kind: t(progressKey),
+                action: t('branch.createOnlyAction')
               })),
             dirtyHint === null
               ? null
@@ -6026,7 +7245,7 @@ window.__ModuleLoader__.load({
               : h('p', {
                 className: 'dgp-branch-hint',
                 'data-dgp-branch-same-remote': sameRemote
-              }, translate('branch.sameRemoteHint', { ref: sameRemote })),
+              }, t('branch.sameRemoteHint', { ref: sameRemote })),
             // 撞车 = 「需要换个选择」，不是失败：说清冲突文件，并只给两个零风险出口
             branchMenu.blocked === null
               ? null
@@ -6040,7 +7259,7 @@ window.__ModuleLoader__.load({
                     'data-dgp-branch-from-head': 'true',
                     disabled: menuBusy,
                     onClick: () => runCreate(branchMenu, { base: 'HEAD', checkout: true })
-                  }, translate('branch.fromHead')),
+                  }, t('branch.fromHead')),
                   h('button', {
                     type: 'button',
                     className: 'dgp-btn',
@@ -6048,16 +7267,16 @@ window.__ModuleLoader__.load({
                     'data-dgp-branch-only': 'true',
                     disabled: menuBusy,
                     onClick: () => runCreate(branchMenu, { checkout: false })
-                  }, translate('branch.createOnlyAction'))))),
+                  }, t('branch.createOnlyAction'))))),
             branchMenu.switching === null
               ? null
-              : h(MenuLabel, null, translate('branch.switching', { name: branchMenu.switching })),
+              : h(MenuLabel, null, t('branch.switching', { name: branchMenu.switching })),
             branchMenu.creating !== true
               ? null
-              : h(MenuLabel, null, translate(branchMenu.checkout ? 'branch.creating' : 'branch.creatingOnly', { name: createName })),
+              : h(MenuLabel, null, t(branchMenu.checkout ? 'branch.creating' : 'branch.creatingOnly', { name: createName })),
             branchMenu.error === null || branchMenu.blocked !== null
               ? null
-              : h(MenuLabel, null, translate('branch.failed', { message: branchMenu.error })),
+              : h(MenuLabel, null, t('branch.failed', { message: branchMenu.error })),
             branchMenu.root.kind === 'primary'
               ? null
               : h('div', { className: 'dgp-menu-sep', role: 'separator' }),
@@ -6066,30 +7285,58 @@ window.__ModuleLoader__.load({
               : (branchMenu.root.hidden === true
                 ? h(MenuItem, {
                   icon: 'eye',
-                  label: translate('roots.unhide', { name: branchMenu.root.name }),
+                  label: t('roots.unhide', { name: branchMenu.root.name }),
                   dataKey: 'repo-unhide',
-                  onClick: () => {
-                    runRootAction('onUnhide', branchMenu.root)
-                  }
+                  onClick: () => runRootAction(onUnhide, branchMenu.root)
                 })
                 : h(MenuItem, {
                   icon: 'eye-off',
-                  label: translate('roots.hide', { name: branchMenu.root.name }),
+                  label: t('roots.hide', { name: branchMenu.root.name }),
                   dataKey: 'repo-hide',
-                  onClick: () => {
-                    runRootAction('onHide', branchMenu.root)
-                  }
+                  onClick: () => runRootAction(onHide, branchMenu.root)
                 })),
             branchMenu.root.kind === 'extra'
               ? h(MenuItem, {
                 icon: 'trash',
-                label: translate('toolbar.removeRoot', { name: branchMenu.root.name }),
+                label: t('toolbar.removeRoot', { name: branchMenu.root.name }),
                 dataKey: 'repo-remove',
-                onClick: () => {
-                  runRootAction('onRemove', branchMenu.root)
-                }
+                onClick: () => runRootAction(onRemove, branchMenu.root)
               })
               : null)
+
+        /**
+         * 行上的改动规模：只显示「有改动」的仓库。
+         * 单个仓库失败给一个可悬停的 `!`，不把整张列表变成错误态。
+         */
+        const renderStats = (root) => {
+          const summary = stats[root.path]
+          if (summary === undefined) return null
+          if (summary.error !== undefined) {
+            return h('span', {
+              className: 'dgp-repo-stats',
+              'data-dgp-repo-stats': 'error',
+              title: summary.error
+            }, '!')
+          }
+          const { counts, adds, dels, binary } = summary
+          if (counts.total === 0) return null
+          const title = binary > 0
+            ? t('roots.statsTitleBinary', { files: counts.total, binary, adds, dels })
+            : t('roots.statsTitle', { files: counts.total, adds, dels })
+          return h('span', {
+            className: 'dgp-repo-stats',
+            'data-dgp-repo-stats': String(counts.total),
+            title,
+            'aria-label': title
+          },
+          h(Icon, { name: 'file', size: 11 }),
+          h('span', { className: 'dgp-repo-stats-files' }, String(counts.total)),
+          adds > 0 ? h('span', { className: 'dgp-add' }, '+' + adds) : null,
+          dels > 0 ? h('span', { className: 'dgp-del' }, '−' + dels) : null,
+          counts.conflicted > 0
+            ? h('span', { className: 'dgp-repo-conflict', title: t('group.conflicted') }, '!')
+            : null)
+        }
 
         return h('div', { className: 'dgp-repolist', 'data-dgp-repolist': 'true' },
           h('div', { className: 'dgp-repolist-head' },
@@ -6099,13 +7346,11 @@ window.__ModuleLoader__.load({
               'data-dgp-repolist-toggle': 'true',
               'data-open': open ? 'true' : 'false',
               'aria-expanded': open,
-              onClick: () => {
-                if (typeof source.onToggleOpen === 'function') source.onToggleOpen()
-              }
+              onClick: onToggleOpen
             },
             h('span', { className: 'dgp-caret', 'data-open': open ? 'true' : 'false' },
               h(Icon, { name: 'chevron-right', size: 12 })),
-            h('span', { className: 'dgp-repolist-title' }, translate('roots.title')),
+            h('span', { className: 'dgp-repolist-title' }, t('roots.title')),
             h('span', { className: 'dgp-group-count' }, String(visibleRoots.length))),
             hiddenRoots.length === 0
               ? null
@@ -6115,8 +7360,8 @@ window.__ModuleLoader__.load({
                 style: { width: 22, height: 22, gap: 2 },
                 'data-dgp-repolist-hidden': showHidden ? 'true' : 'false',
                 'aria-pressed': showHidden,
-                title: translate(showHidden ? 'roots.hiddenCollapse' : 'roots.hiddenShow', { count: hiddenRoots.length }),
-                'aria-label': translate(showHidden ? 'roots.hiddenCollapse' : 'roots.hiddenShow', { count: hiddenRoots.length }),
+                title: t(showHidden ? 'roots.hiddenCollapse' : 'roots.hiddenShow', { count: hiddenRoots.length }),
+                'aria-label': t(showHidden ? 'roots.hiddenCollapse' : 'roots.hiddenShow', { count: hiddenRoots.length }),
                 onClick: () => setShowHidden((previous) => !previous)
               },
               h(Icon, { name: showHidden ? 'eye-off' : 'eye', size: 13 }),
@@ -6126,8 +7371,8 @@ window.__ModuleLoader__.load({
               className: 'dgp-iconbtn',
               style: { width: 22, height: 22 },
               'data-action': 'add-root',
-              title: translate('toolbar.addRoot'),
-              'aria-label': translate('toolbar.addRoot'),
+              title: t('toolbar.addRoot'),
+              'aria-label': t('toolbar.addRoot'),
               onClick: () => setFormOpen((previous) => !previous)
             }, h(Icon, { name: 'plus', size: 13 }))),
 
@@ -6135,7 +7380,7 @@ window.__ModuleLoader__.load({
             ? h('ul', { className: 'dgp-level dgp-repolist-rows', role: 'none' },
               listedRoots.map((root) => {
                 const hidden = root.hidden === true
-                const hasBranch = typeof root.branch === 'string' && root.branch !== ''
+                const hasBranch = root.branch !== null && root.branch !== ''
                 return h('li', { key: root.id, className: 'dgp-item' },
                   h('div', {
                     className: 'dgp-row-wrap dgp-repo-wrap',
@@ -6153,35 +7398,36 @@ window.__ModuleLoader__.load({
                     onClick: () => {
                       // 已隐藏的行不参与切换：先取消隐藏，才能重新成为当前仓库
                       if (hidden) return
-                      if (typeof source.onSelect === 'function') source.onSelect(root)
+                      onSelect(root)
                     }
                   },
                   h(Icon, { name: 'git-branch', size: 13 }),
                   h('span', { className: 'dgp-name dgp-oneline' }, root.name)),
-                  // 分支按钮是所有仓库操作的唯一入口：切分支、拉取、隐藏/取消隐藏、移除
+                  // 改动规模：有改动才出现，没有改动时保持行安静
+                  renderStats(root),
+                  // 分支按钮是所有仓库操作（分支 / 拉取 / 隐藏 / 移除）的入口
                   h('button', {
                     type: 'button',
                     className: 'dgp-repo-branch dgp-oneline',
                     'data-dgp-branch': root.id,
-                    title: translate(hidden ? 'branch.hintHidden' : 'branch.hint', {
-                      branch: hasBranch ? root.branch : translate('root.noBranch')
+                    title: t(hidden ? 'branch.hintHidden' : 'branch.hint', {
+                      branch: hasBranch ? root.branch : t('root.noBranch')
                     }),
                     onClick: (event) => {
                       event.stopPropagation()
                       loadBranches(root, event.currentTarget.getBoundingClientRect())
                     }
-                  }, hasBranch ? root.branch : translate('root.noBranch'))))
+                  }, hasBranch ? root.branch : t('root.noBranch'))))
               })
             )
             : null,
 
           open && formOpen
             ? h(AddRootForm, {
-              t: translate,
+              t,
               onCancel: closeForm,
               onAdd: async (dir) => {
-                if (typeof source.onAdd !== 'function') return
-                await source.onAdd(dir)
+                await onAdd(dir)
                 setFormOpen(false)
               }
             })
@@ -6200,23 +7446,51 @@ window.__ModuleLoader__.load({
        * 语义很简单：加的是用户给的那一个目录，它自己必须含 .git。
        * 不向上找上级仓库、不向下扫描子仓库 —— 校验失败的原因就地显示。
        */
-      const { h, useCallback, useState } = __m("./platform.js");
+      const { h, useCallback, useRef, useState, getPluginContext } = __m("./platform.js");
       const { stripWrappingQuotes } = __m("./util/paths.js");
 
       function AddRootForm(props) {
         const source = props
         const translate = source.t
-        const onAdd = typeof source.onAdd === 'function' ? source.onAdd : null
-        const onCancel = typeof source.onCancel === 'function' ? source.onCancel : null
+        const onAdd = source.onAdd
+        const onCancel = source.onCancel
 
         const [value, setValue] = useState('')
         const [error, setError] = useState(null)
         const [submitting, setSubmitting] = useState(false)
+        const [picking, setPicking] = useState(false)
+        const busy = useRef(false)
+        const inputRef = useRef(null)
+
+        const choosePath = useCallback(async () => {
+          if (busy.current) return
+          busy.current = true
+          setPicking(true)
+          setError(null)
+          try {
+            // 与宿主一致：桌面桥优先，否则使用宿主 RPC 的本机目录选择器。
+            const desktop = globalThis.__DSH_DIRECTORY_PICKER__
+            const path = await (desktop === undefined
+              ? getPluginContext().uiWorkspace.pickDirectory()
+              : desktop.pick())
+            if (path !== null) {
+              setValue(path)
+              inputRef.current?.focus()
+            }
+          } catch (failure) {
+            setError(translate('root.pickFailed', { message: failure instanceof Error ? failure.message : String(failure) }))
+          } finally {
+            busy.current = false
+            setPicking(false)
+          }
+        }, [translate])
 
         const submit = useCallback(async () => {
+          if (busy.current) return
           // 粘贴「复制为路径」会带引号，先剥掉再提交
           const dir = stripWrappingQuotes(value)
-          if (dir === '' || onAdd === null) return
+          if (dir === '') return
+          busy.current = true
           setSubmitting(true)
           setError(null)
           try {
@@ -6225,13 +7499,27 @@ window.__ModuleLoader__.load({
           } catch (failure) {
             setError(failure instanceof Error ? failure.message : String(failure))
           } finally {
+            busy.current = false
             setSubmitting(false)
           }
         }, [value, onAdd])
 
-        return h('div', { className: 'dgp-addform', 'data-dgp-addform': 'true' },
+        return h('div', {
+          className: 'dgp-addform',
+          'data-dgp-addform': 'true',
+          onKeyDown: (event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              onCancel()
+            }
+          }
+        },
+          h('div', { className: 'dgp-addform-path' },
           h('input', {
+            ref: inputRef,
             className: 'dgp-input',
+            'aria-label': translate('root.pathLabel'),
+            disabled: picking || submitting,
             placeholder: translate('root.addPlaceholder'),
             value,
             autoFocus: true,
@@ -6243,16 +7531,22 @@ window.__ModuleLoader__.load({
                 submit()
               } else if (event.key === 'Escape') {
                 event.preventDefault()
-                if (onCancel !== null) onCancel()
+                onCancel()
               }
             }
           }),
+          h('button', {
+            type: 'button',
+            className: 'dgp-btn',
+            'data-dgp-addform-browse': 'true',
+            disabled: picking || submitting,
+            'aria-busy': picking,
+            onClick: choosePath
+          }, translate(picking ? 'root.picking' : 'root.pickPath'))),
           h('div', { className: 'dgp-hint' }, translate('root.addHint')),
-          error === null ? null : h('div', { className: 'dgp-note', 'data-tone': 'error' }, error),
+          error === null ? null : h('div', { className: 'dgp-note', 'data-tone': 'error', role: 'alert' }, error),
           h('div', { className: 'dgp-addform-actions' },
-            onCancel === null
-              ? null
-              : h('button', {
+            h('button', {
                 type: 'button',
                 className: 'dgp-btn',
                 'data-size': 'sm',
@@ -6264,7 +7558,7 @@ window.__ModuleLoader__.load({
               'data-size': 'sm',
               'data-variant': 'primary',
               'data-dgp-addform-confirm': 'true',
-              disabled: submitting || stripWrappingQuotes(value) === '',
+              disabled: submitting || picking || stripWrappingQuotes(value) === '',
               onClick: submit
             }, translate('root.addConfirm'))))
       }
@@ -6473,82 +7767,63 @@ window.__ModuleLoader__.load({
        *   └─ ...
        *
        * 纯逻辑（分组、压树、折叠单链、过滤、自动展开链）全在 `../util/changes.js`，
-       * 那里可以在 Node 里单测（见 `test/tree.test.mjs`）。
+       * 那里可以在 Node 里单测（见 `test/tree.test.mjs`）。键盘游标与「文件」树共用
+       * `../ui/useTreeCursor.js`。
+       *
+       * 筛选时的展开规则：命中项必须看得见。所以只要筛选框非空，所有分组与目录
+       * 一律按展开处理 —— 否则用户输入关键词，看到的却是一排折叠的分组标题。
        */
-      const { h, useEffect, useMemo, useRef, useState } = __m("./platform.js");
+      const { h, useEffect, useMemo, useState } = __m("./platform.js");
       const { Icon, StatusLetter } = __m("./ui/Icon.js");
-      const { basename, dirname, formatCount } = __m("./util/paths.js");
+      const { useTreeCursor } = __m("./ui/useTreeCursor.js");
+      const { dirname, formatCount } = __m("./util/paths.js");
       const { ancestorsFor, buildGroupRows, buildListRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } = __m("./util/changes.js");
-      const { EmptyState, InlineNote, SkeletonRows } = __m("./components/States.js");
-
-      /** 把 props 里可能出现的各种 error 形状收敛成一个字符串或 null。 */
-      function toErrorText(error) {
-        if (error === null || error === undefined || error === '') return null
-        if (typeof error === 'string') return error
-        if (typeof error.message === 'string' && error.message !== '') return error.message
-        return String(error)
-      }
+      const { EmptyState, SkeletonRows } = __m("./components/States.js");
 
       function ChangesList(props) {
-        const source = props
-        const status = source.status === undefined ? null : source.status
-        const loading = source.loading === true
-        const selectedPath = typeof source.selectedPath === 'string' && source.selectedPath !== ''
-          ? source.selectedPath
-          : null
-        const filter = typeof source.filter === 'string' ? source.filter : ''
-        const collapsedGroups = source.collapsedGroups !== null && typeof source.collapsedGroups === 'object'
-          ? source.collapsedGroups
-          : null
-        const onSelect = typeof source.onSelect === 'function' ? source.onSelect : null
-        const onToggleGroup = typeof source.onToggleGroup === 'function' ? source.onToggleGroup : null
-        const onStage = typeof source.onStage === 'function' ? source.onStage : null
-        const onStageGroup = typeof source.onStageGroup === 'function' ? source.onStageGroup : null
-        const pendingPath = typeof source.pendingPath === 'string' && source.pendingPath !== ''
-          ? source.pendingPath
-          : null
-        const pendingGroup = typeof source.pendingGroup === 'string' && source.pendingGroup !== ''
-          ? source.pendingGroup
-          : null
-        /** 显示方式：list = 一行一个文件（文件名 + 弱化路径）；tree = 按文件夹展开。 */
-        const view = source.view === 'tree' ? 'tree' : 'list'
-        /** 未跟踪文件：merge = 并进「未暂存」，separate = 单列一组。 */
-        const untrackedMode = source.untrackedMode === 'separate' ? 'separate' : 'merge'
-        const translate = source.t
-        // 注意：`onFilterChange` 归 Panel 管（它渲染筛选输入框），这里只消费 `filter`。
+        const {
+          status,
+          loading = false,
+          selectedPath = null,
+          onSelect,
+          filter = '',
+          collapsedGroups = {},
+          onToggleGroup,
+          view = 'list',
+          untrackedMode = 'merge',
+          onStage,
+          pendingPath = null,
+          onStageGroup,
+          pendingGroup = null,
+          t
+        } = props
 
-        const errorText = toErrorText(source.error)
-        const files = status !== null && status !== undefined && Array.isArray(status.files) ? status.files : []
+        const files = status === null ? [] : status.files
+        const filtering = filter.trim() !== ''
 
         const [expanded, setExpanded] = useState(() => new Set())
-        const [cursor, setCursor] = useState(-1)
-        const rowRefs = useRef([])
-        const wantFocusRef = useRef(false)
-
-        /* ------------------------------ 派生数据 ------------------------------ */
 
         const filteredFiles = useMemo(() => filterEntries(files, filter), [files, filter])
         const groups = useMemo(() => groupChanges(filteredFiles, { untrackedMode }), [filteredFiles, untrackedMode])
 
-        /** 分组可见性 + 每组要渲染的行（含固定顺序的扁平序号基数）。 */
+        /** 分组可见性 + 每组要渲染的行（offset 是跨分组的扁平行序号基数）。 */
         const layout = useMemo(() => {
           const out = []
           let offset = 0
           for (const group of groups) {
-            const open = !(collapsedGroups !== null && collapsedGroups[group.key] === true)
-            let rows = []
-            if (open) {
-              rows = view === 'tree'
-                ? buildGroupRows(group.entries, (dirPath) => expanded.has(dirPath))
-                : buildListRows(group.entries)
-            }
+            const open = filtering || collapsedGroups[group.key] !== true
+            const rows = open
+              ? (view === 'tree'
+                ? buildGroupRows(group.entries, (dirPath) => filtering || expanded.has(dirPath))
+                : buildListRows(group.entries))
+              : []
             out.push({ key: group.key, entries: group.entries, open, rows, offset })
             if (open) offset += rows.length
           }
           return out
-        }, [groups, collapsedGroups, expanded, view])
+        }, [groups, collapsedGroups, expanded, view, filtering])
 
-        /** 键盘光标走查的扁平行序列（跨分组：冲突 → 已暂存 → 未暂存 → 未跟踪）。 */
+        /** 键盘游标走查的扁平行序列（跨分组：冲突 → 已暂存 → 未暂存 → 未跟踪）。 */
         const flatRows = useMemo(() => {
           const out = []
           for (const group of layout) {
@@ -6560,13 +7835,33 @@ window.__ModuleLoader__.load({
           return out
         }, [layout])
 
-        /* ------------------------------ 副作用 ------------------------------ */
+        function toggleDirPath(dirPath) {
+          setExpanded((previous) => {
+            const next = new Set(previous)
+            if (next.has(dirPath)) next.delete(dirPath)
+            else next.add(dirPath)
+            return next
+          })
+        }
+
+        function activateRow(item) {
+          if (item.row.kind === 'file') onSelect(item.row.node.entry, item.group)
+          else toggleDirPath(item.row.path)
+        }
+
+        const cursorState = useTreeCursor({
+          rows: flatRows,
+          isDir: (item) => item.row.kind === 'dir',
+          isOpen: (item) => expanded.has(item.row.path),
+          onToggle: (item) => toggleDirPath(item.row.path),
+          onActivate: activateRow
+        })
+        const { cursor, rowRefs, focusRow, handleKeyDown } = cursorState
 
         // 把选中文件的目录链自动展开，保证选中项可见（Panel 可能在外部改 selectedPath）。
         // 列表模式没有目录行，不需要展开任何东西。
         useEffect(() => {
-          if (view !== 'tree') return
-          if (selectedPath === null) return
+          if (view !== 'tree' || selectedPath === null) return
           setExpanded((previous) => {
             let next = null
             for (const group of groups) {
@@ -6584,134 +7879,16 @@ window.__ModuleLoader__.load({
         useEffect(() => {
           if (selectedPath === null) return
           const index = flatRows.findIndex((item) => item.row.kind === 'file' && item.row.path === selectedPath)
-          if (index >= 0) setCursor(index)
+          if (index >= 0) focusRow(index)
         }, [selectedPath, flatRows])
-
-        // 行数变少（折叠分组 / 过滤）时收敛光标。
-        useEffect(() => {
-          setCursor((previous) => (previous >= flatRows.length ? flatRows.length - 1 : previous))
-        }, [flatRows.length])
-
-        // 光标行滚进可视区；键盘移动时顺带把真实焦点也移过去（Enter 由原生 click 处理）。
-        useEffect(() => {
-          const element = rowRefs.current[cursor]
-          if (element === null || element === undefined) return
-          try {
-            if (typeof element.scrollIntoView === 'function') element.scrollIntoView({ block: 'nearest' })
-          } catch {
-            /* 老宿主/测试环境里没有 scrollIntoView，忽略 */
-          }
-          if (wantFocusRef.current) {
-            wantFocusRef.current = false
-            try {
-              if (typeof element.focus === 'function') element.focus()
-            } catch {
-              /* 忽略 */
-            }
-          }
-        }, [cursor])
-
-        /* ------------------------------ 交互 ------------------------------ */
-
-        const toggleDirPath = (dirPath) => {
-          setExpanded((previous) => {
-            const next = new Set(previous)
-            if (next.has(dirPath)) next.delete(dirPath)
-            else next.add(dirPath)
-            return next
-          })
-        }
-
-        const selectRow = (row, groupKey) => {
-          if (row === null || row === undefined || onSelect === null) return
-          const node = row.node
-          const entry = node !== null && node !== undefined && node.entry !== undefined ? node.entry : null
-          if (entry === null || entry === undefined) return
-          onSelect(entry, groupKey)
-        }
-
-        const consume = (event) => {
-          try {
-            event.preventDefault()
-            event.stopPropagation()
-          } catch {
-            /* 忽略 */
-          }
-        }
-
-        const handleKeyDown = (event) => {
-          if (event === null || event === undefined || typeof event.key !== 'string') return
-          const container = event.currentTarget
-          const target = event.target
-          const onContainer = target !== null && target !== undefined && target === container
-          const inside = !onContainer
-            && container !== null && container !== undefined
-            && typeof container.contains === 'function'
-            && target !== null && target !== undefined
-            && container.contains(target)
-          // 只在「列表自身」范围内响应按键，绝不抢 Panel 的全局快捷键。
-          if (!onContainer && !inside) return
-
-          const key = event.key
-          const total = flatRows.length
-
-          if (key === 'ArrowDown') {
-            consume(event)
-            if (total === 0) return
-            wantFocusRef.current = true
-            setCursor((previous) => {
-              if (previous < 0 || previous >= total) return 0
-              return Math.min(previous + 1, total - 1)
-            })
-            return
-          }
-
-          if (key === 'ArrowUp') {
-            consume(event)
-            if (total === 0) return
-            wantFocusRef.current = true
-            setCursor((previous) => {
-              if (previous <= 0) return 0
-              return Math.min(previous - 1, total - 1)
-            })
-            return
-          }
-
-          if (key === 'Enter') {
-            // 行上的 Enter 交给原生 button click（避免重复 onSelect）。
-            if (!onContainer) return
-            const item = flatRows[cursor]
-            if (item === undefined) return
-            consume(event)
-            if (item.row.kind === 'file') selectRow(item.row, item.group)
-            else toggleDirPath(item.row.path)
-            return
-          }
-
-          if (key === 'ArrowRight' || key === 'ArrowLeft') {
-            const item = flatRows[cursor]
-            if (item === undefined || item.row.kind !== 'dir') return
-            const open = expanded.has(item.row.path)
-            if (key === 'ArrowRight' && !open) {
-              consume(event)
-              toggleDirPath(item.row.path)
-            } else if (key === 'ArrowLeft' && open) {
-              consume(event)
-              toggleDirPath(item.row.path)
-            }
-          }
-        }
 
         /* ------------------------------ 渲染 ------------------------------ */
 
-        const renderRow = (group, row, index) => {
-          const depth = typeof row.depth === 'number' && row.depth > 0 ? row.depth : 0
+        function renderRow(group, row, index) {
+          const depth = row.depth
           const style = { '--dgp-depth': depth }
           const isActive = selectedPath !== null && row.path === selectedPath
           const isCursor = cursor === index
-          const displayName = typeof row.displayName === 'string' && row.displayName !== ''
-            ? row.displayName
-            : basename(row.path)
           const common = {
             type: 'button',
             className: 'dgp-row',
@@ -6731,7 +7908,7 @@ window.__ModuleLoader__.load({
             const open = expanded.has(row.path)
             const count = countFilesUnder(group.entries, row.path)
             return h('li', {
-              key: index,
+              key: 'dir:' + row.path,
               className: 'dgp-item',
               role: 'treeitem',
               'aria-level': depth + 1,
@@ -6744,35 +7921,33 @@ window.__ModuleLoader__.load({
               'aria-expanded': open,
               'data-open': open ? 'true' : 'false',
               onClick: () => {
-                setCursor(index)
+                focusRow(index)
                 toggleDirPath(row.path)
               }
             },
             h('span', { className: 'dgp-caret', 'data-open': open ? 'true' : 'false' },
               h(Icon, { name: 'chevron-right', size: 12 })),
             h(Icon, { name: open ? 'folder-open' : 'folder', size: 14 }),
-            h('span', { className: 'dgp-name dgp-name-dir dgp-oneline' }, displayName),
+            h('span', { className: 'dgp-name dgp-name-dir dgp-oneline' }, row.displayName),
             count > 0 ? h('span', { className: 'dgp-meta' }, formatCount(count)) : null))
           }
 
-          const entry = row.node !== null && row.node !== undefined && row.node.entry !== undefined
-            ? row.node.entry
-            : null
+          const entry = row.node.entry
           const parent = dirname(row.path)
-          const adds = entry !== null && entry !== undefined && typeof entry.adds === 'number' ? entry.adds : -1
-          const dels = entry !== null && entry !== undefined && typeof entry.dels === 'number' ? entry.dels : -1
+          const sideStats = group.key === 'staged' ? entry.stagedStats : entry.unstagedStats
+          const stats = sideStats ?? entry
           const counts = []
-          if (adds > 0) {
-            counts.push(h('span', { key: 'add', className: 'dgp-add' }, translate('viewer.adds', { count: formatCount(adds) })))
+          if (stats.adds >= 0) {
+            counts.push(h('span', { key: 'add', className: 'dgp-add' }, t('viewer.adds', { count: String(stats.adds) })))
           }
-          if (dels > 0) {
-            counts.push(h('span', { key: 'del', className: 'dgp-del' }, translate('viewer.dels', { count: formatCount(dels) })))
+          if (stats.dels >= 0) {
+            counts.push(h('span', { key: 'del', className: 'dgp-del' }, t('viewer.dels', { count: String(stats.dels) })))
           }
 
           // 行尾操作只由所在分组决定：已暂存 = 取消暂存，未暂存/未跟踪 = 暂存，冲突不给按钮。
           const action = rowActionOf(group.key)
           const busy = pendingPath !== null && pendingPath === row.path
-          const actionButton = action === null || onStage === null
+          const actionButton = action === null
             ? null
             : h('button', {
               type: 'button',
@@ -6780,19 +7955,17 @@ window.__ModuleLoader__.load({
               'data-dgp-action': action,
               'data-busy': busy ? 'true' : undefined,
               disabled: busy,
-              title: translate(action === 'stage' ? 'row.stage' : 'row.unstage'),
-              'aria-label': translate(action === 'stage' ? 'row.stage' : 'row.unstage'),
+              title: t(action === 'stage' ? 'row.stage' : 'row.unstage'),
+              'aria-label': t(action === 'stage' ? 'row.stage' : 'row.unstage'),
               onClick: (event) => {
-                if (event !== null && event !== undefined) {
-                  event.preventDefault()
-                  event.stopPropagation()
-                }
+                event.preventDefault()
+                event.stopPropagation()
                 onStage(row.path, action)
               }
             }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 13 }))
 
           return h('li', {
-            key: index,
+            key: 'file:' + row.path,
             className: 'dgp-item',
             role: 'treeitem',
             'aria-level': depth + 1,
@@ -6804,23 +7977,21 @@ window.__ModuleLoader__.load({
               'data-kind': 'file',
               'data-dgp-entry': 'file',
               onClick: () => {
-                setCursor(index)
-                selectRow(row, group.key)
+                focusRow(index)
+                activateRow({ group: group.key, row })
               }
             },
-            entry !== null && entry !== undefined
-              ? h(StatusLetter, { status: entry.status })
-              : null,
-            h('span', { className: 'dgp-name dgp-oneline' }, displayName),
+            h(StatusLetter, { status: entry.status }),
+            h('span', { className: 'dgp-name dgp-oneline' }, row.displayName),
             parent === '' ? null : h('span', { className: 'dgp-sub dgp-oneline' }, parent),
             counts.length === 0 ? null : h('span', { className: 'dgp-meta' }, counts)),
             actionButton))
         }
 
-        const renderGroup = (group) => {
+        function renderGroup(group) {
           const action = groupActionOf(group.key, untrackedMode)
           const busy = pendingGroup !== null && pendingGroup === action
-          const actionButton = action === null || onStageGroup === null
+          const actionButton = action === null
             ? null
             : h('button', {
               type: 'button',
@@ -6828,13 +7999,11 @@ window.__ModuleLoader__.load({
               'data-dgp-group-action': action,
               'data-busy': busy ? 'true' : undefined,
               disabled: busy,
-              title: translate(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
-              'aria-label': translate(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
+              title: t(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
+              'aria-label': t(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
               onClick: (event) => {
-                if (event !== null && event !== undefined) {
-                  event.preventDefault()
-                  event.stopPropagation()
-                }
+                event.preventDefault()
+                event.stopPropagation()
                 onStageGroup(action)
               }
             }, h(Icon, { name: action === 'unstage' ? 'minus' : 'plus', size: 13 }))
@@ -6850,12 +8019,12 @@ window.__ModuleLoader__.load({
               'data-open': group.open ? 'true' : 'false',
               'aria-expanded': group.open,
               onClick: () => {
-                if (onToggleGroup !== null) onToggleGroup(group.key)
+                onToggleGroup(group.key)
               }
             },
             h('span', { className: 'dgp-group-caret', 'data-open': group.open ? 'true' : 'false' },
               h(Icon, { name: 'chevron-right', size: 12 })),
-            h('span', { className: 'dgp-group-title' }, translate('group.' + group.key)),
+            h('span', { className: 'dgp-group-title' }, t('group.' + group.key)),
             h('span', { className: 'dgp-group-count' }, formatCount(group.entries.length))),
             actionButton),
           group.open
@@ -6868,23 +8037,19 @@ window.__ModuleLoader__.load({
           className: 'dgp-list',
           role: 'tree',
           tabIndex: 0,
-          'aria-label': translate('mode.changes'),
+          'aria-label': t('mode.changes'),
           'data-dgp-list': 'changes',
           'data-view': view,
           onKeyDown: handleKeyDown
         }, children)
 
-        /* --- 状态分支（没有 status：加载 / 出错 / 无仓库） --- */
-        if (status === null || status === undefined) {
-          if (errorText !== null) {
-            return container(h(InlineNote, { tone: 'error' }, translate('error.generic', { message: errorText })))
-          }
+        /* --- 没有 status：加载 / 空仓库 --- */
+        if (status === null) {
           if (loading) return container(h(SkeletonRows, { rows: 6 }))
           return container(h(EmptyState, {
             icon: 'git-branch',
-            title: translate('status.noRoots'),
-            description: translate('status.noRootsHint'),
-            t: translate
+            title: t('status.noRoots'),
+            description: t('status.noRootsHint')
           }))
         }
 
@@ -6892,34 +8057,132 @@ window.__ModuleLoader__.load({
         if (files.length === 0) {
           return container(h(EmptyState, {
             icon: 'check-circle',
-            title: translate('status.clean'),
-            description: translate('status.cleanHint'),
-            t: translate
+            title: t('status.clean'),
+            description: t('status.cleanHint')
           }))
         }
 
         /* --- 有改动，但被过滤词筛空了 --- */
         if (groups.length === 0) {
-          if (filter === '') {
-            return container(h(EmptyState, {
-              icon: 'check-circle',
-              title: translate('status.clean'),
-              description: translate('status.cleanHint'),
-              t: translate
-            }))
-          }
           return container(h(EmptyState, {
             icon: 'search',
-            title: translate('status.emptyFilter', { filter }),
-            t: translate
+            title: t('status.emptyFilter', { filter })
           }))
         }
 
-        // 注意：status 有值时的 statusError 由 Panel 统一渲染（避免重复提示），这里只在「没有 status」时自己提示。
         return container(layout.map((group) => renderGroup(group)))
       }
 
       Object.assign(exports, { ChangesList });
+
+    });
+    __define("./ui/useTreeCursor.js", (exports, module) => {
+      /**
+       * src/ui/useTreeCursor.js —— 树/列表共用的键盘游标
+       *
+       * 「变更」树与「文件」树本来就是同一种交互：一组扁平行、一个游标、↑↓ 移动、
+       * Enter 激活、←→ 展开/折叠目录、移动时把行滚进可视区。两边原先各写了一遍
+       * （连 clamp 与 focus 收尾都逐行相同），这里收成一处；组件只回答两件事：
+       * 哪些行是目录、目录怎么开合。
+       *
+       * 约定：
+       *  - 事件处理函数挂在列表容器上；到达这里的 keydown 必然来自容器或其后代，
+       *    所以不需要 contains 判断 —— 只有「Enter 由容器自己处理还是交给行 button」
+       *    需要区分 target 是不是容器。
+       *  - 行节点由组件通过 ref 收集进 `rowRefs`，索引与扁平行数组一致。
+       */
+      const { useEffect, useRef, useState } = __m("./platform.js");
+
+      /** 这些键由游标消费，不再冒泡给 Panel 的全局快捷键。 */
+      function consume(event) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+
+      /**
+       * @param {{
+       *   rows: object[],
+       *   isDir: (row: object) => boolean,
+       *   isOpen: (row: object) => boolean,
+       *   onToggle: (row: object) => void,
+       *   onActivate: (row: object) => void
+       * }} options
+       */
+      function useTreeCursor(options) {
+        const { rows, isDir, isOpen, onToggle, onActivate } = options
+        const [cursor, setCursor] = useState(-1)
+        const rowRefs = useRef([])
+        const wantFocusRef = useRef(false)
+
+        // 行数变少（折叠分组 / 过滤 / 切目录）时把游标收敛回最后一行。
+        useEffect(() => {
+          setCursor((previous) => (previous >= rows.length ? rows.length - 1 : previous))
+        }, [rows.length])
+
+        // 游标移动：滚进可视区；键盘移动时把真实焦点也带过去（Enter 由原生 click 处理）。
+        useEffect(() => {
+          const element = rowRefs.current[cursor]
+          if (element === undefined) return
+          element.scrollIntoView({ block: 'nearest' })
+          if (wantFocusRef.current === true) {
+            wantFocusRef.current = false
+            element.focus()
+          }
+        }, [cursor, rows])
+
+        /** 鼠标点行 / 外部选中项变化时让游标跟上（不动焦点）。 */
+        function focusRow(index) {
+          setCursor(index)
+        }
+
+        function moveBy(delta) {
+          const total = rows.length
+          if (total === 0) return
+          wantFocusRef.current = true
+          setCursor((previous) => {
+            if (previous < 0 || previous >= total) return 0
+            return Math.min(total - 1, Math.max(0, previous + delta))
+          })
+        }
+
+        function handleKeyDown(event) {
+          const onContainer = event.target === event.currentTarget
+
+          if (event.key === 'ArrowDown') {
+            consume(event)
+            moveBy(1)
+            return
+          }
+
+          if (event.key === 'ArrowUp') {
+            consume(event)
+            moveBy(-1)
+            return
+          }
+
+          if (event.key === 'Enter') {
+            // 行上的 Enter 由原生 button click 处理，避免重复激活。
+            if (onContainer !== true) return
+            const row = rows[cursor]
+            if (row === undefined) return
+            consume(event)
+            onActivate(row)
+            return
+          }
+
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+          const row = rows[cursor]
+          if (row === undefined || isDir(row) !== true) return
+          const open = isOpen(row)
+          if ((event.key === 'ArrowRight') === open) return
+          consume(event)
+          onToggle(row)
+        }
+
+        return { cursor, rowRefs, focusRow, handleKeyDown }
+      }
+
+      Object.assign(exports, { useTreeCursor });
 
     });
     __define("./util/changes.js", (exports, module) => {
@@ -7019,8 +8282,7 @@ window.__ModuleLoader__.load({
 
       /** 分组里只有一个文件时，直接渲染成文件行（不造目录行）：返回那个条目，否则 null。 */
       function singleFileShortcut(entries) {
-        const list = Array.isArray(entries) ? entries : []
-        return list.length === 1 ? list[0] : null
+        return entries.length === 1 ? entries[0] : null
       }
 
       /** 路径归一化：反斜杠 → 正斜杠、去掉前导 `./`、去掉末尾斜杠。 */
@@ -7172,26 +8434,81 @@ window.__ModuleLoader__.load({
       }
 
       /**
-       * status 刷新后校正当前选中项。
+       * status 刷新后校正当前选中项（只针对「变更」页签的选中项）。
        *
-       * 选中项有两种语义，不能混为一谈：
-       *  · 来自变更列表（`entry !== null`）——代表"某个变更"。文件从 status 里消失（被还原/被提交）
-       *    就该清掉选中；还在就换成最新一次 status 里的 entry（diff 会据此重取）。
-       *  · 来自文件浏览树（`entry === null`）——代表"某个路径"。它跟 status 无关（未修改的文件本来
-       *    就不在 status.files 里），所以刷新时必须原样返回，否则会凭空清空正在浏览的文件。
+       * 选中项的 `side` 是「用户当时点的是哪一组」，但文件本身会移动（暂存、取消暂存、
+       * 提交）。若刷新后还按旧 side 取 diff，宿主的 `git diff` 会返回空 —— 用户刚点完
+       * 「暂存」，右栏却变成「无改动」。所以 side 必须按新条目的实际状态校正：
+       * 原 side 仍成立就保留（MM 文件停在用户选的那一侧），否则落到仍然存在的那一侧。
        *
-       * @param {{path: string, entry: object|null, side: string}|null} selection
+       * 「文件」页签的选中项是路径语义，不经过这里（两个页签的状态彼此独立）。
+       *
+       * @param {{rootPath: string, path: string, entry: object, side: string}|null} selection
        * @param {Array<object>} files status.files
-       * @returns {object|null} 新的选中项，或 null（该清空）
+       * @returns {{rootPath: string, path: string, entry: object, side: string}|null}
        */
       function reconcileSelection(selection, files) {
         if (selection === null) return null
-        if (selection.entry === null) return selection
         const entry = files.find((file) => file.path === selection.path)
         if (entry === undefined) return null
-        return { path: entry.path, entry, side: selection.side }
+        return {
+          rootPath: selection.rootPath,
+          path: entry.path,
+          entry,
+          side: sideForEntry(entry, selection.side)
+        }
       }
-      Object.assign(exports, { GROUP_ORDER, UNTRACKED_MODES, groupsOfFile, groupChanges, rowActionOf, groupActionOf, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, buildListRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection });
+
+      /** 条目当前仍然成立的一侧；优先保留用户原来选的那一侧。 */
+      function sideForEntry(entry, preferred) {
+        if (preferred === 'staged' && entry.staged === true) return 'staged'
+        if (preferred === 'untracked' && entry.untracked === true) return 'untracked'
+        if (preferred === 'unstaged' && entry.unstaged === true) return 'unstaged'
+        if (entry.unstaged === true) return 'unstaged'
+        if (entry.staged === true) return 'staged'
+        return 'untracked'
+      }
+
+      /**
+       * status 的内容指纹：只要它没变，就没有任何理由让界面重新渲染、重新取 diff。
+       *
+       * 轮询每 8 秒回来一次，而 `status` 每次都是新对象。直接 `setStatus` 会让整张
+       * 变更列表重渲染、让 selection 换成新对象、连带把 diff 重新取一遍 —— 什么都没变，
+       * 只是又跑了一圈。指纹覆盖所有会被界面读到的事实（分支 / 同步态 / 每个文件的
+       * 状态与行数），变了才落状态。
+       */
+      function statusSignature(status) {
+        const parts = [
+          status.repoRoot,
+          status.branch,
+          status.head,
+          status.detached === true ? 'detached' : 'attached',
+          status.ahead,
+          status.behind,
+          status.sync.state,
+          status.sync.ahead,
+          status.sync.behind,
+          status.truncated === true ? 'truncated' : 'complete',
+          String(status.counts.total)
+        ]
+        for (const file of status.files) {
+          parts.push([
+            file.path,
+            file.status,
+            file.staged === true ? 's' : '',
+            file.unstaged === true ? 'u' : '',
+            file.untracked === true ? '?' : '',
+            file.conflicted === true ? 'c' : '',
+            file.binary === true ? 'b' : '',
+            file.adds,
+            file.dels,
+            file.oldPath ?? ''
+          ].join('\u0001'))
+        }
+        return parts.join('\u0000')
+      }
+
+      Object.assign(exports, { GROUP_ORDER, groupsOfFile, groupChanges, rowActionOf, groupActionOf, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, buildListRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection, sideForEntry, statusSignature });
 
     });
     __define("./components/States.js", (exports, module) => {
@@ -7202,7 +8519,7 @@ window.__ModuleLoader__.load({
        * 文案全部走 `t('key')`；`t` 由宿主传入，缺了就是调用方的 bug（直接抛错，不静默降级）。
        *
        * props 契约（CONTRACT.md §3）：
-       *   EmptyState({ icon, title, description, actions, t })
+       *   EmptyState({ icon, title, description, actions })
        *   LoadingState({ label, t })
        *   ErrorState({ message, onRetry, t })
        *   SkeletonRows({ rows })
@@ -7239,6 +8556,7 @@ window.__ModuleLoader__.load({
       /**
        * 居中空态。
        * `icon` 既可以传图标名（字符串，内部渲染 `Icon`），也可以传现成的 React node。
+       * 空态不取 `t`：标题与描述都由调用方翻译好再传进来。
        */
       function EmptyState(props) {
         const { icon, title, description, actions } = props
@@ -7276,9 +8594,7 @@ window.__ModuleLoader__.load({
           className: 'dgp-btn',
           'data-variant': 'ghost',
           'data-size': 'sm',
-          onClick: function handleRetry() {
-            if (typeof onRetry === 'function') onRetry()
-          }
+          onClick: onRetry
         }, h(Icon, { name: 'refresh', size: 14 }), T('action.retry'))
         return h('div', { className: 'dgp-state', role: 'alert' },
           h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 28 })),
@@ -7326,111 +8642,75 @@ window.__ModuleLoader__.load({
        *         └─ button.dgp-row[data-kind=dir|file][data-active][data-cursor]
        *
        * 每个目录只在第一次展开时调用 `loadDir(relPath, signal)`；结果按 `relPath` 缓存在 useRef(Map) 里，
-       * 每个请求一个 AbortController：根切换 / 卸载时全部 abort，晚到的响应不会再写回缓存。
+       * 每个请求一个 AbortController：根切换 / 卸载 / 手动刷新时全部 abort，晚到的响应不会再写回缓存。
        *
-       * 注意：`onFilterChange` 由 Panel 消费（它渲染筛选输入框），这里只读 `filter`。
+       * `reloadNonce` 由 Panel 在「立即刷新 / R」时 +1：清空已加载的目录缓存、保留展开状态并重读 ——
+       * 否则外部新建/删除的文件在面板里永远看不到（目录缓存命中就直接返回）。
+       *
+       * 键盘游标与「变更」树共用 `../ui/useTreeCursor.js`。
        */
       const { h, useEffect, useMemo, useRef, useState } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
+      const { useTreeCursor } = __m("./ui/useTreeCursor.js");
       const { basename, matchesFilter, parentChain } = __m("./util/paths.js");
       const { childPath, orderTreeEntries } = __m("./util/changes.js");
       const { describeError } = __m("./api.js");
       const { EmptyState, InlineNote } = __m("./components/States.js");
 
-      function messageOf(error, translate) {
-        const text = describeError(error, translate)
-        return typeof text === 'string' && text !== '' ? text : translate('error.generic', { message: '' })
-      }
-
       function FileTree(props) {
-        const source = props
-        const rootPath = typeof source.rootPath === 'string' && source.rootPath !== '' ? source.rootPath : null
-        const selectedPath = typeof source.selectedPath === 'string' && source.selectedPath !== ''
-          ? source.selectedPath
-          : null
-        const filter = typeof source.filter === 'string' ? source.filter : ''
-        const onSelectFile = typeof source.onSelectFile === 'function' ? source.onSelectFile : null
-        const loadDir = typeof source.loadDir === 'function' ? source.loadDir : null
-        const translate = source.t
-        /** 有未保存改动的文件路径集合（文件模式编辑器草稿）。 */
-        const dirtyPaths = source.dirtyPaths instanceof Set ? source.dirtyPaths : null
-
+        const { rootPath, selectedPath, onSelectFile, filter, loadDir, dirtyPaths, reloadNonce, t } = props
         const hasRoot = rootPath !== null
+        const filtering = filter.trim() !== ''
 
         /** relPath -> { status:'loading'|'ok'|'failed', entries, truncated, message } */
         const levelsRef = useRef(new Map())
         /** relPath -> AbortController */
         const controllersRef = useRef(new Map())
-        /** 根切换的世代号：晚到的响应据此丢弃。 */
+        /** 根切换 / 刷新的世代号：晚到的响应据此丢弃。 */
         const generationRef = useRef(0)
-        const rootRef = useRef(rootPath)
-        const rowRefs = useRef([])
-        const wantFocusRef = useRef(false)
+        const previousRootRef = useRef(rootPath)
 
         const [tick, setTick] = useState(0)
         const [expanded, setExpanded] = useState(() => new Set())
-        const [cursor, setCursor] = useState(-1)
 
         const bump = () => setTick((value) => value + 1)
 
         /* ------------------------------ 取目录 ------------------------------ */
 
+        function abortAll() {
+          for (const controller of controllersRef.current.values()) controller.abort()
+          controllersRef.current.clear()
+        }
+
         function request(relPath) {
-          const key = typeof relPath === 'string' ? relPath : ''
+          const key = relPath
           const cached = levelsRef.current.get(key)
           if (cached !== undefined && (cached.status === 'loading' || cached.status === 'ok')) return
-          if (loadDir === null) {
-            levelsRef.current.set(key, { status: 'failed', entries: [], truncated: false, message: messageOf(null, translate) })
-            bump()
-            return
-          }
+          controllersRef.current.get(key)?.abort()
 
-          const previous = controllersRef.current.get(key)
-          if (previous !== undefined && previous !== null && typeof previous.abort === 'function') {
-            try {
-              previous.abort()
-            } catch {
-              /* 忽略 */
-            }
-          }
-          const controller = typeof AbortController === 'function' ? new AbortController() : null
-          if (controller !== null) controllersRef.current.set(key, controller)
+          const controller = new AbortController()
+          controllersRef.current.set(key, controller)
           const generation = generationRef.current
-          const rootAtRequest = rootPath
           levelsRef.current.set(key, { status: 'loading', entries: [], truncated: false, message: null })
           bump()
 
-          let pending
-          try {
-            pending = loadDir(key, controller === null ? undefined : controller.signal)
-          } catch (error) {
-            pending = Promise.reject(error)
-          }
-
-          Promise.resolve(pending).then((result) => {
+          loadDir(key, controller.signal).then((result) => {
             if (generation !== generationRef.current) return
-            if (rootRef.current !== rootAtRequest) return
-            if (controller !== null && controller.signal.aborted) return
-            const entries = result !== null && result !== undefined && Array.isArray(result.entries)
-              ? result.entries
-              : []
             levelsRef.current.set(key, {
               status: 'ok',
-              entries,
-              truncated: result !== null && result !== undefined && result.truncated === true,
+              entries: result.entries,
+              truncated: result.truncated,
               message: null
             })
             controllersRef.current.delete(key)
             bump()
           }, (error) => {
             if (generation !== generationRef.current) return
-            if (rootRef.current !== rootAtRequest) return
-            if (controller !== null && controller.signal.aborted) return
             levelsRef.current.set(key, {
               status: 'failed',
               entries: [],
               truncated: false,
-              message: messageOf(error, translate)
+              message: describeError(error, t)
             })
             controllersRef.current.delete(key)
             bump()
@@ -7439,52 +8719,38 @@ window.__ModuleLoader__.load({
 
         /* ------------------------------ 副作用 ------------------------------ */
 
-        // 根变化：清缓存、abort 全部在途请求、重新读根目录；卸载时同样 abort。
+        // 根变化：清缓存、清展开状态、重读根目录；手动刷新（同一根）：保留展开状态重读。
+        // 卸载时同样 abort 掉全部在途请求。
         useEffect(() => {
           generationRef.current += 1
-          rootRef.current = rootPath
-          for (const controller of controllersRef.current.values()) {
-            if (controller !== null && controller !== undefined && typeof controller.abort === 'function') {
-              try {
-                controller.abort()
-              } catch {
-                /* 忽略 */
-              }
-            }
-          }
-          controllersRef.current.clear()
+          abortAll()
           levelsRef.current.clear()
-          setExpanded(new Set())
-          setCursor(-1)
-          if (hasRoot) request('')
-          else setTick((value) => value + 1)
-          return () => {
-            generationRef.current += 1
-            for (const controller of controllersRef.current.values()) {
-              if (controller !== null && controller !== undefined && typeof controller.abort === 'function') {
-                try {
-                  controller.abort()
-                } catch {
-                  /* 忽略 */
-                }
-              }
-            }
-            controllersRef.current.clear()
-            levelsRef.current.clear()
-          }
-          // eslint-disable-next-line -- 只跟随根变化
-        }, [rootPath])
 
-        // 任何「已展开但还没缓存」的目录都在渲染后补一次请求（展开、自动展开、重试都走这里）。
+          const rootChanged = previousRootRef.current !== rootPath
+          previousRootRef.current = rootPath
+
+          if (rootChanged) {
+            setExpanded(new Set())
+            if (hasRoot) request('')
+            else setTick((value) => value + 1)
+            return abortAll
+          }
+          request('')
+          for (const dirPath of expanded) request(dirPath)
+          return abortAll
+          // eslint-disable-next-line -- 只跟随根与手动刷新序号
+        }, [rootPath, reloadNonce])
+
+        // 任何「已展开但还没缓存」的目录都在渲染后补一次请求（展开、自动展开、临时失败重试都走这里）。
         useEffect(() => {
-          if (!hasRoot || loadDir === null) return
+          if (!hasRoot) return
           for (const dirPath of expanded) {
             if (dirPath === '') continue
             if (!levelsRef.current.has(dirPath)) request(dirPath)
           }
-        })
+        }, [expanded, tick, hasRoot])
 
-        // 外部改 selectedPath 时，把它的祖先链展开（缺失的层级由上一条副作用加载）。
+        // 外部改 selectedPath 时，把它的祖先链展开（缺失的层级由上面的副作用加载）。
         useEffect(() => {
           if (!hasRoot || selectedPath === null) return
           const ancestors = parentChain(selectedPath)
@@ -7507,27 +8773,24 @@ window.__ModuleLoader__.load({
          * （这样 `src/app.js` 命中时祖先目录 `src` 仍然显示，用户能点进去）。
          * 只看已加载的层级，不做服务端搜索。
          */
-        function entryMatches(relPath, entry, guard) {
-          const depth = typeof guard === 'number' ? guard : 0
-          if (depth > 64) return false
+        function entryMatches(relPath, entry) {
           const rel = childPath(relPath, entry)
-          const name = entry !== null && entry !== undefined && typeof entry.name === 'string' ? entry.name : ''
-          if (matchesFilter(rel, filter) || matchesFilter(name, filter)) return true
-          if (entry === null || entry === undefined || entry.type !== 'dir') return false
+          if (matchesFilter(rel, filter) || matchesFilter(entry.name, filter)) return true
+          if (entry.type !== 'dir') return false
           const level = levelsRef.current.get(rel)
-          if (level === undefined || level.status !== 'ok' || !Array.isArray(level.entries)) return false
-          return level.entries.some((child) => entryMatches(rel, child, depth + 1))
+          if (level === undefined || level.status !== 'ok') return false
+          return level.entries.some((child) => entryMatches(rel, child))
         }
 
         /**
          * 把「已加载 + 已展开」的部分压成一个扁平行数组（深度优先）。
-         * 不在 tree 里做虚拟列表：单侧栏规模下扁平数组最简单，也最好做键盘走查。
+         * 筛选时把所有已加载目录都当成展开：命中项不能藏在折叠的目录里。
          */
         function collectLevel(relPath, depth, out) {
           const level = levelsRef.current.get(relPath)
           const baseKey = relPath === '' ? 'root' : relPath
           if (level === undefined || level.status === 'loading') {
-            out.push({ kind: 'note', key: baseKey + ':loading', tone: 'info', text: translate('status.loading'), depth })
+            out.push({ kind: 'note', key: baseKey + ':loading', tone: 'info', text: t('status.loading'), depth })
             return
           }
           if (level.status === 'failed') {
@@ -7535,27 +8798,20 @@ window.__ModuleLoader__.load({
             return
           }
 
-          const all = Array.isArray(level.entries) ? level.entries : []
-          const visible = filter === '' ? all : all.filter((entry) => entryMatches(relPath, entry))
+          const visible = filtering ? level.entries.filter((entry) => entryMatches(relPath, entry)) : level.entries
           const ordered = orderTreeEntries(visible)
 
           if (ordered.length === 0) {
-            let text = null
-            if (filter !== '') text = translate('status.emptyFilter', { filter })
-            else text = translate('status.emptyDir')
-            if (text !== null) out.push({ kind: 'note', key: baseKey + ':empty', tone: 'info', text, depth })
+            const text = filtering ? t('status.emptyFilter', { filter }) : t('status.emptyDir')
+            out.push({ kind: 'note', key: baseKey + ':empty', tone: 'info', text, depth })
           }
 
           for (const entry of ordered) {
             const rel = childPath(relPath, entry)
-            const type = entry !== null && entry !== undefined && entry.type === 'dir'
-              ? 'dir'
-              : (entry !== null && entry !== undefined && entry.type === 'file' ? 'file' : 'other')
-            const name = entry !== null && entry !== undefined && typeof entry.name === 'string' && entry.name !== ''
-              ? entry.name
-              : basename(rel)
+            const type = entry.type === 'dir' ? 'dir' : (entry.type === 'file' ? 'file' : 'other')
+            const name = entry.name !== '' ? entry.name : basename(rel)
             if (type === 'dir') {
-              const open = expanded.has(rel)
+              const open = filtering || expanded.has(rel)
               out.push({ kind: 'dir', key: 'dir:' + rel, path: rel, name, depth, open })
               if (open) collectLevel(rel, depth + 1, out)
             } else {
@@ -7564,7 +8820,7 @@ window.__ModuleLoader__.load({
           }
 
           if (level.truncated === true) {
-            out.push({ kind: 'note', key: baseKey + ':truncated', tone: 'info', text: translate('status.truncated'), depth })
+            out.push({ kind: 'note', key: baseKey + ':truncated', tone: 'info', text: t('status.truncated'), depth })
           }
         }
 
@@ -7573,48 +8829,18 @@ window.__ModuleLoader__.load({
           if (hasRoot) collectLevel('', 0, out)
           return out
           // eslint-disable-next-line -- tick 让 ref 缓存的变化进入依赖
-        }, [hasRoot, rootPath, tick, expanded, filter, translate])
+        }, [hasRoot, rootPath, tick, expanded, filter, t])
 
         const rootLevel = hasRoot ? levelsRef.current.get('') : undefined
-        const rootFailed = rootLevel !== undefined && rootLevel !== null && rootLevel.status === 'failed'
-        const rootReady = rootLevel !== undefined && rootLevel !== null && rootLevel.status === 'ok'
+        const rootFailed = rootLevel !== undefined && rootLevel.status === 'failed'
+        const rootReady = rootLevel !== undefined && rootLevel.status === 'ok'
         const hasVisibleRows = rows.some((row) => row.kind === 'dir' || row.kind === 'file')
-        const filterNote = filter !== '' ? translate('filter.loadedOnly') : null
-        const filterEmpty = filter !== '' && rootReady && !hasVisibleRows
-
-        /* ------------------------------ 副作用（光标） ------------------------------ */
-
-        useEffect(() => {
-          if (selectedPath === null) return
-          const index = rows.findIndex((row) => row.kind === 'file' && row.path === selectedPath)
-          if (index >= 0) setCursor(index)
-        }, [selectedPath, rows])
-
-        useEffect(() => {
-          setCursor((previous) => (previous >= rows.length ? rows.length - 1 : previous))
-        }, [rows.length])
-
-        useEffect(() => {
-          const element = rowRefs.current[cursor]
-          if (element === null || element === undefined) return
-          try {
-            if (typeof element.scrollIntoView === 'function') element.scrollIntoView({ block: 'nearest' })
-          } catch {
-            /* 忽略 */
-          }
-          if (wantFocusRef.current) {
-            wantFocusRef.current = false
-            try {
-              if (typeof element.focus === 'function') element.focus()
-            } catch {
-              /* 忽略 */
-            }
-          }
-        }, [cursor, rows])
+        const filterNote = filtering ? t('filter.loadedOnly') : null
+        const filterEmpty = filtering && rootReady && !hasVisibleRows
 
         /* ------------------------------ 交互 ------------------------------ */
 
-        const toggleDir = (dirPath) => {
+        function toggleDir(dirPath) {
           setExpanded((previous) => {
             const next = new Set(previous)
             if (next.has(dirPath)) next.delete(dirPath)
@@ -7623,86 +8849,32 @@ window.__ModuleLoader__.load({
           })
         }
 
-        const openFile = (row) => {
-          if (row === null || row === undefined || row.other === true || onSelectFile === null) return
-          onSelectFile(row.path)
+        function activateRow(row) {
+          if (row.kind === 'note') return
+          if (row.kind === 'dir') toggleDir(row.path)
+          else if (row.other !== true) onSelectFile(row.path)
         }
 
-        const consume = (event) => {
-          try {
-            event.preventDefault()
-            event.stopPropagation()
-          } catch {
-            /* 忽略 */
-          }
-        }
+        const cursorState = useTreeCursor({
+          rows,
+          isDir: (row) => row.kind === 'dir',
+          isOpen: (row) => expanded.has(row.path),
+          onToggle: (row) => toggleDir(row.path),
+          onActivate: activateRow
+        })
+        const { cursor, rowRefs, focusRow, handleKeyDown } = cursorState
 
-        const handleKeyDown = (event) => {
-          if (event === null || event === undefined || typeof event.key !== 'string') return
-          const container = event.currentTarget
-          const target = event.target
-          const onContainer = target !== null && target !== undefined && target === container
-          const inside = !onContainer
-            && container !== null && container !== undefined
-            && typeof container.contains === 'function'
-            && target !== null && target !== undefined
-            && container.contains(target)
-          // 只在列表内部消费按键，绝不抢 Panel 的全局快捷键。
-          if (!onContainer && !inside) return
-
-          const key = event.key
-          const total = rows.length
-
-          if (key === 'ArrowDown') {
-            consume(event)
-            if (total === 0) return
-            wantFocusRef.current = true
-            setCursor((previous) => {
-              if (previous < 0 || previous >= total) return 0
-              return Math.min(previous + 1, total - 1)
-            })
-            return
-          }
-
-          if (key === 'ArrowUp') {
-            consume(event)
-            if (total === 0) return
-            wantFocusRef.current = true
-            setCursor((previous) => {
-              if (previous <= 0) return 0
-              return Math.min(previous - 1, total - 1)
-            })
-            return
-          }
-
-          if (key === 'Enter') {
-            // 行上的 Enter 交给原生 button click，避免重复回调。
-            if (!onContainer) return
-            const row = rows[cursor]
-            if (row === undefined || row.kind === 'note') return
-            consume(event)
-            if (row.kind === 'dir') toggleDir(row.path)
-            else openFile(row)
-            return
-          }
-
-          if (key === 'ArrowRight' || key === 'ArrowLeft') {
-            const row = rows[cursor]
-            if (row === undefined || row.kind !== 'dir') return
-            if (key === 'ArrowRight' && !expanded.has(row.path)) {
-              consume(event)
-              toggleDir(row.path)
-            } else if (key === 'ArrowLeft' && expanded.has(row.path)) {
-              consume(event)
-              toggleDir(row.path)
-            }
-          }
-        }
+        // 外部选中项变化 → 键盘游标跟随。
+        useEffect(() => {
+          if (selectedPath === null) return
+          const index = rows.findIndex((row) => row.kind === 'file' && row.path === selectedPath)
+          if (index >= 0) focusRow(index)
+        }, [selectedPath, rows])
 
         /* ------------------------------ 渲染 ------------------------------ */
 
-        const renderRow = (row, index) => {
-          const depth = typeof row.depth === 'number' && row.depth > 0 ? row.depth : 0
+        function renderRow(row, index) {
+          const depth = row.depth
 
           if (row.kind === 'note') {
             return h('li', { key: row.key, className: 'dgp-item', role: 'none' },
@@ -7741,7 +8913,7 @@ window.__ModuleLoader__.load({
                 rowRefs.current[index] = element
               },
               onClick: () => {
-                setCursor(index)
+                focusRow(index)
                 toggleDir(row.path)
               }
             },
@@ -7752,7 +8924,7 @@ window.__ModuleLoader__.load({
           }
 
           const isActive = selectedPath !== null && row.path === selectedPath
-          const dirty = dirtyPaths !== null && dirtyPaths.has(row.path) === true
+          const dirty = dirtyPaths.has(row.path) === true
           return h('li', {
             key: row.key,
             className: 'dgp-item',
@@ -7778,14 +8950,14 @@ window.__ModuleLoader__.load({
               rowRefs.current[index] = element
             },
             onClick: () => {
-              setCursor(index)
-              openFile(row)
+              focusRow(index)
+              activateRow(row)
             }
           },
           h(Icon, { name: 'file', size: 14 }),
           h('span', { className: 'dgp-name dgp-oneline' }, row.name),
           dirty === true
-            ? h('span', { className: 'dgp-dirty-dot', 'data-dirty': 'true', 'aria-label': translate('editor.unsaved') })
+            ? h('span', { className: 'dgp-dirty-dot', 'data-dirty': 'true', 'aria-label': t('editor.unsaved') })
             : null))
         }
 
@@ -7793,35 +8965,28 @@ window.__ModuleLoader__.load({
           className: 'dgp-list',
           role: 'tree',
           tabIndex: 0,
-          'aria-label': translate('mode.files'),
+          'aria-label': t('mode.files'),
           'data-dgp-list': 'files',
           onKeyDown: handleKeyDown
         }, children)
 
-        /* --- 没有根：不崩，给空态 --- */
         if (!hasRoot) {
           return container(h(EmptyState, {
             icon: 'folder',
-            title: translate('status.noRoots'),
-            description: translate('status.noRootsHint'),
-            t: translate
+            title: t('status.noRoots'),
+            description: t('status.noRootsHint')
           }))
         }
 
-        /* --- 根目录读取失败 --- */
-        if (rootFailed) {
-          return container(h(InlineNote, { tone: 'error' }, rootLevel.message))
-        }
+        if (rootFailed) return container(h(InlineNote, { tone: 'error' }, rootLevel.message))
 
-        /* --- 过滤后没有任何已加载的命中项 --- */
         if (filterEmpty) {
           return container([
             filterNote === null ? null : h(InlineNote, { key: 'filter-note', tone: 'info' }, filterNote),
             h(EmptyState, {
               key: 'empty',
               icon: 'search',
-              title: translate('status.emptyFilter', { filter }),
-              t: translate
+              title: t('status.emptyFilter', { filter })
             })
           ])
         }
@@ -7833,397 +8998,6 @@ window.__ModuleLoader__.load({
       }
 
       Object.assign(exports, { FileTree });
-
-    });
-    __define("./api.js", (exports, module) => {
-      /**
-       * src/api.js —— 宿主 RPC 封装
-       *
-       * 线上协议：
-       *   客户端  ctx.connection.rpc.call('/api', 'dsh-git/<endpoint>', payload, signal)
-       *   宿主端  connection.fetch.register({ path: '/api/dsh-git/<endpoint>', … })
-       *   返回封套 { ok: true, value } | { ok: false, error: { code, message, details } }
-       *
-       * 这里只做三件事：拆封套、加超时、把错误归一成带 code 的 RpcError。
-       * 不做通道/服务的降级尝试 —— apply(ctx) 的 inject 已保证 connection 存在。
-       */
-      const { getPluginContext } = __m("./platform.js");
-
-      const RPC_CHANNEL = '/api'
-      /** 本插件的路由命名空间：宿主注册为 `/api/dsh-git/<endpoint>`。 */
-      const RPC_NAMESPACE = 'dsh-git'
-
-      const TIMEOUT_MS = 20_000
-
-      /** 归一化后的 RPC 错误（渲染层只认 code 与 message）。 */
-      class RpcError extends Error {
-        constructor(code, message, details) {
-          super(message)
-          this.name = 'RpcError'
-          this.code = code
-          this.details = details === undefined || details === null ? {} : details
-        }
-      }
-
-      /** 宿主错误码 → 文案 key；没列出的码一律走 error.generic 并带上服务端原文。 */
-      const MESSAGE_KEYS = {
-        'git-missing': 'error.gitMissing',
-        'not-a-repository': 'error.notRepository',
-        'timeout': 'error.timeout',
-        'outside-root': 'error.outsideRoot',
-        'forbidden-path': 'error.outsideRoot',
-        'no-session': 'status.noSession',
-        'no-cwd': 'status.noCwd',
-        'no-commit-model': 'commit.noModel',
-        'nothing-to-commit': 'commit.nothing',
-        'unmerged': 'commit.unmerged',
-        'no-llm': 'settings.noLlm',
-        'unknown-model': 'settings.unknownModel',
-        'model-failed': 'commit.generateFailed'
-      }
-
-      /**
-       * 调一个 host 端点。
-       * @param {string} endpoint
-       * @param {object} payload
-       * @param {{signal?: AbortSignal, timeoutMs?: number}} [options]
-       */
-      async function call(endpoint, payload, options) {
-        const opts = options ?? {}
-        const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS
-        const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), timeoutMs)
-        const forward = () => controller.abort()
-        if (opts.signal !== undefined) opts.signal.addEventListener('abort', forward, { once: true })
-
-        let envelope
-        try {
-          envelope = await getPluginContext().connection.rpc.call(
-            RPC_CHANNEL,
-            RPC_NAMESPACE + '/' + endpoint,
-            payload ?? {},
-            controller.signal
-          )
-        } catch (error) {
-          if (opts.signal !== undefined && opts.signal.aborted) throw new RpcError('aborted', '已取消')
-          if (controller.signal.aborted) throw new RpcError('timeout', '请求超时')
-          throw new RpcError('transport', error instanceof Error ? error.message : String(error))
-        } finally {
-          clearTimeout(timer)
-          if (opts.signal !== undefined) opts.signal.removeEventListener('abort', forward)
-        }
-
-        if (envelope.ok === true) return envelope.value
-        throw new RpcError(envelope.error.code, envelope.error.message, envelope.error.details)
-      }
-
-      /* ============================ 具体端点 ============================ */
-
-      /** 解析项目的 git 根（primary / 浏览根 / discovered / extra）。 */
-      function resolveProject(payload, options) {
-        return call('project/resolve', payload, options)
-      }
-
-      /** 读某个根的 status。 */
-      function readStatus(payload, options) {
-        return call('status', payload, options)
-      }
-
-      /** 读单个文件的 diff（path 相对 repoRoot）。 */
-      function readDiff(payload, options) {
-        return call('diff', payload, options)
-      }
-
-      /** 读文件文本内容（path 相对 rootPath）。 */
-      function readFile(payload, options) {
-        return call('file/read', payload, options)
-      }
-
-      /** 检测更新：宿主执行 `git fetch` 后返回最新 ahead/behind（只读，不动工作区）。 */
-      function fetchRemote(payload, options) {
-        return call('remote/fetch', payload, options)
-      }
-
-      /** 保存文件内容（path 相对 rootPath；expectedHash 是乐观并发凭据，force 只在确认覆盖后用）。 */
-      function writeFile(payload, options) {
-        return call('file/write', payload, options)
-      }
-
-      /** 暂存 / 取消暂存单个文件（path 相对仓库根；action 为 stage 或 unstage）。 */
-      function stageFile(payload, options) {
-        return call('index/stage', payload, options)
-      }
-
-      /** 整组暂存 / 取消暂存（scope 为 stage-unstaged / stage-untracked / unstage）。 */
-      function stageGroup(payload, options) {
-        return call('index/stage-group', payload, options)
-      }
-
-      /** 代码托管账号列表（列表接口不含 token）。 */
-      function listAccounts(payload, options) {
-        return call('accounts/list', payload, options)
-      }
-
-      function addAccount(payload, options) {
-        return call('accounts/add', payload, options)
-      }
-
-      /** 改备注名 / 换令牌（换令牌会先验证）。 */
-      function updateAccount(payload, options) {
-        return call('accounts/update', payload, options)
-      }
-
-      /** 取令牌原文：只在用户点「显示」时调用。 */
-      function readAccountToken(payload, options) {
-        return call('accounts/token', payload, options)
-      }
-
-      function removeAccount(payload, options) {
-        return call('accounts/remove', payload, options)
-      }
-
-      /** 列某个账号下的仓库（一页 100 条）。 */
-      function listRemoteRepos(payload, options) {
-        return call('remote/repos', payload, options)
-      }
-
-      /** 仓库详情：代码概况 + 未关闭 issue/PR 数量 + 最近条目。 */
-      function remoteDetail(payload, options) {
-        return call('remote/detail', payload, options)
-      }
-
-      /** 批量取若干仓库的未合并 PR 数量。 */
-      function remotePullCounts(payload, options) {
-        return call('remote/pr-counts', payload, options)
-      }
-
-      /** 一个 PR 的详情（含平台能力与审查记录）。 */
-      function remotePull(payload, options) {
-        return call('remote/pull', payload, options)
-      }
-
-      /** 提交审查结论。 */
-      function remotePullReview(payload, options) {
-        return call('remote/pull/review', payload, options)
-      }
-
-      /** 标记 PR 测试通过（Gitee 的合并门禁之一）。 */
-      function remotePullTest(payload, options) {
-        return call('remote/pull/test', payload, options)
-      }
-
-      /** PR 的文件与 patch（AI 审阅的输入）。 */
-      function remotePullDiff(payload, options) {
-        return call('remote/pull/diff', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 60_000 })
-      }
-
-      /** 调审阅模型给出结构化结论。 */
-      function remotePullAiReview(payload, options) {
-        // 模型调用本身就慢：默认 20s 会让客户端先超时，而宿主还在跑
-        return call('remote/pull/ai-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 240_000 })
-      }
-
-      /** 深度审阅：宿主拉取 PR head 到临时 worktree，读完整文件后再让模型审。 */
-      function remotePullPrepareReview(payload, options) {
-        // 阶段一：找仓库 / 判断是否已在 PR 提交 / 切分支（必要时才 fetch）
-        return call('remote/pull/prepare-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
-      }
-
-      function remotePullSessionReview(payload, options) {
-        return call('remote/pull/session-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
-      }
-
-      function remotePullDeepReview(payload, options) {
-        // 阶段二：只读完整文件 + 调模型
-        return call('remote/pull/deep-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
-      }
-
-      /** 把 PR 克隆到指定目录（深度审阅前的准备步骤）。 */
-      function remotePullCloneForReview(payload, options) {
-        return call('remote/pull/clone-for-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 900_000 })
-      }
-
-      /** 关闭 / 重新打开 PR（state: 'open' | 'closed'）。 */
-      function remotePullState(payload, options) {
-        return call('remote/pull/state', payload, options)
-      }
-
-      /** 提交用户确认过的 PR 评论。 */
-      function remotePullComment(payload, options) {
-        return call('remote/pull/comment', payload, options)
-      }
-
-      /** 一键「审查与测试都通过」（按平台能力执行）。 */
-      function remotePullPass(payload, options) {
-        return call('remote/pull/pass', payload, options)
-      }
-
-      /** 合并 PR。 */
-      function remotePullMerge(payload, options) {
-        return call('remote/pull/merge', payload, options)
-      }
-
-      /** 把远端仓库克隆到项目根下的子目录。 */
-      function cloneRemoteRepo(payload, options) {
-        return call('remote/clone', payload, options)
-      }
-
-      /** 从储存库隐藏一个根（持久化；项目本身不可隐藏）。 */
-      function hideRoot(payload, options) {
-        return call('roots/hide', payload, options)
-      }
-
-      /** 取消隐藏。 */
-      function unhideRoot(payload, options) {
-        return call('roots/unhide', payload, options)
-      }
-
-      /** 列出本地分支 + 分支菜单需要的仓库现状（`state`：HEAD / 进行中操作 / 脏计数）。 */
-      function listBranches(payload, options) {
-        return call('branches/list', payload, options)
-      }
-
-      /**
-       * 远端仓库的分支全貌：远端分支（平台 API）+ 本地同名分支状态（rootPaths 里 origin
-       * 匹配到的本地仓库），合成一条列表。远端/本地任一侧失败只记在 failures 里。
-       */
-      function remoteBranches(payload, options) {
-        return call('remote/branches', payload, options)
-      }
-
-      /** 删除本地分支（force 只在用户确认「强制删除」后用）。 */
-      function deleteLocalBranch(payload, options) {
-        return call('branch/delete', payload, options)
-      }
-
-      /** 删除远端分支（破坏性，界面上必须二次确认）。 */
-      function deleteRemoteBranch(payload, options) {
-        return call('remote/branch/delete', payload, options)
-      }
-
-      /** 把「仅远程」的分支建成本地跟踪分支并切过去。 */
-      function trackBranch(payload, options) {
-        return call('branch/track', payload, options)
-      }
-
-      /** 切换分支（工作区怎么处理交给 git）。 */
-      function switchBranch(payload, options) {
-        return call('branch/switch', payload, options)
-      }
-
-      /**
-       * 创建分支：`base` 是创建基准、`checkout` 决定建完是否切过去。
-       *
-       * 基准是当前 HEAD 时未提交改动原样跟随（git 只写 ref 与 HEAD，不碰工作区）；
-       * 跨基准撞车时宿主报 `would-overwrite`（details 里有文件清单，且仓库没被改动），
-       * 界面据此换成「从当前分支创建」或「只建分支」再试一次。
-       */
-      function createBranch(payload, options) {
-        return call('branch/create', payload, options)
-      }
-
-      /**
-       * 推送当前分支到 origin（`git push --set-upstream origin <当前分支>`，用本机 git 凭据）。
-       *
-       * 网络写操作：超时给到 5 分钟。认证失败（`git-auth-failed`）与「远端有你没有的提交」
-       * （`not-fast-forward`）都带可操作原因，界面直接显示宿主原文。
-       */
-      function pushBranch(payload, options) {
-        return call('branch/push', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
-      }
-
-      /** 提交：有暂存只提交暂存，没有则先全部暂存。 */
-      function commitChanges(payload, options) {
-        return call('commit', payload, options)
-      }
-
-      /** 按设置里的模型生成提交说明。 */
-      function commitMessage(payload, options) {
-        return call('commit/message', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 70_000 })
-      }
-
-      /** 创建 PR 前的准备信息（仓库 / 账号 / 源分支 / 目标分支候选 / 是否已推送）。 */
-      function prPrepare(payload, options) {
-        return call('pr/prepare', payload, options)
-      }
-
-      /** 拉取当前分支最新代码（fetch + 只允许快进）。 */
-      function pullBranch(payload, options) {
-        return call('branch/pull', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
-      }
-
-      /** 当前安装的插件版本（本地读，不联网）。 */
-      function pluginInfo(payload, options) {
-        return call('plugin/info', payload, options)
-      }
-
-      /** 检查插件是否有新版本（GitHub 最新 release）。 */
-      function pluginUpdate(payload, options) {
-        return call('plugin/update', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 30_000 })
-      }
-
-      /** 当前分支关联的 PR 摘要（没有关联 PR 时 linked:false + reason）。 */
-      function prLinked(payload, options) {
-        return call('pr/linked', payload, options)
-      }
-
-      /** 用模型生成 PR 标题与描述。 */
-      function prGenerate(payload, options) {
-        return call('pr/generate', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 120_000 })
-      }
-
-      /** 创建 PR。 */
-      function prCreate(payload, options) {
-        return call('pr/create', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 120_000 })
-      }
-
-      /** 模型目录（来自 profile 的 llm-pi-ai 配置）。 */
-      function listModels(payload, options) {
-        return call('models/list', payload, options)
-      }
-
-      /** 读插件设置。 */
-      function readSettings(payload, options) {
-        return call('settings/get', payload, options)
-      }
-
-      /** 保存插件设置。 */
-      function writeSettings(payload, options) {
-        return call('settings/set', payload, options)
-      }
-
-      /** 列目录（path 相对 rootPath）。 */
-      function listDirectory(payload, options) {
-        return call('tree/list', payload, options)
-      }
-
-      /** 添加外部仓库根。 */
-      function addRoot(payload, options) {
-        return call('roots/add', payload, options)
-      }
-
-      /** 移除外部仓库根。 */
-      function removeRoot(payload, options) {
-        return call('roots/remove', payload, options)
-      }
-
-      /**
-       * 把错误渲染成一句用户能懂的话。
-       *
-       * `message` 必须传下去：像「生成提交说明失败：{message}」这种带占位符的文案，
-       * 不传就只剩字面的 `{message}`，用户永远看不到真正原因（曾经就是这样）。
-       */
-      function describeError(error, t) {
-        const code = error === null || error === undefined ? '' : error.code
-        const message = error instanceof Error
-          ? error.message
-          : (typeof error === 'string' ? error : String(error ?? ''))
-        const key = MESSAGE_KEYS[code]
-        if (key !== undefined) return t(key, { message })
-        return t('error.generic', { message })
-      }
-
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullDiff, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullDeepReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, listBranches, remoteBranches, deleteLocalBranch, deleteRemoteBranch, trackBranch, switchBranch, createBranch, pushBranch, commitChanges, commitMessage, prPrepare, pullBranch, pluginInfo, pluginUpdate, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/DiffView.js", (exports, module) => {
@@ -8268,21 +9042,17 @@ window.__ModuleLoader__.load({
       const SIDE_OLD = 'old'
       const SIDE_NEW = 'new'
 
-      /** 宿主或测试没给 t() 时的降级：原样回显 key，绝不抛错。 */
-      function missingT(key) {
-        return String(key)
-      }
-
       /** 空/加载/错误态用的图标节点（States.EmptyState 的 icon 是 React 节点）。 */
       function stateIcon(name) {
         return h(Icon, { name, size: 16 })
       }
 
-      /** 取第一个合法数字（diff.stats > entry > 本地统计）。 */
-      function firstNumber(first, second, fallback) {
-        if (typeof first === 'number' && Number.isFinite(first)) return first
-        if (typeof second === 'number' && Number.isFinite(second)) return second
-        return typeof fallback === 'number' && Number.isFinite(fallback) ? fallback : 0
+      /** 取第一个「已知」的计数：负数表示宿主没给数字（二进制/统计失败），不能当成 0 也不能显示出来。 */
+      function pickCount(...values) {
+        for (const value of values) {
+          if (typeof value === 'number' && value >= 0) return value
+        }
+        return 0
       }
 
       // ---------------------------------------------------------------------------
@@ -8462,13 +9232,12 @@ window.__ModuleLoader__.load({
        * @param {Function} props.t
        */
       function DiffView(props) {
-        const { diff, loading, error, path, entry, view, wrap, onRetry, t: tProp } = props ?? {}
-        const t = typeof tProp === 'function' ? tProp : missingT
+        const { diff, loading, error, path, entry, view, wrap, onRetry, t } = props
 
         const split = view === 'split'
-        const filePath = typeof path === 'string' ? path : ''
-        const hasFile = filePath !== '' || (entry !== null && entry !== undefined)
-        const hunks = diff !== null && diff !== undefined && Array.isArray(diff.hunks) ? diff.hunks : EMPTY_HUNKS
+        const filePath = path
+        const hasFile = filePath !== '' || entry !== null
+        const hunks = diff === null ? EMPTY_HUNKS : diff.hunks
 
         const [expanded, setExpanded] = useState(false)
         const scrollRef = useRef(null)
@@ -8478,17 +9247,15 @@ window.__ModuleLoader__.load({
           setExpanded(false)
         }, [filePath, view])
 
+        // 只有真的画出滚动容器时才需要回到顶部（加载 / 空态 / 占位态没有它）。
         useEffect(() => {
-          const element = scrollRef.current
-          if (element === null || element === undefined) return
-          if (typeof element.scrollTo === 'function') element.scrollTo(0, 0)
-          else element.scrollTop = 0
-        }, [filePath, view])
+          if (scrollRef.current === null) return
+          scrollRef.current.scrollTo({ top: 0 })
+        }, [diff, filePath, view])
 
         // 行构建 + 预算 + 词级高亮：只依赖 diff / view（以及本地的展开开关）
         const built = useMemo(() => {
-          const source = diff !== null && diff !== undefined && Array.isArray(diff.hunks) ? diff.hunks : EMPTY_HUNKS
-          const sourceRows = split ? buildSplitRows(source) : buildUnifiedRows(source)
+          const sourceRows = split ? buildSplitRows(hunks) : buildUnifiedRows(hunks)
           const budgeted = expanded
             ? { rows: sourceRows, truncatedCount: 0 }
             : budgetRows(sourceRows, MAX_DIFF_ROWS)
@@ -8499,11 +9266,10 @@ window.__ModuleLoader__.load({
           }
         }, [diff, view, expanded])
 
+        // 头部计数：diff.stats 是宿主给的权威值；没给时才退回文件条目与本地统计。
         const computedStats = diffStats(hunks)
-        const diffAdds = diff !== null && diff !== undefined && diff.stats ? diff.stats.adds : undefined
-        const diffDels = diff !== null && diff !== undefined && diff.stats ? diff.stats.dels : undefined
-        const adds = firstNumber(diffAdds, entry ? entry.adds : undefined, computedStats.adds)
-        const dels = firstNumber(diffDels, entry ? entry.dels : undefined, computedStats.dels)
+        const adds = pickCount(diff === null ? undefined : diff.stats.adds, entry === null ? undefined : entry.adds, computedStats.adds)
+        const dels = pickCount(diff === null ? undefined : diff.stats.dels, entry === null ? undefined : entry.dels, computedStats.dels)
 
         const keyBase = filePath + '|' + (split ? 'split' : 'unified')
         const regionLabel = t(split ? 'toolbar.split' : 'toolbar.unified')
@@ -8512,9 +9278,7 @@ window.__ModuleLoader__.load({
         let headNode = null
         if (hasFile) {
           const headChildren = []
-          if (entry !== null && entry !== undefined && entry.status) {
-            headChildren.push(h(StatusLetter, { key: 'status', status: entry.status }))
-          }
+          if (entry !== null) headChildren.push(h(StatusLetter, { key: 'status', status: entry.status }))
           const titleChildren = [
             h('span', { key: 'name', className: 'dgp-name dgp-oneline' }, basename(filePath))
           ]
@@ -8522,7 +9286,7 @@ window.__ModuleLoader__.load({
           if (parentPath !== '') {
             titleChildren.push(h('span', { key: 'parent', className: 'dgp-viewer-sub dgp-oneline' }, parentPath))
           }
-          if (entry !== null && entry !== undefined && typeof entry.oldPath === 'string' && entry.oldPath !== '') {
+          if (entry !== null && entry.oldPath !== null && entry.oldPath !== undefined) {
             titleChildren.push(h(
               'span',
               { key: 'oldPath', className: 'dgp-viewer-sub dgp-oneline' },
@@ -8542,52 +9306,44 @@ window.__ModuleLoader__.load({
         // ---- 主体：加载 / 错误 / 各种「不能画 diff」的 kind / 正常渲染 ----
         let bodyNode = null
 
-        if (error !== null && error !== undefined && error !== '') {
-          bodyNode = h(ErrorState, { message: String(error), onRetry, t })
-        } else if (loading === true && (diff === null || diff === undefined)) {
+        if (error !== null) {
+          bodyNode = h(ErrorState, { message: error, onRetry, t })
+        } else if (loading === true) {
           bodyNode = h(LoadingState, { label: t('status.loadingDiff'), t })
-        } else if (diff === null || diff === undefined) {
+        } else if (diff === null) {
           bodyNode = h(EmptyState, {
             icon: stateIcon('file-diff'),
-            title: t('viewer.placeholderDiff'),
-            t
+            title: t('viewer.placeholderDiff')
           })
         } else {
-          const kind = typeof diff.kind === 'string' ? diff.kind : 'text'
-          const message = typeof diff.message === 'string' ? diff.message : ''
+          const message = diff.message ?? ''
+          const kind = diff.kind
 
           if (kind === 'binary') {
-            bodyNode = h(EmptyState, { icon: stateIcon('file'), title: t('viewer.binary'), t })
+            bodyNode = h(EmptyState, { icon: stateIcon('file'), title: t('viewer.binary') })
           } else if (kind === 'oversized') {
             bodyNode = h(EmptyState, {
               icon: stateIcon('file'),
               title: t('viewer.oversized'),
-              description: message !== '' ? message : undefined,
-              t
+              description: message === '' ? undefined : message
             })
           } else if (kind === 'directory') {
-            bodyNode = h(EmptyState, { icon: stateIcon('folder'), title: t('viewer.directory'), t })
+            bodyNode = h(EmptyState, { icon: stateIcon('folder'), title: t('viewer.directory') })
           } else if (kind === 'submodule') {
-            bodyNode = h(EmptyState, { icon: stateIcon('git-merge'), title: t('viewer.submodule'), t })
+            bodyNode = h(EmptyState, { icon: stateIcon('git-merge'), title: t('viewer.submodule') })
           } else if (kind === 'error') {
-            bodyNode = h(ErrorState, {
-              message: message !== '' ? message : t('error.generic', { message: '' }),
-              onRetry,
-              t
-            })
+            bodyNode = h(ErrorState, { message, onRetry, t })
           } else if (kind === 'deleted' && hunks.length === 0) {
-            bodyNode = h(EmptyState, { icon: stateIcon('trash'), title: t('viewer.deletedFile'), t })
+            bodyNode = h(EmptyState, { icon: stateIcon('trash'), title: t('viewer.deletedFile') })
           } else if (hunks.length === 0) {
-            const renamed = entry !== null && entry !== undefined
-              && typeof entry.oldPath === 'string' && entry.oldPath !== ''
+            const renamed = entry !== null && entry.oldPath !== null && entry.oldPath !== undefined
             let title = t('viewer.noChanges')
             if (renamed) title = t('viewer.renameOnly')
             else if (diff.newFile === true) title = t('viewer.newFile')
             bodyNode = h(EmptyState, {
               icon: stateIcon(diff.newFile === true ? 'plus' : 'file-diff'),
               title,
-              description: message !== '' ? message : undefined,
-              t
+              description: message === '' ? undefined : message
             })
           } else {
             const rows = built.rows
@@ -8623,12 +9379,7 @@ window.__ModuleLoader__.load({
             }
 
             if (built.truncatedCount > 0) {
-              content.push(truncatedNode(
-                built.truncatedCount,
-                'truncated',
-                t,
-                () => setExpanded(true)
-              ))
+              content.push(truncatedNode(built.truncatedCount, 'truncated', t, () => setExpanded(true)))
             }
 
             bodyNode = h(
@@ -8642,7 +9393,7 @@ window.__ModuleLoader__.load({
                 'data-wrap': wrap === true ? 'true' : undefined
               },
               // .dgp-diff 是滚动容器里的内容块（与 FileView 的 .dgp-scroll > .dgp-file 同构）；
-              // data-wrap 同时挂两层，让 `.dgp-diff[data-wrap="true"]` 这类选择器都能命中。
+              // data-wrap 同时挂两层，让 .dgp-diff[data-wrap=\"true\"] 这类选择器都能命中。
               h(
                 'div',
                 {
@@ -8656,7 +9407,6 @@ window.__ModuleLoader__.load({
           }
         }
 
-        // 两个子节点分开传（而不是塞进数组），避免 React 要求数组 child 带 key
         return h(
           'div',
           { className: 'dgp-viewer', 'data-dgp-path': filePath !== '' ? filePath : undefined },
@@ -9080,7 +9830,7 @@ window.__ModuleLoader__.load({
       const INDENT = '  '
 
       function isBlank(value) {
-        return value === undefined || value === null || value === ''
+        return value === null || value === ''
       }
 
       /** 逻辑行数（结尾换行不算多一行）。 */
@@ -9091,7 +9841,7 @@ window.__ModuleLoader__.load({
       }
 
       function formatSize(size) {
-        if (typeof size !== 'number' || !Number.isFinite(size) || size <= 0) return ''
+        if (size <= 0) return ''
         if (size < 1024) return size + ' B'
         if (size < 1024 * 1024) return (size / 1024).toFixed(size < 10 * 1024 ? 1 : 0) + ' KB'
         return (size / (1024 * 1024)).toFixed(1) + ' MB'
@@ -9155,23 +9905,21 @@ window.__ModuleLoader__.load({
           return h(EmptyState, {
             icon: 'file',
             title: t(kind === 'binary' ? 'viewer.binary' : 'viewer.oversized'),
-            description: isBlank(sizeText) ? undefined : sizeText,
-            t
+            description: isBlank(sizeText) ? undefined : sizeText
           })
         }
         if (kind === 'directory') {
-          return h(EmptyState, { icon: 'folder', title: t('viewer.directory'), t })
+          return h(EmptyState, { icon: 'folder', title: t('viewer.directory') })
         }
         if (kind === 'missing') {
           return h(EmptyState, {
             icon: 'warning',
             title: t('viewer.missing'),
             description: isBlank(relPath) ? undefined : relPath,
-            actions: retryAction(t, onRetry),
-            t
+            actions: retryAction(t, onRetry)
           })
         }
-        const message = record !== null && typeof record.message === 'string' && record.message !== ''
+        const message = record.message !== undefined && record.message !== ''
           ? record.message
           : t('viewer.placeholder')
         if (kind === 'error') return h(ErrorState, { message, onRetry, t })
@@ -9179,8 +9927,7 @@ window.__ModuleLoader__.load({
           icon: 'info',
           title: message,
           description: isBlank(sizeText) ? undefined : sizeText,
-          actions: retryAction(t, onRetry),
-          t
+          actions: retryAction(t, onRetry)
         })
       }
 
@@ -9208,13 +9955,10 @@ window.__ModuleLoader__.load({
         const gutterRef = useRef(null)
 
         // 编辑器显示的内容：优先用草稿（props.text），没有草稿才退回磁盘内容
-        const providedText = props.text
-        const text = typeof providedText === 'string'
-          ? providedText
-          : (record !== null && typeof record.text === 'string' ? record.text : null)
-        const kind = record === null ? null : (typeof record.kind === 'string' ? record.kind : 'text')
-        const name = relPath !== '' && relPath !== undefined ? basename(relPath) : ''
-        const parent = relPath !== '' && relPath !== undefined ? dirname(relPath) : ''
+        const text = props.text !== null ? props.text : (record === null ? null : record.text ?? null)
+        const kind = record === null ? null : record.kind
+        const name = basename(relPath)
+        const parent = dirname(relPath)
         const sizeText = formatSize(record === null ? 0 : record.size)
         const lineCount = useMemo(() => (text === null ? 0 : countLines(text)), [text])
         const showGutter = wrap !== true && text !== null && lineCount <= MAX_GUTTER_LINES
@@ -9225,10 +9969,10 @@ window.__ModuleLoader__.load({
           return numbers
         }, [showGutter, lineCount])
 
-        const editable = text !== null && Boolean(loading) !== true && isBlank(error)
+        const editable = text !== null && loading !== true && error === null
 
         const subParts = []
-        if (text !== null && record !== null && typeof record.language === 'string' && record.language !== 'text') {
+        if (text !== null && record !== null && record.language !== undefined && record.language !== 'text') {
           subParts.push(record.language)
         }
         if (text !== null) subParts.push(t('viewer.lines', { count: lineCount }))
@@ -9255,7 +9999,7 @@ window.__ModuleLoader__.load({
             onClick: onSave
           }, t('editor.save')))
 
-        const conflictBar = conflict === null || conflict === undefined
+        const conflictBar = conflict === null
           ? null
           : h('div', { className: 'dgp-errorbar', 'data-conflict': 'true' },
             h(InlineNote, { tone: 'warn' }, t('editor.conflict')),
@@ -9275,7 +10019,7 @@ window.__ModuleLoader__.load({
               onClick: onOverwrite
             }, t('editor.overwrite')))
 
-        const saveErrorBar = isBlank(saveError)
+        const saveErrorBar = saveError === null
           ? null
           : h('div', { className: 'dgp-errorbar' },
             h(InlineNote, { tone: 'error' }, String(saveError)),
@@ -9287,10 +10031,10 @@ window.__ModuleLoader__.load({
             }, t('action.retry')))
 
         let body = null
-        if (Boolean(loading)) {
+        if (loading) {
           body = h(LoadingState, { label: t('status.loading'), t })
-        } else if (!isBlank(error)) {
-          body = h(ErrorState, { message: String(error), onRetry, t })
+        } else if (error !== null) {
+          body = h(ErrorState, { message: error, onRetry, t })
         } else if (record === null) {
           body = h(EmptyState, {
             icon: 'file',
@@ -9414,49 +10158,51 @@ window.__ModuleLoader__.load({
        *    所以成功/失败/进度都不会把下面的变更列表顶下去，也不会并排堆三条提示。
        *  - 提交按钮不可用时，状态行会说清**为什么**（没改动 / 没写说明），不做无声禁用。
        *  - 生成期间输入框禁用：模型结果会直接写进输入框，边等边打字再被覆盖是最糟的体验。
-       *  - 输入框随内容长高：生成的说明常常有好几行，固定两行会让用户只能看到尾巴；
-       *    长到上限就停止长高、改为滚动，不会把下面的列表挤没。
+       *  - 输入框随内容长高：高度由实测 scrollHeight 决定（与「创建 PR」描述框共用
+       *    `../ui/useAutoGrow.js`），长到上限就停止长高、改为内部滚动。
        */
-      const { h, useEffect, useRef } = __m("./platform.js");
+      const { h, useRef } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
+      const { useAutoGrow } = __m("./ui/useAutoGrow.js");
 
       /** 输入框的最小高度（两行）与最大高度（约七行）：到上限就不再长高，改成内部滚动。 */
       const COMMIT_INPUT_MIN_HEIGHT = 52
       const COMMIT_INPUT_MAX_HEIGHT = 160
 
       /**
-       * 由内容的实际高度（`scrollHeight`）算出输入框该有多高：
-       * 不低于两行、不高于上限。拿不到有效数字时按最小高度处理。
+       * 这些错误码是「模型本身有问题」：余额、密钥、限流、模型不存在、输出被截断。
+       * 共同点是**换个模型就能继续**，所以提示旁边给一个直达设置页的按钮，而不是让用户自己找齿轮。
        */
-      function commitInputHeight(scrollHeight) {
-        const measured = typeof scrollHeight === 'number' && Number.isFinite(scrollHeight) ? scrollHeight : 0
-        return Math.min(COMMIT_INPUT_MAX_HEIGHT, Math.max(COMMIT_INPUT_MIN_HEIGHT, Math.ceil(measured)))
-      }
+      const MODEL_NOTE_CODES = new Set(['model-failed', 'model-truncated', 'unknown-model', 'no-commit-model'])
 
       function CommitBox(props) {
-        const source = props
-        const translate = source.t
-        const message = typeof source.message === 'string' ? source.message : ''
-        const stagedCount = typeof source.stagedCount === 'number' ? source.stagedCount : 0
-        const changeCount = typeof source.changeCount === 'number' ? source.changeCount : stagedCount
-        const busy = source.busy === true
-        const generating = source.generating === true
-        const elapsedMs = typeof source.elapsedMs === 'number' && source.elapsedMs > 0 ? source.elapsedMs : 0
-        const note = source.note === null || source.note === undefined ? null : source.note
+        const {
+          message,
+          stagedCount,
+          changeCount,
+          busy,
+          generating,
+          elapsedMs,
+          note,
+          onChange,
+          onCommit,
+          onGenerate,
+          onOpenSettings,
+          onCreatePull,
+          t
+        } = props
 
-        // 内容变了就重新量一次高度（生成填充、手动输入、清空都走这里）
         const inputRef = useRef(null)
-        useEffect(() => {
-          const element = inputRef.current
-          if (element === null || element === undefined) return
-          element.style.height = 'auto'
-          element.style.height = commitInputHeight(element.scrollHeight) + 'px'
-        }, [message])
+        useAutoGrow(inputRef, message, { min: COMMIT_INPUT_MIN_HEIGHT, max: COMMIT_INPUT_MAX_HEIGHT })
 
         const hasMessage = message.trim() !== ''
         const hasChanges = changeCount > 0
         // 有改动 + 有说明就能提交：没有暂存时，提交会先把全部改动暂存（smart commit）
         const canCommit = hasMessage && hasChanges && busy !== true && generating !== true
+
+        // 错误提示要能读：换行显示（最多 5 行），并在「换模型就能解决」时给一个直达设置页的按钮
+        const noteIsError = note !== null && note.tone === 'error'
+        const noteOffersSettings = noteIsError && MODEL_NOTE_CODES.has(note.code)
 
         // 状态行只显示一件事：结果 > 生成中 > 提交中 > 不能提交的原因
         let statusKind = null
@@ -9466,19 +10212,19 @@ window.__ModuleLoader__.load({
           statusText = note.text
         } else if (generating) {
           statusKind = 'progress'
-          statusText = translate('commit.generatingElapsed', { seconds: (elapsedMs / 1000).toFixed(1) })
+          statusText = t('commit.generatingElapsed', { seconds: (elapsedMs / 1000).toFixed(1) })
         } else if (busy) {
           statusKind = 'busy'
-          statusText = translate('commit.submitting')
+          statusText = t('commit.submitting')
         } else if (!hasChanges) {
           statusKind = 'hint'
-          statusText = translate('commit.hintNoChanges')
+          statusText = t('commit.hintNoChanges')
         } else if (!hasMessage) {
           statusKind = 'hint'
-          statusText = translate('commit.hintNoMessage')
+          statusText = t('commit.hintNoMessage')
         } else if (stagedCount === 0) {
           statusKind = 'hint'
-          statusText = translate('commit.hintStageAll')
+          statusText = t('commit.hintStageAll')
         }
 
         return h('div', { className: 'dgp-commit' },
@@ -9488,16 +10234,16 @@ window.__ModuleLoader__.load({
               className: 'dgp-commit-input',
               'data-dgp-commit': 'input',
               rows: 2,
-              placeholder: translate('commit.placeholder'),
+              placeholder: t('commit.placeholder'),
               value: message,
               disabled: busy === true || generating === true,
               onChange: (event) => {
-                if (typeof source.onChange === 'function') source.onChange(event.target.value)
+                onChange(event.target.value)
               },
               onKeyDown: (event) => {
                 if ((event.ctrlKey === true || event.metaKey === true) && event.key === 'Enter' && canCommit) {
                   event.preventDefault()
-                  source.onCommit()
+                  onCommit()
                 }
               }
             }),
@@ -9507,10 +10253,10 @@ window.__ModuleLoader__.load({
               'data-dgp-commit': 'generate',
               'data-busy': generating ? 'true' : undefined,
               disabled: generating || busy,
-              title: translate(generating ? 'commit.generating' : 'commit.generate'),
-              'aria-label': translate('commit.generate'),
+              title: t(generating ? 'commit.generating' : 'commit.generate'),
+              'aria-label': t('commit.generate'),
               onClick: () => {
-                if (typeof source.onGenerate === 'function') source.onGenerate()
+                onGenerate()
               }
             },
             // 生成中把笔形图标换成转圈：一眼就能看出还在跑
@@ -9524,10 +10270,22 @@ window.__ModuleLoader__.load({
                 'data-dgp-commit': 'status',
                 'data-kind': statusKind,
                 'data-tone': note === null ? undefined : (note.tone === 'error' ? 'error' : 'info'),
+                // 错误提示换行显示（其余状态仍然单行省略，避免列表被顶下去）
+                'data-wrap': noteIsError ? 'true' : undefined,
                 title: statusText
               },
               statusKind === 'progress' ? h('span', { className: 'dgp-spinner' }) : null,
-              h('span', { className: 'dgp-commit-status-text dgp-oneline' }, statusText)),
+              h('span', { className: 'dgp-commit-status-text' + (noteIsError ? '' : ' dgp-oneline') }, statusText),
+              noteOffersSettings
+                ? h('button', {
+                  type: 'button',
+                  className: 'dgp-btn dgp-commit-settings',
+                  'data-size': 'sm',
+                  'data-variant': 'ghost',
+                  'data-dgp-commit': 'open-settings',
+                  onClick: () => onOpenSettings()
+                }, t('commit.openSettings'))
+                : null),
             h('button', {
               type: 'button',
               className: 'dgp-btn dgp-commit-submit',
@@ -9535,25 +10293,64 @@ window.__ModuleLoader__.load({
               'data-size': 'sm',
               'data-dgp-commit': 'submit',
               disabled: canCommit !== true,
-              title: canCommit ? translate('commit.submit') : translate(hasChanges ? 'commit.hintNoMessage' : 'commit.hintNoChanges'),
+              title: canCommit ? t('commit.submit') : t(hasChanges ? 'commit.hintNoMessage' : 'commit.hintNoChanges'),
               onClick: () => {
-                if (typeof source.onCommit === 'function') source.onCommit()
+                onCommit()
               }
-            }, translate(busy ? 'commit.submitting' : 'commit.submit')),
-            typeof source.onCreatePull === 'function'
-              ? h('button', {
+            }, t(busy ? 'commit.submitting' : 'commit.submit')),
+            onCreatePull === undefined
+              ? null
+              : h('button', {
                 type: 'button',
                 className: 'dgp-btn dgp-commit-pr',
                 'data-variant': 'ghost',
                 'data-size': 'sm',
                 'data-dgp-commit': 'create-pr',
                 disabled: busy,
-                onClick: () => source.onCreatePull()
-              }, translate('pr.open'))
-              : null))
+                onClick: () => onCreatePull()
+              }, t('pr.open'))))
       }
 
-      Object.assign(exports, { COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT, commitInputHeight, CommitBox });
+      Object.assign(exports, { COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT, CommitBox });
+
+    });
+    __define("./ui/useAutoGrow.js", (exports, module) => {
+      /**
+       * src/ui/useAutoGrow.js —— 多行输入框随内容长高
+       *
+       * 浏览器不给 textarea 自动高度，唯一可靠的做法是「先归零再读 scrollHeight」。
+       * 提交框与「创建 PR」描述框都要这件事，原先一处量 scrollHeight、另一处按
+       * 「每 80 字符一行 × 19px」估算 —— 后者在中文、宽字符、字体变化时全是错位。
+       * 这里只有一种量法，两处共用。
+       */
+      const { useEffect } = __m("./platform.js");
+
+      /**
+       * 把实测高度夹在 [min, max] 之间并向上取整（避免最后一行被裁掉半像素）。
+       * @param {number} scrollHeight 元素实测内容高度
+       * @param {number} min 最小高度（px）
+       * @param {number} max 最大高度（px），超过后改为输入框内部滚动
+       */
+      function clampHeight(scrollHeight, min, max) {
+        return Math.min(max, Math.max(min, Math.ceil(scrollHeight)))
+      }
+
+      /**
+       * @param {{current: HTMLTextAreaElement|null}} ref 输入框
+       * @param {string} value 内容（变化即重新测量）
+       * @param {{min: number, max: number}} bounds
+       */
+      function useAutoGrow(ref, value, bounds) {
+        const { min, max } = bounds
+        useEffect(() => {
+          const element = ref.current
+          if (element === null) return
+          element.style.height = 'auto'
+          element.style.height = String(clampHeight(element.scrollHeight, min, max)) + 'px'
+        }, [ref, value, min, max])
+      }
+
+      Object.assign(exports, { clampHeight, useAutoGrow });
 
     });
     __define("./components/CreatePullForm.js", (exports, module) => {
@@ -9563,33 +10360,33 @@ window.__ModuleLoader__.load({
        * 交互顺序按用户真实操作：
        *   仓库与源分支（只读）→ 目标分支（记住上次）→ 生成标题与描述 → 自己改 → 创建 PR
        *
-       * 「分支还没推到远端」的完整解释和推送动作只有一处：左栏的 PushHint，
+       * 「分支与远端不同步」的完整解释和动作只有一处：左栏的 PushHint，
        * 打开本表单时它就在同一屏里。表单只回答「创建按钮为什么是灰的」，不重复那块内容。
-       * `pushed` 取宿主的 `status.pushed`（唯一事实源），不再从 pr/prepare 另拿一份快照。
+       * `synced` 取宿主的 `status.sync`（唯一事实源），不再从 pr/prepare 另拿一份快照。
        */
-      const { h } = __m("./platform.js");
+      const { h, useRef } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
+      const { useAutoGrow } = __m("./ui/useAutoGrow.js");
 
       function CreatePullForm(props) {
-        const source = props
-        const t = source.t
-        const form = source.form
-        const pushed = source.pushed === true
-        if (form === null || form === undefined) return null
+        const { form, synced, syncState, t } = props
+        const bodyRef = useRef(null)
+        useAutoGrow(bodyRef, form.body, { min: 138, max: 594 })
 
+        const repoName = form.repo === null ? '' : form.repo.fullName
         const header = h('div', { className: 'dgp-detail-top' },
           h('div', { className: 'dgp-detail-name-row' },
             h('span', { className: 'dgp-detail-name dgp-oneline' },
-              t('pr.title') + ' · ' + (form.repo === null ? '' : form.repo.fullName))),
+              repoName === '' ? t('pr.title') : t('pr.title') + ' · ' + repoName)),
           h('button', {
             type: 'button',
             className: 'dgp-btn',
             'data-size': 'sm',
             'data-dgp-pr': 'cancel',
-            onClick: () => source.onCancel()
+            onClick: () => props.onCancel()
           }, t('pr.cancel')))
 
-        if (form.loading === true) {
+        if (form.loading) {
           return h('div', { className: 'dgp-detail dgp-pr-form', 'data-dgp-pr': 'form' },
             header,
             h('p', { className: 'dgp-detail-meta' }, t('pr.loading')))
@@ -9614,19 +10411,19 @@ window.__ModuleLoader__.load({
                   'data-size': 'sm',
                   'data-variant': 'primary',
                   'data-dgp-pr': 'open-created',
-                  onClick: () => source.onOpenUrl(form.created.url)
+                  onClick: () => props.onOpenUrl(form.created.url)
                 }, t('pr.openCreated'), h(Icon, { name: 'external', size: 12 })),
                 h('button', {
                   type: 'button',
                   className: 'dgp-btn',
                   'data-size': 'sm',
                   'data-dgp-pr': 'done',
-                  onClick: () => source.onCancel()
+                  onClick: () => props.onCancel()
                 }, t('pr.done')))))
         }
 
-        const baseOptions = Array.isArray(form.bases) ? form.bases : []
-        const accountOptions = Array.isArray(form.accounts) ? form.accounts : []
+        const baseOptions = form.bases
+        const accountOptions = form.accounts
         /**
          * 目标分支是「生成」和「创建」共同的前置条件，两处用同一把锁。
          *
@@ -9635,7 +10432,7 @@ window.__ModuleLoader__.load({
          * 宿主只会回一句「缺少参数 base」——那次请求连模型都没调，却看起来像功能坏了。
          * 所以这里用「非空字符串」这一个判据，把没有目标分支的表单变成两个按钮都点不了。
          */
-        const baseReady = typeof form.base === 'string' && form.base !== ''
+        const baseReady = form.base !== ''
 
         return h('div', { className: 'dgp-detail dgp-pr-form', 'data-dgp-pr': 'form' },
           header,
@@ -9652,7 +10449,7 @@ window.__ModuleLoader__.load({
                 className: 'dgp-select',
                 'data-dgp-pr': 'account',
                 value: form.accountId,
-                onChange: (event) => source.onChangeAccount(event.target.value)
+                onChange: (event) => props.onChangeAccount(event.target.value)
               }, accountOptions.map((account) => h('option', { key: account.id, value: account.id },
                 account.label + '（' + account.id + '）'))))
             : null,
@@ -9662,7 +10459,7 @@ window.__ModuleLoader__.load({
               className: 'dgp-select',
               'data-dgp-pr': 'base',
               value: form.base,
-              onChange: (event) => source.onChangeBase(event.target.value)
+              onChange: (event) => props.onChangeBase(event.target.value)
             }, baseOptions.map((branch) => h('option', { key: branch, value: branch }, branch))),
             h('span', { className: 'dgp-settings-hint' }, t('pr.baseHint'))),
 
@@ -9673,25 +10470,25 @@ window.__ModuleLoader__.load({
               className: 'dgp-btn',
               'data-size': 'sm',
               'data-dgp-pr': 'generate',
-              disabled: form.generating === true || form.creating === true || baseReady !== true,
-              onClick: () => source.onGenerate()
-            }, t(form.generating === true ? 'pr.generating' : 'pr.generate'))),
+              disabled: form.generating || form.creating || baseReady !== true,
+              onClick: () => props.onGenerate()
+            }, t(form.generating ? 'pr.generating' : 'pr.generate'))),
           h('input', {
             className: 'dgp-input',
             'data-dgp-pr': 'title',
             placeholder: t('pr.titlePlaceholder'),
             value: form.title,
             spellCheck: false,
-            onChange: (event) => source.onChangeTitle(event.target.value)
+            onChange: (event) => props.onChangeTitle(event.target.value)
           }),
           h('textarea', {
+            ref: bodyRef,
             className: 'dgp-input dgp-pr-body',
             'data-dgp-pr': 'body',
             placeholder: t('pr.bodyPlaceholder'),
             value: form.body,
             spellCheck: false,
-            style: { height: form.bodyHeight },
-            onChange: (event) => source.onChangeBody(event.target.value)
+            onChange: (event) => props.onChangeBody(event.target.value)
           }),
           h('div', { className: 'dgp-pull-actions' },
             h('button', {
@@ -9700,12 +10497,13 @@ window.__ModuleLoader__.load({
               'data-size': 'sm',
               'data-variant': 'primary',
               'data-dgp-pr': 'create',
-              disabled: form.creating === true || pushed !== true || form.title.trim() === '' || baseReady !== true,
-              onClick: () => source.onCreate()
-            }, t(form.creating === true ? 'pr.creating' : 'pr.create')),
-            pushed
+              disabled: form.creating || synced !== true || form.title.trim() === '' || baseReady !== true,
+              onClick: () => props.onCreate()
+            }, t(form.creating ? 'pr.creating' : 'pr.create')),
+            synced
               ? null
-              : h('span', { className: 'dgp-detail-failure', 'data-dgp-pr': 'blocked' }, t('pr.blockedNotPushed')),
+              : h('span', { className: 'dgp-detail-failure', 'data-dgp-pr': 'blocked' },
+                t(syncState === 'remote-deleted' ? 'sync.prBlockedDeleted' : 'sync.prBlockedPush')),
             form.notice === null ? null : h('span', { className: 'dgp-detail-notice', 'data-dgp-pr': 'notice' }, form.notice)))
       }
 
@@ -9714,24 +10512,35 @@ window.__ModuleLoader__.load({
     });
     __define("./components/PushHint.js", (exports, module) => {
       /**
-       * src/components/PushHint.js —— 「这条分支的最新提交还没到远端」的提示
+       * src/components/PushHint.js —— 「本地分支与远端不同步」时的提示条
        *
-       * 只有一个渲染点：变更页签、提交框上方。它回答「要不要推送」，是这个问题唯一的答案。
-       * 打开「创建 PR」表单时左栏仍和表单同屏，所以表单不再重复同一块内容 ——
-       * 表单只需要说明「创建」为什么还是灰的（CreatePullForm 的 pr.blockedNotPushed）。
+       * 由宿主 `status.sync.state` 驱动，只有两种形态，对应两种完全不同的下一步：
+       *   · never-pushed / ahead → 该推送：说明 + 命令 + 「推送到远端」按钮
+       *   · remote-deleted       → 远端分支已被删除（PR 合并后删分支是常态）：
+       *                            **不能**再普通推送（那会把已合并的分支重新建出来），
+       *                            只能「收尾」：取远程更新 → 切回默认分支 → 删除这条本地分支
        *
-       * 状态也只有一个来源：宿主 `status` 的 `pushed`。推完 status 刷新，提示自己消失。
-       * 命令照旧显示：按钮失败时用户能直接复制到终端排查。
+       * behind / diverged 不在这里处理：那是「该拉取 / 处理分叉」，不是推送问题。
        */
       const { h } = __m("./platform.js");
 
       function PushHint(props) {
-        const { branch, t, onPush, busy, error } = props
-        return h('div', { className: 'dgp-push-hint', 'data-dgp-push': 'true' },
-          h('p', { className: 'dgp-push-hint-title' }, t('push.title')),
-          h('p', { className: 'dgp-push-hint-why' }, t('push.why')),
-          h('div', { className: 'dgp-push-hint-action' },
-            h('code', { className: 'dgp-command', 'data-dgp-push-command': 'true' }, t('push.command', { branch })),
+        const { branch, sync, t, onPush, onCleanup, busy, error } = props
+        const deleted = sync.state === 'remote-deleted'
+
+        const body = deleted
+          ? h('div', { className: 'dgp-push-hint-action' },
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'primary',
+              'data-dgp-cleanup-run': 'true',
+              disabled: busy === true,
+              onClick: () => onCleanup()
+            }, t(busy === true ? 'sync.cleaning' : 'sync.cleanupRun')))
+          : h('div', { className: 'dgp-push-hint-action' },
+            h('code', { className: 'dgp-command', 'data-dgp-push-command': 'true' }, t('sync.pushCommand', { branch })),
             h('button', {
               type: 'button',
               className: 'dgp-btn',
@@ -9740,11 +10549,20 @@ window.__ModuleLoader__.load({
               'data-dgp-push-run': 'true',
               disabled: busy === true,
               onClick: () => onPush()
-            }, t(busy === true ? 'push.pushing' : 'push.run'))),
-          error === null || error === undefined
+            }, t(busy === true ? 'sync.pushing' : 'sync.pushRun')))
+
+        return h('div', { className: 'dgp-push-hint', 'data-dgp-sync': sync.state },
+          h('p', { className: 'dgp-push-hint-title' },
+            deleted
+              ? t('sync.deletedTitle', { branch })
+              : (sync.state === 'ahead' ? t('sync.aheadTitle', { count: sync.ahead }) : t('sync.neverTitle'))),
+          h('p', { className: 'dgp-push-hint-why' }, deleted ? t('sync.deletedWhy') : t('sync.pushWhy')),
+          body,
+          h('p', { className: 'dgp-push-hint-after' }, deleted ? t('sync.deletedAfter') : t('sync.pushAfter')),
+          deleted ? h('p', { className: 'dgp-push-hint-after' }, t('sync.deletedNext')) : null,
+          error === null
             ? null
-            : h('p', { className: 'dgp-push-hint-error', 'data-dgp-push-error': 'true' }, error),
-          h('p', { className: 'dgp-push-hint-after' }, t('push.after')))
+            : h('p', { className: 'dgp-push-hint-error', 'data-dgp-sync-error': 'true' }, error))
       }
 
       Object.assign(exports, { PushHint });
@@ -9777,7 +10595,7 @@ window.__ModuleLoader__.load({
         const t = source.t
         const card = source.card
 
-        if (card === null || card === undefined) return null
+        if (card === null) return null
 
         if (card.error !== null) {
           return h('div', { className: 'dgp-pr-card', 'data-dgp-pr-card': 'error' },
@@ -9848,45 +10666,135 @@ window.__ModuleLoader__.load({
        * 选项一律来自宿主读到的事实（模型目录、已保存账号），读不到就只展示错误，
        * 不给一个假的默认项。
        */
-      const { h, useState } = __m("./platform.js");
+      const { h, useEffect, useRef, useState } = __m("./platform.js");
       const { openExternalUrl } = __m("./util/openUrl.js");
       const { copyText } = __m("./util/clipboard.js");
       const { Icon } = __m("./ui/Icon.js");
       const { InlineNote } = __m("./components/States.js");
 
       function SettingsView(props) {
+        const { models, accounts, providers, loading, error, saved, accountsBusy, accountsError, accountsNotice, commitModel: commitModelRef, reviewModel, commitThinking, commitReasoningEffort, changesView, untrackedMode, postCommitPush, t } = props
+        /** 回调集中在 props 上，渲染代码只关心「点了会发生什么」。 */
         const source = props
-        const translate = source.t
-        const models = Array.isArray(source.models) ? source.models : []
-        const accounts = Array.isArray(source.accounts) ? source.accounts : []
-        const loading = source.loading === true
-        const error = typeof source.error === 'string' && source.error !== '' ? source.error : null
-        const saved = source.saved === true
-        const accountsBusy = source.accountsBusy === true
-        const accountsError = typeof source.accountsError === 'string' && source.accountsError !== ''
-          ? source.accountsError
-          : null
-        const providers = Array.isArray(source.providers) ? source.providers : []
+        const translate = t
 
-        const [provider, setProvider] = useState(providers.length > 0 ? providers[0].id : 'github')
+        const commitModel = models.find((model) => model.ref === commitModelRef)
+        const reasoning = commitModel === undefined || commitModel.reasoning === undefined ? null : commitModel.reasoning
+        const efforts = reasoning === null || reasoning.efforts === undefined ? [] : reasoning.efforts.filter((effort) => effort.id !== 'off')
+        const thinkingSupported = reasoning !== null && reasoning.supported === true && efforts.length > 0
+        const thinkingHint = commitModel === undefined ? 'settings.thinkingSelectModel'
+          : !thinkingSupported ? 'settings.thinkingUnsupported'
+            : reasoning.toggleable !== true ? 'settings.thinkingRequired' : 'settings.commitThinkingHint'
+
+        // 初始 provider 为空：平台列表是异步读到的，等它到了再选第一个（不在列表里也重新选）。
+        const [provider, setProvider] = useState('')
         const [label, setLabel] = useState('')
         const [token, setToken] = useState('')
         // 点过「获取令牌」之后给什么提示：'opened' 或拦截时的地址
         const [tokenHint, setTokenHint] = useState(null)
+        /** 添加账号失败的原因：显示在表单下方（不只看页面顶部的账号区错误）。 */
+        const [addError, setAddError] = useState(null)
+        const [addBusy, setAddBusy] = useState(false)
         // 正在编辑的账号：{ id, label, token, tokenText, revealed, busy, error, notice }
         const [editing, setEditing] = useState(null)
+        /** 编辑区的世代号：关闭 / 换账号后，旧的令牌读取结果不能再把编辑区「复活」。 */
+        const editAttemptRef = useRef(0)
 
-        const selected = providers.find((item) => item.id === provider) ?? { id: provider, label: provider }
+        useEffect(() => {
+          setProvider((previous) => (providers.some((item) => item.id === previous) ? previous : (providers[0]?.id ?? '')))
+        }, [providers])
+
+        // 被删掉的账号不能继续留在编辑区（否则再点保存会报「账号不存在」）。
+        useEffect(() => {
+          if (editing === null) return
+          if (accounts.some((account) => account.id === editing.id)) return
+          setEditing(null)
+        }, [accounts, editing])
+
+        const selected = providers.find((item) => item.id === provider) ?? null
         // 每个平台的三步都不同（菜单路径、scope 名都不一样），文案按平台 id 取
         const steps = provider === 'gitee'
           ? ['accounts.guideGitee1', 'accounts.guideGitee2', 'accounts.guideGitee3'].map((key) => translate(key))
           : ['accounts.guideGithub1', 'accounts.guideGithub2', 'accounts.guideGithub3'].map((key) => translate(key))
 
-        const submitAccount = () => {
-          if (typeof source.onAddAccount !== 'function' || token.trim() === '') return
-          source.onAddAccount({ provider, label: label.trim(), token: token.trim() })
-          setToken('')
-          setLabel('')
+        const submitAccount = async () => {
+          if (token.trim() === '' || provider === '' || addBusy || accountsBusy) return
+          setAddError(null)
+          setAddBusy(true)
+          try {
+            const result = await source.onAddAccount({ provider, label: label.trim(), token: token.trim() })
+            if (result.ok) {
+              setToken('')
+              setLabel('')
+              return
+            }
+            setAddError(result.error)
+          } finally {
+            setAddBusy(false)
+          }
+        }
+
+        /* ------------------------------ 账号编辑区 ------------------------------ */
+
+        const patchEditing = (patch) => {
+          setEditing((previous) => (previous === null ? null : { ...previous, ...patch }))
+        }
+
+        const openEditing = (account) => {
+          editAttemptRef.current += 1
+          setEditing({
+            id: account.id,
+            label: account.label,
+            token: '',
+            tokenText: null,
+            revealed: false,
+            busy: false,
+            error: null,
+            notice: null
+          })
+        }
+
+        const closeEditing = () => {
+          editAttemptRef.current += 1
+          setEditing(null)
+        }
+
+        const readToken = async () => {
+          if (editing === null || editing.busy) return
+          const attempt = editAttemptRef.current
+          patchEditing({ busy: true, error: null })
+          const result = await source.onReadToken(editing.id)
+          if (editAttemptRef.current !== attempt) return
+          if (result.ok === true) {
+            patchEditing({ busy: false, revealed: true, tokenText: result.token })
+            return
+          }
+          patchEditing({ busy: false, error: result.error })
+        }
+
+        const copyToken = async () => {
+          if (editing === null || editing.tokenText === null) return
+          const attempt = editAttemptRef.current
+          const copied = await copyText(editing.tokenText)
+          if (editAttemptRef.current !== attempt) return
+          patchEditing({
+            notice: copied.ok ? translate('accounts.copied') : translate('accounts.copyFailed'),
+            error: null
+          })
+        }
+
+        const saveEditing = async () => {
+          if (editing === null || editing.busy) return
+          const attempt = editAttemptRef.current
+          const submitted = { id: editing.id, label: editing.label, token: editing.token }
+          patchEditing({ busy: true, error: null, notice: null })
+          const result = await source.onUpdateAccount(submitted)
+          if (editAttemptRef.current !== attempt) return
+          if (result.ok === true) {
+            patchEditing({ busy: false, token: '', notice: translate('accounts.updated') })
+            return
+          }
+          patchEditing({ busy: false, error: result.error })
         }
 
         return h('div', { className: 'dgp-settings', 'data-dgp-view': 'settings' },
@@ -9897,7 +10805,7 @@ window.__ModuleLoader__.load({
               'data-size': 'sm',
               'data-dgp-settings': 'back',
               onClick: () => {
-                if (typeof source.onBack === 'function') source.onBack()
+                source.onBack()
               }
             }, translate('settings.back')),
             h('h2', { className: 'dgp-settings-title' }, translate('settings.title'))),
@@ -9914,23 +10822,47 @@ window.__ModuleLoader__.load({
               h('select', {
                 className: 'dgp-select',
                 'data-dgp-settings': 'model',
-                value: typeof source.commitModel === 'string' ? source.commitModel : '',
+                value: commitModelRef ?? '',
                 onChange: (event) => {
-                  if (typeof source.onChangeModel === 'function') source.onChangeModel(event.target.value)
+                  source.onChangeModel(event.target.value)
                 }
               },
               h('option', { value: '' }, translate('settings.modelNone')),
               models.map((model) => h('option', { key: model.ref, value: model.ref },
                 model.providerLabel + ' · ' + model.modelLabel))),
-              h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint'))),
+              h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint')),
+              h('label', { className: 'dgp-settings-field dgp-settings-label' },
+                h('span', null, translate('settings.commitThinkingLabel')),
+                h('select', {
+                  className: 'dgp-select',
+                  'data-dgp-settings': 'commit-thinking',
+                  value: commitThinking ? 'on' : 'off',
+                  disabled: !thinkingSupported,
+                  onChange: (event) => source.onChangeCommitThinking({ commitThinking: event.target.value === 'on' })
+                },
+                h('option', { value: 'off' }, translate('settings.thinkingOff')),
+                h('option', { value: 'on' }, translate('settings.thinkingOn')))),
+              h('p', { className: 'dgp-settings-hint' }, translate(thinkingHint)),
+              commitThinking && thinkingSupported
+                ? h('label', { className: 'dgp-settings-field dgp-settings-label' },
+                  h('span', null, translate('settings.commitEffortLabel')),
+                  h('select', {
+                    className: 'dgp-select',
+                    'data-dgp-settings': 'commit-reasoning-effort',
+                    value: commitReasoningEffort ?? '',
+                    onChange: (event) => source.onChangeCommitThinking({ commitReasoningEffort: event.target.value || null })
+                  },
+                  h('option', { value: '' }, translate('settings.effortDefault')),
+                  efforts.map((effort) => h('option', { key: effort.id, value: effort.id, title: effort.description }, effort.name))))
+                : null),
             h('div', { className: 'dgp-settings-field' },
               h('label', { className: 'dgp-settings-label' }, translate('settings.reviewModelLabel')),
               h('select', {
                 className: 'dgp-select',
                 'data-dgp-settings': 'review-model',
-                value: typeof source.reviewModel === 'string' ? source.reviewModel : '',
+                value: reviewModel ?? '',
                 onChange: (event) => {
-                  if (typeof source.onChangeReviewModel === 'function') source.onChangeReviewModel(event.target.value)
+                  source.onChangeReviewModel(event.target.value)
                 }
               },
               h('option', { value: '' }, translate('settings.modelNone')),
@@ -9943,9 +10875,9 @@ window.__ModuleLoader__.load({
             h('select', {
               className: 'dgp-select',
               'data-dgp-settings': 'changes-view',
-              value: source.changesView === 'tree' ? 'tree' : 'list',
+              value: changesView === 'tree' ? 'tree' : 'list',
               onChange: (event) => {
-                if (typeof source.onChangeChangesView === 'function') source.onChangeChangesView(event.target.value)
+                source.onChangeChangesView(event.target.value)
               }
             },
             h('option', { value: 'list' }, translate('settings.viewList')),
@@ -9955,13 +10887,26 @@ window.__ModuleLoader__.load({
             h('select', {
               className: 'dgp-select',
               'data-dgp-settings': 'untracked-mode',
-              value: source.untrackedMode === 'separate' ? 'separate' : 'merge',
+              value: untrackedMode === 'separate' ? 'separate' : 'merge',
               onChange: (event) => {
-                if (typeof source.onChangeUntrackedMode === 'function') source.onChangeUntrackedMode(event.target.value)
+                source.onChangeUntrackedMode(event.target.value)
               }
             },
             h('option', { value: 'merge' }, translate('settings.untrackedMerge')),
             h('option', { value: 'separate' }, translate('settings.untrackedSeparate')))),
+          h('div', { className: 'dgp-settings-field' },
+            h('label', { className: 'dgp-settings-label' }, translate('settings.postPushLabel')),
+            h('select', {
+              className: 'dgp-select',
+              'data-dgp-settings': 'post-commit-push',
+              value: postCommitPush ? 'on' : 'off',
+              onChange: (event) => {
+                source.onChangePostCommitPush(event.target.value === 'on')
+              }
+            },
+            h('option', { value: 'on' }, translate('settings.postPushOn')),
+            h('option', { value: 'off' }, translate('settings.postPushOff'))),
+            h('p', { className: 'dgp-settings-hint' }, translate('settings.postPushHint'))),
 
           /* ------------------------------ 代码托管账号 ------------------------------ */
           h('div', { className: 'dgp-settings-field' },
@@ -9979,18 +10924,7 @@ window.__ModuleLoader__.load({
                     'data-dgp-account-edit': account.id,
                     title: translate('accounts.edit', { name: account.label }),
                     'aria-label': translate('accounts.edit', { name: account.label }),
-                    onClick: () => {
-                      setEditing({
-                        id: account.id,
-                        label: account.label,
-                        token: '',
-                        tokenText: null,
-                        revealed: false,
-                        busy: false,
-                        error: null,
-                        notice: null
-                      })
-                    }
+                    onClick: () => openEditing(account)
                   }, h(Icon, { name: 'file', size: 13 })),
                   h('button', {
                     type: 'button',
@@ -9999,12 +10933,26 @@ window.__ModuleLoader__.load({
                     title: translate('accounts.remove', { name: account.label }),
                     'aria-label': translate('accounts.remove', { name: account.label }),
                     onClick: () => {
-                      if (typeof source.onRemoveAccount === 'function') source.onRemoveAccount(account.id)
+                      source.onRemoveAccount(account.id)
                     }
                   }, h(Icon, { name: 'trash', size: 13 }))))),
             editing === null
               ? null
-              : h('div', { className: 'dgp-account-inline', 'data-dgp-accounts': 'editor' },
+              : h('div', {
+                className: 'dgp-account-inline',
+                'data-dgp-accounts': 'editor',
+                onKeyDown: (event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    closeEditing()
+                    return
+                  }
+                  if (event.key === 'Enter' && event.target.tagName === 'INPUT') {
+                    event.preventDefault()
+                    saveEditing()
+                  }
+                }
+              },
                 h('div', { className: 'dgp-account-inline-head' },
                   h('span', { className: 'dgp-account-guide-title' },
                     translate('accounts.edit', { name: editing.label })),
@@ -10014,7 +10962,7 @@ window.__ModuleLoader__.load({
                     'data-size': 'sm',
                     'data-variant': 'ghost',
                     'data-dgp-accounts': 'hide-token',
-                    onClick: () => setEditing({ ...editing, revealed: false, tokenText: null })
+                    onClick: () => patchEditing({ revealed: false, tokenText: null })
                   }, translate('accounts.hide'))),
                 h('div', { className: 'dgp-account-form' },
                   h('input', {
@@ -10022,14 +10970,16 @@ window.__ModuleLoader__.load({
                     'data-dgp-accounts': 'edit-label',
                     placeholder: translate('accounts.editLabel'),
                     value: editing.label,
-                    onChange: (event) => setEditing({ ...editing, label: event.target.value })
+                    disabled: editing.busy,
+                    onChange: (event) => patchEditing({ label: event.target.value })
                   }),
                   h('input', {
                     className: 'dgp-input',
                     'data-dgp-accounts': 'edit-token',
                     placeholder: translate('accounts.tokenReplaceHint'),
                     value: editing.token,
-                    onChange: (event) => setEditing({ ...editing, token: event.target.value })
+                    disabled: editing.busy,
+                    onChange: (event) => patchEditing({ token: event.target.value })
                   }),
                   h('button', {
                     type: 'button',
@@ -10037,19 +10987,12 @@ window.__ModuleLoader__.load({
                     'data-size': 'sm',
                     'data-dgp-accounts': 'reveal-token',
                     disabled: editing.busy,
-                    onClick: async () => {
+                    onClick: () => {
                       if (editing.revealed) {
-                        setEditing({ ...editing, revealed: false, tokenText: null })
+                        patchEditing({ revealed: false, tokenText: null })
                         return
                       }
-                      if (typeof source.onReadToken !== 'function') return
-                      setEditing({ ...editing, busy: true, error: null })
-                      const result = await source.onReadToken(editing.id)
-                      if (result !== null && result !== undefined && result.ok === true) {
-                        setEditing({ ...editing, busy: false, revealed: true, tokenText: result.token })
-                        return
-                      }
-                      setEditing({ ...editing, busy: false, error: result === null || result === undefined ? '读取失败' : result.error })
+                      readToken()
                     }
                   }, translate(editing.revealed ? 'accounts.hide' : 'accounts.reveal')),
                   h('button', {
@@ -10058,14 +11001,7 @@ window.__ModuleLoader__.load({
                     'data-size': 'sm',
                     'data-dgp-accounts': 'copy-token',
                     disabled: editing.tokenText === null,
-                    onClick: async () => {
-                      const copied = await copyText(editing.tokenText)
-                      setEditing({
-                        ...editing,
-                        notice: copied.ok ? translate('accounts.copied') : translate('accounts.copyFailed'),
-                        error: null
-                      })
-                    }
+                    onClick: () => copyToken()
                   }, translate('accounts.copy')),
                   h('button', {
                     type: 'button',
@@ -10074,26 +11010,13 @@ window.__ModuleLoader__.load({
                     'data-variant': 'primary',
                     'data-dgp-accounts': 'save-account',
                     disabled: editing.busy,
-                    onClick: async () => {
-                      if (typeof source.onUpdateAccount !== 'function') return
-                      setEditing({ ...editing, busy: true, error: null, notice: null })
-                      const result = await source.onUpdateAccount({
-                        id: editing.id,
-                        label: editing.label,
-                        token: editing.token
-                      })
-                      if (result !== null && result !== undefined && result.ok === true) {
-                        setEditing({ ...editing, busy: false, token: '', notice: translate('accounts.updated') })
-                        return
-                      }
-                      setEditing({ ...editing, busy: false, error: result === null || result === undefined ? '保存失败' : result.error })
-                    }
-                  }, translate(accountsBusy ? 'accounts.adding' : 'accounts.saveLabel')),
+                    onClick: () => saveEditing()
+                  }, translate(editing.busy ? 'accounts.saving' : 'accounts.saveLabel')),
                   h('button', {
                     type: 'button',
                     className: 'dgp-btn',
                     'data-size': 'sm',
-                    onClick: () => setEditing(null)
+                    onClick: closeEditing
                   }, translate('remote.cloneCancel'))),
                 editing.revealed && editing.tokenText !== null
                   ? h('code', {
@@ -10113,11 +11036,11 @@ window.__ModuleLoader__.load({
             accountsError !== null
               ? h(InlineNote, { tone: 'error' }, accountsError)
               : null,
-            typeof source.accountsNotice === 'string' && source.accountsNotice !== ''
-              ? h(InlineNote, { tone: 'info' }, source.accountsNotice)
-              : null,
-            /* 引导：按当前平台给三步 + 一键打开令牌页，免得用户自己去翻设置菜单 */
-            h('div', { className: 'dgp-account-guide', 'data-dgp-accounts': 'guide' },
+            accountsNotice === null
+              ? null
+              : h(InlineNote, { tone: 'info' }, accountsNotice),
+            /* 引导：按当前平台给三步 + 一键打开令牌页（平台列表还没读到时整块不渲染） */
+            selected === null ? null : h('div', { className: 'dgp-account-guide', 'data-dgp-accounts': 'guide' },
               h('div', { className: 'dgp-account-guide-head' },
                 h('span', { className: 'dgp-account-guide-title' },
                   translate('accounts.guideTitle') + ' · ' + selected.label),
@@ -10158,6 +11081,7 @@ window.__ModuleLoader__.load({
                 type: 'password',
                 placeholder: translate('accounts.tokenPlaceholder'),
                 value: token,
+                disabled: addBusy,
                 onChange: (event) => setToken(event.target.value),
                 onKeyDown: (event) => {
                   if (event.key === 'Enter' && !accountsBusy && token.trim() !== '') submitAccount()
@@ -10169,9 +11093,12 @@ window.__ModuleLoader__.load({
                 'data-size': 'sm',
                 'data-variant': 'primary',
                 'data-dgp-accounts': 'add',
-                disabled: accountsBusy || token.trim() === '',
+                disabled: accountsBusy || addBusy || provider === '' || token.trim() === '',
                 onClick: submitAccount
-              }, translate(accountsBusy ? 'accounts.adding' : 'accounts.add'))),
+              }, translate(addBusy ? 'accounts.adding' : 'accounts.add')),
+            addError === null
+              ? null
+              : h('div', { className: 'dgp-remote-status', 'data-tone': 'error' }, h('span', null, addError))),
 
             tokenHint === null
               ? null
@@ -10247,7 +11174,7 @@ window.__ModuleLoader__.load({
        * 添加账号同样就地完成：没账号时空态里直接给两个平台按钮，有账号时账号行尾是 ＋；
        * 表单里有「打开令牌页面」，提交结果就地显示（设置页那份引导仍然保留）。
        */
-      const { h, useState } = __m("./platform.js");
+      const { h, useRef, useState } = __m("./platform.js");
       const { Icon } = __m("./ui/Icon.js");
       const { formatDateTime } = __m("./util/time.js");
       const { openExternalUrl } = __m("./util/openUrl.js");
@@ -10259,53 +11186,56 @@ window.__ModuleLoader__.load({
       }
 
       function RemotePane(props) {
+        const { accounts, accountId, repos, loading, error, hasMore, filter, selectedFullName, prCounts, clone, now, providers, t } = props
+        /** 回调集中在 props 上：渲染代码里只关心「点了会发生什么」，不重新包装一层。 */
         const source = props
-        const translate = source.t
-        const accounts = Array.isArray(source.accounts) ? source.accounts : []
-        const accountId = typeof source.accountId === 'string' ? source.accountId : null
-        const repos = Array.isArray(source.repos) ? source.repos : []
-        const loading = source.loading === true
-        const error = typeof source.error === 'string' && source.error !== '' ? source.error : null
-        const hasMore = source.hasMore === true
-        const filter = typeof source.filter === 'string' ? source.filter : ''
-        const selectedFullName = typeof source.selectedFullName === 'string' ? source.selectedFullName : null
-        const prCounts = source.prCounts !== null && typeof source.prCounts === 'object' ? source.prCounts : {}
-        const clone = source.clone === null || source.clone === undefined ? null : source.clone
-        const now = typeof source.now === 'number' ? source.now : 0
+        const translate = t
         const [folderFor, setFolderFor] = useState(null)
         const [folderName, setFolderName] = useState('')
         // 添加账号的行内表单：{ provider, label, token, busy, error }
         const [form, setForm] = useState(null)
         // 点过「获取令牌」后的提示：'opened' 或拦截时的地址
         const [tokenHint, setTokenHint] = useState(null)
+        /** 表单的世代号：关闭 / 重新打开后，旧请求的结果不能把表单「复活」。 */
+        const formAttemptRef = useRef(0)
 
-        const providers = Array.isArray(source.providers) ? source.providers : []
-        const providerOf = (id) => providers.find((item) => item.id === id) ?? { id, label: id }
+        /** 账号 id（provider:login）→ 平台 id。 */
+        const providerIdOfAccount = (id) => {
+          const account = accounts.find((item) => item.id === id) ?? accounts[0]
+          return account.provider
+        }
+        /** 平台 id → 平台定义（下拉框里的值一定来自 providers）。 */
+        const providerOf = (id) => providers.find((item) => item.id === id) ?? providers[0]
 
         const openForm = (providerId) => {
-          const id = typeof providerId === 'string' && providerId !== ''
-            ? providerId
-            : (providers.length > 0 ? providers[0].id : 'github')
+          if (providers.length === 0) return
+          formAttemptRef.current += 1
           setTokenHint(null)
-          setForm({ provider: id, label: '', token: '', busy: false, error: null })
+          // null = 从空态「添加账号」进来：默认选第一个平台
+          setForm({ provider: providerId === null ? providers[0].id : providerId, label: '', token: '', busy: false, error: null })
         }
 
-        const closeForm = () => setForm(null)
+        const closeForm = () => {
+          formAttemptRef.current += 1
+          setForm(null)
+        }
 
         const submitForm = async () => {
-          if (form === null || typeof source.onAddAccount !== 'function') return
-          if (form.token.trim() === '') return
-          setForm({ ...form, busy: true, error: null })
+          if (form.token.trim() === '' || form.busy) return
+          const attempt = formAttemptRef.current
+          const submitted = form
+          setForm({ ...submitted, busy: true, error: null })
           const result = await source.onAddAccount({
-            provider: form.provider,
-            label: form.label.trim(),
-            token: form.token.trim()
+            provider: submitted.provider,
+            label: submitted.label.trim(),
+            token: submitted.token.trim()
           })
-          if (result !== null && result !== undefined && result.ok === true) {
+          if (formAttemptRef.current !== attempt) return
+          if (result.ok === true) {
             setForm(null)
             return
           }
-          setForm({ ...form, busy: false, error: result === null || result === undefined ? '添加失败' : result.error })
+          setForm((previous) => (previous === null ? null : { ...previous, busy: false, error: result.error }))
         }
 
         const beginClone = (repo) => {
@@ -10319,14 +11249,22 @@ window.__ModuleLoader__.load({
         }
 
         const confirmClone = (repo) => {
-          if (typeof source.onClone !== 'function') return
           setFolderFor(null)
           source.onClone(repo, folderName.trim())
         }
 
         const formNode = form === null
           ? null
-          : h('div', { className: 'dgp-account-inline', 'data-dgp-remote': 'account-form' },
+          : h('div', {
+            className: 'dgp-account-inline',
+            'data-dgp-remote': 'account-form',
+            onKeyDown: (event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                closeForm()
+              }
+            }
+          },
             h('div', { className: 'dgp-account-inline-head' },
               h('span', { className: 'dgp-account-guide-title' },
                 translate('remote.addAccountOn', { provider: providerOf(form.provider).label })),
@@ -10347,6 +11285,7 @@ window.__ModuleLoader__.load({
                 className: 'dgp-select dgp-account-provider',
                 'data-dgp-remote': 'account-provider',
                 value: form.provider,
+                disabled: form.busy,
                 onChange: (event) => setForm({ ...form, provider: event.target.value })
               },
               providers.map((item) => h('option', { key: item.id, value: item.id }, item.label))),
@@ -10355,6 +11294,7 @@ window.__ModuleLoader__.load({
                 'data-dgp-remote': 'account-label',
                 placeholder: translate('accounts.label'),
                 value: form.label,
+                disabled: form.busy,
                 onChange: (event) => setForm({ ...form, label: event.target.value })
               }),
               h('input', {
@@ -10363,9 +11303,10 @@ window.__ModuleLoader__.load({
                 type: 'password',
                 placeholder: translate('accounts.tokenPlaceholder'),
                 value: form.token,
+                disabled: form.busy,
                 onChange: (event) => setForm({ ...form, token: event.target.value }),
                 onKeyDown: (event) => {
-                  if (event.key === 'Enter') submitForm()
+                  if (event.key === 'Enter' && !form.busy) submitForm()
                 }
               }),
               h('button', {
@@ -10396,7 +11337,20 @@ window.__ModuleLoader__.load({
                 h('span', null, translate('accounts.failed', { message: form.error }))))
 
         let body = null
-        if (accounts.length === 0) {
+        if (error !== null) {
+          body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'error' },
+            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+            h('div', { className: 'dgp-state-title' }, translate('remote.failedTitle')),
+            h('div', { className: 'dgp-state-desc' }, error),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              onClick: () => {
+                source.onRefresh()
+              }
+            }, translate('remote.refresh')))
+        } else if (accounts.length === 0) {
           body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'no-accounts' },
             h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'external', size: 22 })),
             h('div', { className: 'dgp-state-title' }, translate('remote.noAccounts')),
@@ -10409,28 +11363,13 @@ window.__ModuleLoader__.load({
                 'data-dgp-remote': 'add-account',
                 onClick: () => openForm(null)
               }, translate('remote.addAccount')),
-              typeof source.onOpenSettings === 'function'
-                ? h('button', {
+              h('button', {
                   type: 'button',
                   className: 'dgp-btn',
                   'data-variant': 'ghost',
                   'data-dgp-remote': 'open-settings',
                   onClick: () => source.onOpenSettings()
-                }, translate('accounts.guideTitle'))
-                : null))
-        } else if (error !== null) {
-          body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'error' },
-            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
-            h('div', { className: 'dgp-state-title' }, translate('remote.failed', { message: '' })),
-            h('div', { className: 'dgp-state-desc' }, error),
-            h('button', {
-              type: 'button',
-              className: 'dgp-btn',
-              'data-size': 'sm',
-              onClick: () => {
-                if (typeof source.onRefresh === 'function') source.onRefresh()
-              }
-            }, translate('remote.refresh')))
+                }, translate('accounts.guideTitle'))))
         } else if (loading && repos.length === 0) {
           body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'loading' },
             h('div', { className: 'dgp-state-icon' }, h('span', { className: 'dgp-spinner' })),
@@ -10442,7 +11381,7 @@ window.__ModuleLoader__.load({
         } else {
           body = h('div', { className: 'dgp-list', 'data-dgp-remote': 'list', role: 'list' },
             repos.map((repo) => {
-              const cloning = clone !== null && clone.fullName === repo.fullName
+              const cloning = clone !== null && clone.fullName === repo.fullName && clone.error === null
               return h('div', {
                 key: repo.fullName,
                 className: 'dgp-remote-item',
@@ -10450,12 +11389,12 @@ window.__ModuleLoader__.load({
                 'data-dgp-remote-item': repo.fullName,
                 'data-active': repo.fullName === selectedFullName ? 'true' : undefined,
                 onClick: () => {
-                  if (typeof source.onSelectRepo === 'function') source.onSelectRepo(repo)
+                  source.onSelectRepo(repo)
                 }
               },
                 h('div', { className: 'dgp-remote-row' },
                   h('span', { className: 'dgp-remote-name dgp-oneline', title: repo.fullName }, repo.name),
-                  typeof prCounts[repo.fullName] === 'number' && prCounts[repo.fullName] > 0
+                  prCounts[repo.fullName] > 0
                     ? h('span', {
                       className: 'dgp-remote-prcount',
                       'data-dgp-pr-count': repo.fullName,
@@ -10484,14 +11423,26 @@ window.__ModuleLoader__.load({
                 folderFor === repo.fullName
                   ? h('div', {
                     className: 'dgp-remote-cloneform',
-                    onClick: (event) => event.stopPropagation()
+                    onClick: (event) => event.stopPropagation(),
+                    onKeyDown: (event) => {
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        cancelClone()
+                      }
+                    }
                   },
                     h('label', { className: 'dgp-remote-cloneform-label' }, translate('remote.cloneFolder')),
                     h('input', {
                       className: 'dgp-input dgp-remote-cloneform-input',
                       'data-dgp-remote-folder': repo.fullName,
                       value: folderName,
-                      onChange: (event) => setFolderName(event.target.value)
+                      onChange: (event) => setFolderName(event.target.value),
+                      onKeyDown: (event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          confirmClone(repo)
+                        }
+                      }
                     }),
                     h('button', {
                       type: 'button',
@@ -10515,7 +11466,17 @@ window.__ModuleLoader__.load({
                   : null,
                 clone !== null && clone.error !== null && clone.fullName === repo.fullName
                   ? h('div', { className: 'dgp-remote-status', 'data-tone': 'error' },
-                    h('span', null, clone.error))
+                    h('span', null, clone.error),
+                    h('button', {
+                      type: 'button',
+                      className: 'dgp-btn',
+                      'data-size': 'sm',
+                      'data-dgp-remote-retry': repo.fullName,
+                      onClick: (event) => {
+                        event.stopPropagation()
+                        beginClone(repo)
+                      }
+                    }, translate('action.retry')))
                   : null)
             }),
             hasMore
@@ -10525,7 +11486,7 @@ window.__ModuleLoader__.load({
                 'data-size': 'sm',
                 disabled: loading,
                 onClick: () => {
-                  if (typeof source.onLoadMore === 'function') source.onLoadMore()
+                  source.onLoadMore()
                 }
               }, translate('remote.loadMore'))
               : null)
@@ -10545,7 +11506,7 @@ window.__ModuleLoader__.load({
                 'data-active': account.id === accountId ? 'true' : undefined,
                 title: account.providerLabel + ' · ' + account.login,
                 onClick: () => {
-                  if (typeof source.onSelectAccount === 'function') source.onSelectAccount(account)
+                  source.onSelectAccount(account)
                 }
               }, account.label)),
               h('button', {
@@ -10554,7 +11515,7 @@ window.__ModuleLoader__.load({
                 title: translate('remote.addAccount'),
                 'aria-label': translate('remote.addAccount'),
                 'data-dgp-remote': 'add-account',
-                onClick: () => openForm(providerOf(accountId).id)
+                onClick: () => openForm(providerIdOfAccount(accountId))
               }, h(Icon, { name: 'plus', size: 13 })),
               h('button', {
                 type: 'button',
@@ -10562,7 +11523,7 @@ window.__ModuleLoader__.load({
                 title: translate('remote.refresh'),
                 'aria-label': translate('remote.refresh'),
                 onClick: () => {
-                  if (typeof source.onRefresh === 'function') source.onRefresh()
+                  source.onRefresh()
                 }
               }, h(Icon, { name: 'refresh', size: 13 }))),
           accounts.length === 0
@@ -10573,7 +11534,7 @@ window.__ModuleLoader__.load({
               placeholder: translate('remote.filter'),
               value: filter,
               onChange: (event) => {
-                if (typeof source.onFilterChange === 'function') source.onFilterChange(event.target.value)
+                source.onFilterChange(event.target.value)
               }
             }),
           body)
@@ -10601,7 +11562,7 @@ window.__ModuleLoader__.load({
       const { BranchList } = __m("./components/BranchList.js");
 
       function Section(props) {
-        const { title, total, itemsTheLabel, items, emptyLabel, openLabel, onOpen, t, kind } = props
+        const { title, total, items, emptyLabel, openLabel, onOpen, t, kind } = props
         const countText = total === null ? t('detail.countUnknown') : t('detail.countOf', { count: total })
         return h('section', { className: 'dgp-detail-section', 'data-dgp-section': kind },
           h('div', { className: 'dgp-detail-head' },
@@ -10625,7 +11586,7 @@ window.__ModuleLoader__.load({
                   title: item.title,
                   'data-dgp-item': kind,
                   onClick: () => {
-                    if (kind === 'pulls' && item.number !== null && typeof props.onOpenPull === 'function') {
+                    if (kind === 'pulls' && item.number !== null) {
                       props.onOpenPull(item.number)
                       return
                     }
@@ -10635,20 +11596,17 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'dgp-detail-meta' },
                   item.author === '' ? null : h('span', { className: 'dgp-detail-author' }, item.author),
                   // 明确区分：创建 = 提交 PR 的时间，更新 = 最后一次有动静
-                  typeof item.createdAt === 'string' && item.createdAt !== ''
+                  item.createdAt !== ''
                     ? h('span', null, t('detail.created', { time: formatDateTime(Date.parse(item.createdAt)) }))
                     : null,
                   // 只有确实给了更新时间、且与创建时间不同才显示；缺失就不显示（不要占位符）
-                  typeof item.updatedAt === 'string' && item.updatedAt !== '' && item.updatedAt !== item.createdAt
+                  item.updatedAt !== '' && item.updatedAt !== item.createdAt
                     ? h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(item.updatedAt)) }))
                     : null)))))
       }
 
       function RemoteDetail(props) {
-        const source = props
-        const t = source.t
-        const selection = source.selection === null || source.selection === undefined ? null : source.selection
-        const detail = source.detail === null || source.detail === undefined ? null : source.detail
+        const { selection, detail, branchState, t } = props
 
         if (selection === null) {
           return h('div', { className: 'dgp-viewer' },
@@ -10658,7 +11616,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'dgp-state-desc' }, t('detail.pickRepoHint'))))
         }
 
-        if (detail === null || detail.loading === true) {
+        if (detail === null || detail.loading) {
           return h('div', { className: 'dgp-viewer' },
             h('div', { className: 'dgp-state', 'data-dgp-detail': 'loading' },
               h('div', { className: 'dgp-state-icon' }, h('span', { className: 'dgp-spinner' })),
@@ -10676,16 +11634,23 @@ window.__ModuleLoader__.load({
                 className: 'dgp-btn',
                 'data-size': 'sm',
                 onClick: () => {
-                  if (typeof source.onRetry === 'function') source.onRetry()
+                  props.onRetry()
                 }
               }, t('action.retry'))))
         }
 
         const data = detail.data
+        // 切仓库时旧数据还在手里：不属于当前选中的一份按加载中处理，绝不画在别的标题下。
+        if (data.accountId !== selection.accountId || data.repo.fullName !== selection.fullName) {
+          return h('div', { className: 'dgp-viewer' },
+            h('div', { className: 'dgp-state', 'data-dgp-detail': 'loading' },
+              h('div', { className: 'dgp-state-icon' }, h('span', { className: 'dgp-spinner' })),
+              h('div', { className: 'dgp-state-title' }, t('detail.loading', { name: selection.fullName }))))
+        }
         const repo = data.repo
         const sizeText = repo.sizeKb > 0 ? t('detail.sizeKb', { size: repo.sizeKb }) : ''
-        // 语言 / 大小 / 默认分支原先在「代码」块里又写了一遍，现在只保留这一行
-        const meta = [repo.language, sizeText, repo.defaultBranch === '' ? '' : t('detail.defaultBranch', { name: repo.defaultBranch })]
+        // 语言 / 大小只在这里说一次；「默认分支」唯一来源是分支区（remote/branches 的 default 标签），不在两处各存一份快照。
+        const meta = [repo.language, sizeText]
           .filter((part) => part !== '').join(' · ')
 
         return h('div', { className: 'dgp-detail', 'data-dgp-detail': 'repo' },
@@ -10701,7 +11666,7 @@ window.__ModuleLoader__.load({
                 'data-variant': 'primary',
                 'data-dgp-detail-clone': repo.fullName,
                 onClick: () => {
-                  if (typeof source.onClone === 'function') source.onClone(selection)
+                  props.onClone(selection)
                 }
               }, t('remote.clone')),
               h('button', {
@@ -10710,7 +11675,7 @@ window.__ModuleLoader__.load({
                 'data-size': 'sm',
                 'data-dgp-detail-open': 'repo',
                 onClick: () => {
-                  if (typeof source.onOpenUrl === 'function') source.onOpenUrl(repo.htmlUrl)
+                  props.onOpenUrl(repo.htmlUrl)
                 }
               }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 })))),
           repo.description === '' ? null : h('p', { className: 'dgp-detail-desc' }, repo.description),
@@ -10720,21 +11685,22 @@ window.__ModuleLoader__.load({
             h('span', null, t('detail.forks', { count: repo.forks })),
             repo.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatDateTime(Date.parse(repo.updatedAt)) }))),
 
-          (Array.isArray(data.failures) ? data.failures : []).map((failure) => h('p', {
+          data.failures.map((failure) => h('p', {
             key: failure.section,
             className: 'dgp-detail-failure'
-          }, t('detail.sectionFailed', { section: failure.section, message: failure.message }))),
+          }, t('detail.sectionFailed', { section: t('detail.' + failure.section), message: failure.message }))),
 
           h(BranchList, {
+            key: selection.accountId + '#' + selection.fullName,
             selection,
-            state: source.branchState,
-            onReloadBranches: source.onReloadBranches,
-            onFetchBranches: source.onFetchBranches,
-            onSwitchBranch: source.onSwitchBranch,
-            onTrackBranch: source.onTrackBranch,
-            onDeleteLocalBranch: source.onDeleteLocalBranch,
-            onDeleteRemoteBranch: source.onDeleteRemoteBranch,
-            onOpenUrl: source.onOpenUrl,
+            state: branchState,
+            onReloadBranches: props.onReloadBranches,
+            onFetchBranches: props.onFetchBranches,
+            onSwitchBranch: props.onSwitchBranch,
+            onTrackBranch: props.onTrackBranch,
+            onDeleteLocalBranch: props.onDeleteLocalBranch,
+            onDeleteRemoteBranch: props.onDeleteRemoteBranch,
+            onOpenUrl: props.onOpenUrl,
             t
           }),
 
@@ -10746,7 +11712,7 @@ window.__ModuleLoader__.load({
             emptyLabel: t('detail.noIssues'),
             openLabel: t('detail.openOnWeb'),
             onOpen: (url) => {
-              if (typeof source.onOpenUrl === 'function') source.onOpenUrl(url ?? repo.issuesUrl)
+              props.onOpenUrl(url || repo.issuesUrl)
             },
             t
           }),
@@ -10758,9 +11724,9 @@ window.__ModuleLoader__.load({
             emptyLabel: t('detail.noPulls'),
             openLabel: t('detail.openOnWeb'),
             onOpen: (url) => {
-              if (typeof source.onOpenUrl === 'function') source.onOpenUrl(url ?? repo.pullsUrl)
+              props.onOpenUrl(url || repo.pullsUrl)
             },
-            onOpenPull: typeof source.onOpenPull === 'function' ? source.onOpenPull : undefined,
+            onOpenPull: props.onOpenPull,
             t
           }))
       }
@@ -10844,20 +11810,19 @@ window.__ModuleLoader__.load({
       function BranchList(props) {
         const source = props
         const translate = source.t
-        const state = source.state === null || source.state === undefined ? null : source.state
-        const rawData = state === null || state.data === null || state.data === undefined ? null : state.data
-        const selection = source.selection === null || source.selection === undefined ? null : source.selection
+        const state = source.state
+        const rawData = state === null ? null : state.data
+        const selection = source.selection
         /**
          * 数据是「按仓库」的：切到另一个仓库而新数据还没回来时，手里这份是上一个仓库的分支。
          * 这种情况当加载中处理，不能把别人的分支列表画在标题下面。
          */
-        const dataBelongsToSelection = rawData === null || selection === null
-          || typeof rawData.fullName !== 'string' || rawData.fullName === selection.fullName
-        const data = dataBelongsToSelection ? rawData : null
-        const loading = (state !== null && state.loading === true) || (rawData !== null && dataBelongsToSelection !== true)
-        const loadError = state !== null && typeof state.error === 'string' && state.error !== '' ? state.error : null
-        const branches = data !== null && Array.isArray(data.branches) ? data.branches : []
-        const hasLocalRepo = data !== null && data.local !== null && data.local !== undefined
+        const belongs = rawData !== null && (selection === null || rawData.fullName === selection.fullName)
+        const data = belongs ? rawData : null
+        const loading = (state !== null && state.loading === true) || (rawData !== null && belongs !== true)
+        const loadError = state === null ? null : state.error
+        const branches = data === null ? [] : data.branches
+        const hasLocalRepo = data !== null && data.local !== null
         const localRootPath = hasLocalRepo ? data.local.rootPath : null
         // 分支少时不放筛选框；此时残留的筛选词也必须失效，否则列表看着被过滤却找不到筛选框
         const showFilter = branches.length > 8
@@ -10877,12 +11842,14 @@ window.__ModuleLoader__.load({
         const closeConfirm = () => setConfirm(null)
 
         // 换仓库时把筛选 / 菜单 / 确认 / 提示全部清掉：它们都属于上一个仓库的上下文
-        const dataRepo = data === null || typeof data.fullName !== 'string' ? null : data.fullName
+        const dataRepo = data === null ? null : data.fullName
         useEffect(() => {
           setFilter('')
           setMenu(null)
           setConfirm(null)
           setNote(null)
+          setBusy(null)
+          setFetching(false)
         }, [dataRepo])
 
         const needle = showFilter ? filter.trim().toLowerCase() : ''
@@ -10905,14 +11872,14 @@ window.__ModuleLoader__.load({
           Promise.resolve(started)
             .then((result) => {
               setBusy(null)
-              if (result !== null && result !== undefined && result.ok === true) {
+              if (result.ok === true) {
                 setNote({
                   tone: 'info',
                   text: translate(action === 'switch' ? 'branch.switched' : 'branch.tracked', { name: row.name })
                 })
                 return
               }
-              setNote({ tone: 'error', text: result === null || result === undefined ? translate('branch.failed', { message: '' }) : result.error })
+              setNote({ tone: 'error', text: translate('branch.failed', { message: result.error }) })
             })
             .catch((error) => {
               setBusy(null)
@@ -10936,7 +11903,7 @@ window.__ModuleLoader__.load({
             : source.onDeleteRemoteBranch(row)
           Promise.resolve(started)
             .then((result) => {
-              if (result !== null && result !== undefined && result.ok === true) {
+              if (result.ok === true) {
                 setBusy(null)
                 setConfirm(null)
                 setNote({
@@ -10945,9 +11912,9 @@ window.__ModuleLoader__.load({
                 })
                 return
               }
-              const error = result === null || result === undefined ? translate('branch.failed', { message: '' }) : result.error
+              const error = translate('branch.failed', { message: result.error })
               // 未合并的本地分支：把「强制删除」按钮放出来，让用户明确决定，不默认 force
-              if (kind === 'local' && result !== null && result !== undefined && result.code === 'branch-unmerged') {
+              if (kind === 'local' && result.code === 'branch-unmerged') {
                 setBusy(null)
                 setConfirm({ row, kind, force: true, error })
                 return
@@ -10973,11 +11940,11 @@ window.__ModuleLoader__.load({
           Promise.resolve(source.onFetchBranches())
             .then((result) => {
               setFetching(false)
-              if (result !== null && result !== undefined && result.ok === true) {
+              if (result.ok === true) {
                 setNote({ tone: 'info', text: translate('branch.fetchingDone') })
                 return
               }
-              setNote({ tone: 'error', text: result === null || result === undefined ? translate('branch.failed', { message: '' }) : result.error })
+              setNote({ tone: 'error', text: translate('branch.failed', { message: result.error }) })
             })
             .catch((error) => {
               setFetching(false)
@@ -10997,7 +11964,7 @@ window.__ModuleLoader__.load({
         const openWeb = (row) => {
           setMenu(null)
           if (data === null || typeof data.htmlUrl !== 'string' || data.htmlUrl === '') return
-          if (typeof source.onOpenUrl === 'function') source.onOpenUrl(data.htmlUrl + '/tree/' + encodeURI(row.name))
+          source.onOpenUrl(data.htmlUrl + '/tree/' + row.name.split('/').map(encodeURIComponent).join('/'))
         }
 
         const summary = data !== null && data.localKnown === true
@@ -11020,7 +11987,7 @@ window.__ModuleLoader__.load({
               disabled: loading,
               onClick: () => {
                 setNote(null)
-                if (typeof source.onReloadBranches === 'function') source.onReloadBranches()
+                source.onReloadBranches()
               }
             }, translate('action.retry'))))
         } else if (loading === true && data === null) {
@@ -11048,7 +12015,7 @@ window.__ModuleLoader__.load({
         if (data !== null && data.localKnown === true && data.local === null) {
           hints.push(h('div', { key: 'not-cloned', className: 'dgp-branch-hint' }, translate('branch.notCloned')))
         } else if (hasLocalRepo === true) {
-          const folder = String(localRootPath).split(/[\\/]/).filter(Boolean).pop() ?? String(localRootPath)
+          const folder = String(localRootPath).split(/[\\/]/).filter(Boolean).pop()
           hints.push(h('div', { key: 'local-repo', className: 'dgp-branch-hint' }, translate('branch.localRepo', { name: folder })))
         }
         if (data !== null && data.truncated === true) {
@@ -11063,8 +12030,6 @@ window.__ModuleLoader__.load({
           const action = primaryActionOf(row, hasLocalRepo === true)
           const rowBusy = busy === row.name
           const confirmHere = confirm !== null && confirm.row.name === row.name
-          const canDeleteLocal = row.local === true
-          const canDeleteRemote = row.remote === true
           return h('li', {
             key: row.name,
             className: 'dgp-branch-item',
@@ -11141,7 +12106,7 @@ window.__ModuleLoader__.load({
                   'data-variant': 'danger',
                   'data-dgp-branch-delete-run': row.name,
                   disabled: busy !== null,
-                  onClick: () => runDelete(confirm.force === true)
+                  onClick: () => runDelete(false)
                 }, translate('branch.deleteRun'))))
             : null)
         })
@@ -11253,7 +12218,7 @@ window.__ModuleLoader__.load({
                 disabled: loading,
                 onClick: () => {
                   setNote(null)
-                  if (typeof source.onReloadBranches === 'function') source.onReloadBranches()
+                  source.onReloadBranches()
                 }
               }, h(Icon, { name: 'refresh', size: 12 })))),
           showFilter
@@ -11312,8 +12277,9 @@ window.__ModuleLoader__.load({
        * 能力来自宿主返回的 capabilities：Gitee 只有「通过」一种结论、合并方式两种，
        * GitHub 三种都有。界面只渲染平台真正支持的动作，不做「点了才发现不支持」。
        */
-      const { h, useState } = __m("./platform.js");
-      const { Icon } = __m("./ui/Icon.js");
+      const { h, useState, useRef } = __m("./platform.js");
+      const { Icon, StatusLetter } = __m("./ui/Icon.js");
+      const { DiffView } = __m("./components/DiffView.js");
       const { formatDateTime } = __m("./util/time.js");
 
       const VERDICT_LABEL = {
@@ -11322,14 +12288,46 @@ window.__ModuleLoader__.load({
         comment: 'pull.comment'
       }
 
+      /** 平台给的是 added / modified / removed / renamed 这类词，界面要单个字母。 */
+      const FILE_LETTER = {
+        added: 'A',
+        copied: 'C',
+        changed: 'M',
+        deleted: 'D',
+        modified: 'M',
+        removed: 'D',
+        renamed: 'R',
+        unchanged: 'M'
+      }
+
+      const fileLetter = (status) => {
+        if (typeof status !== 'string' || status === '') return '?'
+        return FILE_LETTER[status] ?? status.slice(0, 1).toUpperCase()
+      }
+
+      /** PR 状态 → 文案 key。平台给了没见过的状态就原样显示，不拼一个不存在的 key。 */
+      const PULL_STATE_KEYS = {
+        open: 'pull.state.open',
+        closed: 'pull.state.closed',
+        merged: 'pull.state.merged'
+      }
+
+      const pullStateLabel = (t, state) => {
+        const key = PULL_STATE_KEYS[state]
+        if (key !== undefined) return t(key)
+        return typeof state === 'string' && state !== '' ? state : t('pull.state.unknown')
+      }
+
       function PullDetail(props) {
         const source = props
         const t = source.t
-        const selection = source.selection === null || source.selection === undefined ? null : source.selection
-        const detail = source.detail === null || source.detail === undefined ? null : source.detail
+        const selection = source.selection
+        const detail = source.detail
         const [note, setNote] = useState('')
         const [mergeMethod, setMergeMethod] = useState('merge')
         const [deleteBranch, setDeleteBranch] = useState(true)
+        // 合并是破坏性操作（可能连源分支一起删）：两步确认，与关闭 PR 同口径
+        const [mergeConfirm, setMergeConfirm] = useState(false)
         const [busy, setBusy] = useState(null)
         const [error, setError] = useState(null)
         const [notice, setNotice] = useState(null)
@@ -11348,11 +12346,17 @@ window.__ModuleLoader__.load({
         // 关闭 PR 是两步操作：先确认再发，避免误点
         const [closeConfirm, setCloseConfirm] = useState(false)
         const [stateBusy, setStateBusy] = useState(false)
+        // 变动文件：当前展开的文件、每个文件按需读到的 diff（filename -> { status, diff, error }）
+        const [openFile, setOpenFile] = useState(null)
+        const [fileLoads, setFileLoads] = useState({})
+        // 已读到的 diff 与正在读的文件：折叠再展开不重复请求，连点也不会发两次
+        const fileCache = useRef(new Map())
+        const filePending = useRef(new Set())
 
         if (selection === null) return null
 
         const back = () => {
-          if (typeof source.onBack === 'function') source.onBack()
+          source.onBack()
         }
 
         if (detail === null || detail.loading === true) {
@@ -11374,7 +12378,7 @@ window.__ModuleLoader__.load({
                   className: 'dgp-btn',
                   'data-size': 'sm',
                   onClick: () => {
-                    if (typeof source.onRetry === 'function') source.onRetry()
+                    source.onRetry()
                   }
                 }, t('action.retry')),
                 h('button', {
@@ -11410,15 +12414,104 @@ window.__ModuleLoader__.load({
         // 平台不一定给增删行/文件数，缺了显示 —— 而不是 0
         const statText = (value) => (pull.statsComplete === true ? String(value) : '—')
 
+        /* ---------------------- 变动文件：按需读单个文件的 diff ---------------------- */
+
+        /** 读一个文件的 diff（已读过就用缓存；同一文件正在读时不重复发请求）。 */
+        const loadFileDiff = async (file) => {
+          const name = file.filename
+          const cached = fileCache.current.get(name)
+          if (cached !== undefined) {
+            setFileLoads((previous) => ({ ...previous, [name]: cached }))
+            return
+          }
+          if (filePending.current.has(name)) return
+          filePending.current.add(name)
+          setFileLoads((previous) => ({ ...previous, [name]: { status: 'loading' } }))
+          let result
+          try {
+            result = await source.onPullFile({
+              accountId: selection.accountId,
+              fullName: selection.fullName,
+              number: pull.number,
+              filename: name
+            })
+          } catch (caught) {
+            result = { ok: false, error: caught instanceof Error ? caught.message : String(caught) }
+          } finally {
+            filePending.current.delete(name)
+          }
+          if (result.ok === true) {
+            const entry = { status: 'done', diff: result.diff }
+            fileCache.current.set(name, entry)
+            setFileLoads((previous) => ({ ...previous, [name]: entry }))
+            return
+          }
+          setFileLoads((previous) => ({
+            ...previous,
+            [name]: {
+              status: 'error',
+              error: result.error
+            }
+          }))
+        }
+
+        /** 点一行：展开 / 收起；第一次展开时读 diff。 */
+        const toggleFile = (file) => {
+          const name = file.filename
+          if (openFile === name) {
+            setOpenFile(null)
+            return
+          }
+          setOpenFile(name)
+          void loadFileDiff(file)
+        }
+
+        /** 读失败后重试：先丢掉缓存（错误结果本来也不进缓存）。 */
+        const retryFile = (file) => {
+          fileCache.current.delete(file.filename)
+          setFileLoads((previous) => ({ ...previous, [file.filename]: { status: 'loading' } }))
+          void loadFileDiff(file)
+        }
+
+        /** 展开区的内容：加载中 / 失败 + 重试 / DiffView。 */
+        const renderFileDiff = (file) => {
+          const load = fileLoads[file.filename]
+          if (load === undefined || load.status === 'loading') {
+            return h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'file-loading' }, t('pull.fileDiffLoading'))
+          }
+          if (load.status === 'error') {
+            return h('div', { className: 'dgp-pull-file-error' },
+              h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'file-error' }, load.error),
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'ghost',
+                'data-dgp-pull': 'file-retry',
+                onClick: () => retryFile(file)
+              }, t('action.retry')))
+          }
+          return h(DiffView, {
+            diff: load.diff,
+            loading: false,
+            error: null,
+            path: file.filename,
+            entry: {
+              status: fileLetter(file.status),
+              adds: file.additions,
+              dels: file.deletions
+            },
+            view: 'unified',
+            wrap: false,
+            onRetry: () => retryFile(file),
+            t
+          })
+        }
+
         /**
          * 评论草稿的可见行数：按换行切分，长行按每行约 80 字符折算。
          * 最少 6 行、最多 30 行 —— 内容多时输入框自己长高，不用手动拉。
          */
-        const draftLines = draft.split('\n').reduce(
-          (sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)),
-          0
-        )
-        const draftHeight = Math.min(Math.max(draftLines, 6), 30) * 19 + 24 + 'px'
         const commentLines = commentDraft.split('\n').reduce(
           (sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)),
           0
@@ -11432,13 +12525,12 @@ window.__ModuleLoader__.load({
           const result = await action()
           setBusy(null)
           // 合并成功时宿主已经把详情关掉了（closed:true），这里不再写任何提示
-          if (result !== null && result !== undefined && result.ok === true && result.closed === true) return
-          if (result !== null && result !== undefined && result.ok === true) {
+          if (result.ok === true && result.closed === true) return
+          if (result.ok === true) {
             setNotice(result.message ?? null)
-            if (typeof source.onChanged === 'function') source.onChanged()
             return
           }
-          setError(result === null || result === undefined ? '操作失败' : result.error)
+          setError({ text: result.error, code: result.code ?? null })
         }
 
         /** 执行步骤列表（宿主回传）：每一步做了什么、耗时、是否失败。 */
@@ -11456,7 +12548,7 @@ window.__ModuleLoader__.load({
               h('span', { className: 'dgp-step-time' }, '+' + String(step.at ?? 0) + 'ms'),
               h('span', { className: 'dgp-step-name' }, step.step),
               step.detail === '' ? null : h('span', { className: 'dgp-step-detail' }, step.detail)))),
-            logPath === null || logPath === undefined
+            logPath === null
               ? null
               : h('p', { className: 'dgp-settings-hint' }, t('pull.aiLogHint', { path: logPath })))
         }
@@ -11465,27 +12557,26 @@ window.__ModuleLoader__.load({
         const runAi = async (mode, prepared = null) => {
           setCommentNotice(null)
           setClonePrompt(null)
-          if (mode === 'deep') setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null, phase: 'prepare' })
+          if (mode === 'session') setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null, phase: 'prepare' })
           else setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null, phase: null })
 
           const base = { accountId: selection.accountId, fullName: selection.fullName, number: pull.number }
           let result
 
-          if (mode === 'deep') {
+          if (mode === 'session') {
             let target = prepared
             if (target === null) {
-              if (typeof source.onPrepareReview !== 'function') return
               const prep = await source.onPrepareReview({
                 ...base,
-                rootPaths: Array.isArray(source.localRepoRoots) ? source.localRepoRoots : []
+                rootPaths: source.localRepoRoots
               })
-              if (prep === null || prep === undefined || prep.ok !== true) {
+              if (prep.ok !== true) {
                 setAi({
                   status: 'error', mode, result: null,
-                  error: prep === null || prep === undefined ? '准备失败' : prep.error,
-                  code: prep?.code ?? null,
-                  steps: prep?.details?.steps ?? [],
-                  logPath: prep?.details?.logPath ?? null,
+                  error: prep.error,
+                  code: prep.code ?? null,
+                  steps: prep.details?.steps ?? [],
+                  logPath: prep.details?.logPath ?? null,
                   phase: null
                 })
                 return
@@ -11504,52 +12595,33 @@ window.__ModuleLoader__.load({
               }
               target = { rootPath: prep.rootPath, branch: prep.branch, steps: prep.steps ?? [], logPath: prep.logPath ?? null }
             }
-            // 阶段二：优先走会话级审阅（新开会话 + Agent 工具）；没有该能力时退回本地深度。
-            if (typeof source.onSessionReview === 'function') {
-              setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
-              const started = await source.onSessionReview({ ...base, rootPath: target.rootPath, branch: target.branch })
-              if (started !== null && started !== undefined && started.ok === true && typeof started.sessionId === 'string') {
-                setAi({ status: 'done', mode: 'session', result: started, error: null, steps: [], logPath: started.logPath ?? null, phase: null })
-                setCommentNotice(t('pull.sessionReviewStarted', { id: started.sessionId }))
-                return
-              }
-              setAi({
-                status: 'error',
-                mode: 'deep',
-                result: null,
-                error: started === null || started === undefined ? '启动会话审阅失败' : started.error,
-                code: started?.code ?? null,
-                steps: started?.details?.steps ?? target.steps ?? [],
-                logPath: started?.details?.logPath ?? target.logPath ?? null,
-                phase: null
-              })
+            // 阶段二：会话级审阅（新开会话 + Agent 工具）。这是唯一实现，没有本地退路。
+            setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
+            const started = await source.onSessionReview({ ...base, rootPath: target.rootPath, branch: target.branch })
+            if (started.ok === true && typeof started.sessionId === 'string') {
+              setAi({ status: 'done', mode: 'session', result: started, error: null, steps: [], logPath: started.logPath ?? null, phase: null })
+              setCommentNotice(t('pull.sessionReviewStarted', { id: started.sessionId }))
               return
             }
-            setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
-            if (typeof source.onDeepReview !== 'function') return
-            const reviewed = await source.onDeepReview({ ...base, rootPath: target.rootPath, branch: target.branch })
-            const mergedSteps = [...(target.steps ?? []), ...((reviewed?.steps) ?? [])]
-            result = reviewed === null || reviewed === undefined
-              ? reviewed
-              : reviewed.ok === true
-                ? { ...reviewed, steps: mergedSteps, logPath: reviewed.logPath ?? target.logPath ?? null }
-                : {
-                    ...reviewed,
-                    details: {
-                      ...(reviewed.details ?? {}),
-                      steps: mergedSteps,
-                      logPath: reviewed.details?.logPath ?? target.logPath ?? null
-                    }
-                  }
+            setAi({
+              status: 'error',
+              mode: 'session',
+              result: null,
+              error: started.error,
+              code: started.code ?? null,
+              steps: started.details?.steps ?? target.steps,
+              logPath: started.details?.logPath ?? target.logPath,
+              phase: null
+            })
+            return
           } else {
-            if (typeof source.onAiReview !== 'function') return
             result = await source.onAiReview({ ...base })
           }
 
-          if (result !== null && result !== undefined && result.ok === true) {
+          if (result.ok === true) {
             setAi({
               status: 'done', mode, result, error: null,
-              steps: Array.isArray(result.steps) ? result.steps : [],
+              steps: result.steps ?? [],
               logPath: result.logPath ?? null,
               phase: null
             })
@@ -11560,12 +12632,10 @@ window.__ModuleLoader__.load({
             status: 'error',
             mode,
             result: null,
-            error: result === null || result === undefined ? '审阅失败' : result.error,
-            code: result === null || result === undefined ? null : (result.code ?? null),
-            steps: result !== null && result !== undefined && result.details !== null && result.details !== undefined
-              && Array.isArray(result.details.steps) ? result.details.steps : [],
-            logPath: result !== null && result !== undefined && result.details !== null && result.details !== undefined
-              ? result.details.logPath ?? null : null,
+            error: result.error,
+            code: result.code ?? null,
+            steps: result.details?.steps ?? [],
+            logPath: result.details?.logPath ?? null,
             phase: null
           })
         }
@@ -11576,13 +12646,13 @@ window.__ModuleLoader__.load({
          * 本地没有仓库时复用克隆确认框，克隆完继续处理同一条评论。
          */
         const runCommentAi = async (comment) => {
-          if (typeof source.onCommentSession !== 'function' || commentAi.busyId !== null) return
+          if (commentAi.busyId !== null) return
           setCommentAi({ busyId: comment.id ?? 0, error: null, notice: null })
           const result = await source.onCommentSession({
             accountId: selection.accountId,
             fullName: selection.fullName,
             number: pull.number,
-            rootPaths: Array.isArray(source.localRepoRoots) ? source.localRepoRoots : [],
+            rootPaths: source.localRepoRoots,
             comment: {
               id: comment.id,
               author: comment.author,
@@ -11590,7 +12660,7 @@ window.__ModuleLoader__.load({
               createdAt: comment.createdAt
             }
           })
-          if (result !== null && result !== undefined && result.ok === true && result.needsClone === true) {
+          if (result.ok === true && result.needsClone === true) {
             setCommentAi({ busyId: null, error: null, notice: null })
             setClonePrompt({
               repoUsed: result.repoUsed,
@@ -11604,19 +12674,19 @@ window.__ModuleLoader__.load({
             })
             return
           }
-          if (result !== null && result !== undefined && result.ok === true) {
+          if (result.ok === true) {
             setCommentAi({ busyId: null, error: null, notice: t('pull.commentAiStarted', { id: result.sessionId }) })
             return
           }
-          setCommentAi({ busyId: null, error: result === null || result === undefined ? '处理失败' : result.error, notice: null })
+          setCommentAi({ busyId: null, error: result.error, notice: null })
         }
 
         const startClone = async (target) => {
-          if (typeof source.onCloneForReview !== 'function' || clonePrompt === null) return
+          if (clonePrompt === null) return
           const targetDir = target === 'workspace'
-            ? String(source.projectRoot ?? '') + '/' + clonePrompt.suggestedName
+            ? (source.projectRoot === null ? '' : source.projectRoot + '/' + clonePrompt.suggestedName)
             : clonePrompt.customPath.trim()
-          if (targetDir === '' || targetDir === '/undefined') {
+          if (targetDir === '') {
             setClonePrompt((previous) => (previous === null ? previous : { ...previous, error: t('pull.aiCloneNoPath') }))
             return
           }
@@ -11627,10 +12697,8 @@ window.__ModuleLoader__.load({
             number: pull.number,
             targetDir
           })
-          if (result === null || result === undefined || result.ok !== true) {
-            setClonePrompt((previous) => (previous === null
-              ? previous
-              : { ...previous, busy: false, error: result === null || result === undefined ? '克隆失败' : result.error }))
+          if (result.ok !== true) {
+            setClonePrompt((previous) => (previous === null ? previous : { ...previous, busy: false, error: result.error }))
             return
           }
           if (clonePrompt.intent === 'comment' && clonePrompt.comment !== undefined) {
@@ -11645,19 +12713,19 @@ window.__ModuleLoader__.load({
               branch: result.branch,
               comment: { id: comment.id, author: comment.author, body: comment.body, createdAt: comment.createdAt }
             })
-            if (handled !== null && handled !== undefined && handled.ok === true) {
+            if (handled.ok === true) {
               setCommentAi({ busyId: null, error: null, notice: t('pull.commentAiStarted', { id: handled.sessionId }) })
             } else {
-              setCommentAi({ busyId: null, error: handled === null || handled === undefined ? '处理失败' : handled.error, notice: null })
+              setCommentAi({ busyId: null, error: handled.error, notice: null })
             }
             return
           }
-          await runAi('deep', { rootPath: result.rootPath, branch: result.branch })
+          await runAi('session', { rootPath: result.rootPath, branch: result.branch })
         }
 
         /** 关闭 / 重新打开。关闭需要二次确认；重新打开直接执行（无破坏性）。 */
         const changeState = async (nextState) => {
-          if (typeof source.onSetPullState !== 'function' || stateBusy) return
+          if (stateBusy) return
           setStateBusy(true)
           const result = await source.onSetPullState({
             accountId: selection.accountId,
@@ -11667,16 +12735,15 @@ window.__ModuleLoader__.load({
           })
           setStateBusy(false)
           setCloseConfirm(false)
-          if (result !== null && result !== undefined && result.ok === true) {
-            if (typeof source.onChanged === 'function') source.onChanged()
+          if (result.ok === true) {
             setNotice(t(nextState === 'closed' ? 'pull.closedNotice' : 'pull.reopenedNotice'))
             return
           }
-          setError(result === null || result === undefined ? '操作失败' : result.error)
+          setError({ text: result.error, code: result.code ?? null })
         }
 
         const submitComment = async () => {
-          if (typeof source.onComment !== 'function' || commentBusy) return
+          if (commentBusy) return
           setCommentBusy(true)
           setCommentNotice(null)
           const result = await source.onComment({
@@ -11686,13 +12753,13 @@ window.__ModuleLoader__.load({
             comment: commentDraft
           })
           setCommentBusy(false)
-          if (result !== null && result !== undefined && result.ok === true) {
+          if (result.ok === true) {
             // 发出去之后清空输入框：否则内容留在框里，用户会以为没发出去
             setCommentDraft('')
             setCommentNotice(result.message ?? t('pull.aiCommentDone'))
             return
           }
-          setCommentNotice(result === null || result === undefined ? '评论失败' : result.error)
+          setCommentNotice(result.error)
         }
 
         const submitReview = (verdict) => run('review', () => source.onReview({
@@ -11724,6 +12791,61 @@ window.__ModuleLoader__.load({
           deleteBranch
         }))
 
+        /* --------------------------- 变动文件 --------------------------- */
+        // 宿主在 pullDetail 里带回文件清单（不含 patch）：点开某一行时才去读那个文件的 diff。
+        const files = data.files
+        const filesUnavailable = data.filesUnavailable
+        // 数量以平台给的总数为准：文件列表可能读失败或被截断，此时列表条数不是真实改动数。
+        const filesCount = filesUnavailable !== null || data.filesTruncated === true ? statText(pull.changedFiles) : files.length
+        const filesSection =
+          h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'files' },
+            h('div', { className: 'dgp-detail-head' },
+              h('span', { className: 'dgp-detail-title' }, t('pull.filesTitle')),
+              h('span', { className: 'dgp-detail-count' }, t('pull.filesChanged', { count: filesCount }))),
+            filesUnavailable === null
+              ? null
+              : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'files-error' },
+                t('pull.filesUnavailable', { message: filesUnavailable })),
+            files.length === 0
+              ? (filesUnavailable === null
+                ? h('p', { className: 'dgp-detail-empty' }, t('pull.filesEmpty'))
+                : null)
+              : h('ul', { className: 'dgp-pull-files' },
+                files.map((file) => {
+                  const open = openFile === file.filename
+                  return h('li', {
+                    key: file.filename,
+                    className: 'dgp-pull-file',
+                    'data-dgp-file': file.filename,
+                    'data-open': open ? 'true' : undefined
+                  },
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-pull-file-row',
+                    'data-dgp-pull': 'file-row',
+                    'data-file': file.filename,
+                    'aria-expanded': open ? 'true' : 'false',
+                    onClick: () => toggleFile(file)
+                  },
+                  h(StatusLetter, { status: fileLetter(file.status) }),
+                  h('span', { className: 'dgp-pull-file-name dgp-oneline', title: file.filename }, file.filename),
+                  h('span', { className: 'dgp-pull-file-stat' },
+                    h('span', { className: 'dgp-add' }, '+' + String(file.additions)),
+                    h('span', { className: 'dgp-del' }, '−' + String(file.deletions))),
+                  h(Icon, { name: open ? 'chevron-down' : 'chevron-right', size: 12 })),
+                  open
+                    ? h('div', {
+                      className: 'dgp-pull-file-diff',
+                      'data-dgp-pull': 'file-diff',
+                      'data-file': file.filename
+                    }, renderFileDiff(file))
+                    : null)
+                })),
+            data.filesTruncated === true
+              ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'files-truncated' },
+                t('pull.filesTruncated', { count: files.length }))
+              : null)
+
         return h('div', { className: 'dgp-detail dgp-pull', 'data-dgp-pull': 'detail' },
           h('div', { className: 'dgp-detail-top' },
             h('div', { className: 'dgp-detail-name-row' },
@@ -11743,7 +12865,7 @@ window.__ModuleLoader__.load({
               'data-size': 'sm',
               'data-dgp-pull': 'open-web',
               onClick: () => {
-                if (typeof source.onOpenUrl === 'function') source.onOpenUrl(pull.htmlUrl)
+                source.onOpenUrl(pull.htmlUrl)
               }
             }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 })),
             pull.state === 'open'
@@ -11773,14 +12895,16 @@ window.__ModuleLoader__.load({
                   disabled: stateBusy,
                   onClick: () => setCloseConfirm(true)
                 }, t('pull.closeRun')))
-              : h('button', {
-                type: 'button',
-                className: 'dgp-btn',
-                'data-size': 'sm',
-                'data-dgp-pull': 'reopen-pull',
-                disabled: stateBusy,
-                onClick: () => changeState('open')
-              }, t('pull.reopenRun'))),
+              : (pull.merged === true
+                ? null
+                : h('button', {
+                  type: 'button',
+                  className: 'dgp-btn',
+                  'data-size': 'sm',
+                  'data-dgp-pull': 'reopen-pull',
+                  disabled: stateBusy,
+                  onClick: () => changeState('open')
+                }, t('pull.reopenRun')))),
 
           /* 门禁状态：审查与测试并排一行，状态一眼可见 */
           h('div', { className: 'dgp-gate', 'data-dgp-pull': 'gate' },
@@ -11792,7 +12916,7 @@ window.__ModuleLoader__.load({
               t('pull.gateMergeState'), '：', gate.mergeState)),
 
           h('div', { className: 'dgp-detail-meta' },
-            h('span', { 'data-dgp-pull-state': pull.state }, t('pull.state.' + pull.state === '' ? 'pull.state.unknown' : 'pull.state.' + pull.state)),
+            h('span', { 'data-dgp-pull-state': pull.state }, pullStateLabel(t, pull.state)),
             pull.merged === true ? h('span', null, t('pull.merged')) : null,
             h('span', null, pull.author),
             h('span', null, pull.headBranch + ' → ' + pull.baseBranch),
@@ -11809,6 +12933,8 @@ window.__ModuleLoader__.load({
           pull.body === ''
             ? null
             : h('pre', { className: 'dgp-pull-body', 'data-dgp-pull': 'body' }, pull.body),
+
+          filesSection,
 
           /* --------------------------- AI 审阅 --------------------------- */
           h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'ai' },
@@ -11833,11 +12959,11 @@ window.__ModuleLoader__.load({
                 'data-dgp-pull': 'ai-deep-run',
                 disabled: ai.status === 'loading' || busy !== null,
                 title: t('pull.aiDeepHint'),
-                onClick: () => runAi('deep')
-              }, t(ai.status === 'done' && ai.mode === 'deep' ? 'pull.aiDeepRerun' : 'pull.aiDeepRun'))),
+                onClick: () => runAi('session')
+              }, t('pull.aiDeepRun'))),
             ai.status === 'loading'
               ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' },
-                t(ai.mode !== 'deep' ? 'pull.aiRunning' : (ai.phase === 'prepare' ? 'pull.aiPreparing' : 'pull.aiReviewing')))
+                t(ai.mode !== 'session' ? 'pull.aiRunning' : (ai.phase === 'prepare' ? 'pull.aiPreparing' : 'pull.aiReviewing')))
               : null,
             clonePrompt === null ? null : h('div', { className: 'dgp-ai-clone', 'data-dgp-pull': 'clone-prompt' },
               h('p', { className: 'dgp-ai-summary' }, t('pull.aiCloneTitle', { repo: clonePrompt.repoUsed })),
@@ -11887,7 +13013,7 @@ window.__ModuleLoader__.load({
             ai.status === 'error'
               ? h('div', { className: 'dgp-ai-error' },
                 h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error),
-                ai.code === 'no-review-model' && typeof source.onOpenSettings === 'function'
+                ai.code === 'no-review-model'
                   ? h('button', {
                     type: 'button',
                     className: 'dgp-btn',
@@ -11901,37 +13027,13 @@ window.__ModuleLoader__.load({
             ai.status !== 'done' ? null
               : ai.mode === 'session'
                 ? h('div', { 'data-dgp-pull': 'ai-session' },
-                  h('p', { className: 'dgp-detail-notice' }, t('pull.sessionReviewStarted', { id: String(ai.result.sessionId ?? '') })))
+                  h('p', { className: 'dgp-detail-notice' }, t('pull.sessionReviewStarted', { id: ai.result.sessionId })))
                 : h('div', { 'data-dgp-pull': 'ai-result' },
-              ai.mode === 'deep'
-                ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-deep-info' },
-                  t('pull.aiDeepInfo', { count: ai.result.filesRead ?? 0 }),
-                  ' · ',
-                  ai.result.objectSource === 'local'
-                    ? t('pull.aiDeepLocal', { repo: String(ai.result.localRootUsed ?? '').split(/[\\/]/).pop() })
-                    : t('pull.aiDeepTemp'))
-                : null,
-              Array.isArray(ai.result.fullFilesSkipped) && ai.result.fullFilesSkipped.length > 0
-                ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-deep-skipped' },
-                  h('p', { className: 'dgp-detail-notice' },
-                    t('pull.aiDeepSkipped', { count: ai.result.fullFilesSkipped.length })),
-                  h('ul', { className: 'dgp-skipped-list' },
-                    ai.result.fullFilesSkipped.map((file, index) => h('li', {
-                      key: String(file.filename) + '#' + String(index),
-                      className: 'dgp-skipped-item'
-                    },
-                    h('span', { className: 'dgp-skipped-name dgp-oneline', title: file.filename }, file.filename),
-                    h('span', { className: 'dgp-skipped-size' }, file.reason)))))
-                : null,
               ai.result.truncated === true
                 ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))
                 : null,
               ai.result.filesTruncated === true
                 ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-files-truncated' }, t('pull.aiFilesTruncated'))
-                : null,
-              typeof ai.result.cleanupError === 'string' && ai.result.cleanupError !== ''
-                ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-cleanup-warn' },
-                  t('pull.aiCleanupWarn', { message: ai.result.cleanupError }))
                 : null,
               Array.isArray(ai.result.skippedFiles) && ai.result.skippedFiles.length > 0
                 ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-skipped' },
@@ -11985,17 +13087,21 @@ window.__ModuleLoader__.load({
               renderSteps(ai.steps, ai.logPath))),
 
           /* ------------------------------ 提交 ------------------------------ */
-          (data.commits ?? []).length === 0 && (data.commitsUnavailable === null || data.commitsUnavailable === undefined)
+          data.commits.length === 0 && data.commitsUnavailable === null
             ? null
             : h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'commits' },
               h('div', { className: 'dgp-detail-head' },
                 h('span', { className: 'dgp-detail-title' }, t('pull.commitsTitle')),
-                h('span', { className: 'dgp-detail-count' }, String((data.commits ?? []).length))),
-              data.commitsUnavailable === null || data.commitsUnavailable === undefined
+                h('span', { className: 'dgp-detail-count' }, data.commitsUnavailable === null ? statText(pull.commits) : '—')),
+              data.commitsUnavailable === null
                 ? null
                 : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'commits-error' }, data.commitsUnavailable),
+              data.commits.length < pull.commits
+                ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'commits-limited' },
+                  t('pull.commitsLimited', { shown: data.commits.length, total: pull.commits }))
+                : null,
               h('ul', { className: 'dgp-detail-list' },
-                (data.commits ?? []).map((commit) => h('li', {
+                data.commits.map((commit) => h('li', {
                   key: commit.sha,
                   className: 'dgp-detail-item',
                   'data-dgp-commit-row': commit.sha
@@ -12011,11 +13117,11 @@ window.__ModuleLoader__.load({
             h('div', { className: 'dgp-detail-head' },
               h('span', { className: 'dgp-detail-title' }, t('pull.commentsTitle')),
               h('span', { className: 'dgp-detail-count' },
-                Array.isArray(data.comments) ? data.comments.length : 0)),
-            data.commentsUnavailable === null || data.commentsUnavailable === undefined
+                data.commentsUnavailable === null ? data.comments.length : '—')),
+            data.commentsUnavailable === null
               ? null
               : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'comments-error' }, data.commentsUnavailable),
-            (data.comments ?? []).length === 0
+            data.comments.length === 0
               ? h('p', { className: 'dgp-detail-empty' }, t('pull.commentsEmpty'))
               : h('ul', { className: 'dgp-detail-list' },
                 data.comments.map((comment, index) => h('li', {
@@ -12027,17 +13133,15 @@ window.__ModuleLoader__.load({
                   h('span', { className: 'dgp-detail-meta' },
                     h('span', { className: 'dgp-detail-author' }, comment.author),
                     comment.createdAt === '' ? null : h('span', null, formatDateTime(Date.parse(comment.createdAt)))),
-                  typeof source.onCommentSession === 'function'
-                    ? h('button', {
-                      type: 'button',
-                      className: 'dgp-btn',
-                      'data-size': 'sm',
-                      'data-variant': 'ghost',
-                      'data-dgp-pull': 'comment-ai',
-                      disabled: commentAi.busyId !== null,
-                      onClick: () => runCommentAi(comment)
-                    }, t(commentAi.busyId === (comment.id ?? 0) ? 'pull.commentAiBusy' : 'pull.commentAi'))
-                    : null),
+                  h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-variant': 'ghost',
+                    'data-dgp-pull': 'comment-ai',
+                    disabled: commentAi.busyId !== null,
+                    onClick: () => runCommentAi(comment)
+                  }, t(commentAi.busyId === (comment.id ?? 0) ? 'pull.commentAiBusy' : 'pull.commentAi'))),
                 h('pre', { className: 'dgp-comment-body' }, comment.body)))),
             commentAi.notice === null
               ? null
@@ -12074,7 +13178,13 @@ window.__ModuleLoader__.load({
             h('div', { className: 'dgp-detail-head' },
               h('span', { className: 'dgp-detail-title' }, t('pull.review')),
               h('span', { className: 'dgp-detail-count' },
-                caps.reviews === true ? t('pull.reviewCount', { count: data.reviews.length }) : t('pull.reviewUnsupported'))),
+                caps.reviews !== true
+                  ? t('pull.reviewUnsupported')
+                  : (data.reviewsUnavailable === null ? t('pull.reviewCount', { count: data.reviews.length }) : '—'))),
+            data.reviewsUnavailable === null
+              ? null
+              : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'reviews-error' },
+                t('pull.reviewsUnavailable', { message: data.reviewsUnavailable })),
             data.reviews.length === 0
               ? null
               : h('ul', { className: 'dgp-detail-list' },
@@ -12136,7 +13246,10 @@ window.__ModuleLoader__.load({
                   className: 'dgp-select dgp-pull-method',
                   'data-dgp-pull': 'merge-method',
                   value: mergeMethod,
-                  onChange: (event) => setMergeMethod(event.target.value)
+                  onChange: (event) => {
+                    setMergeMethod(event.target.value)
+                    setMergeConfirm(false)
+                  }
                 },
                 caps.mergeMethods.map((method) => h('option', { key: method, value: method }, t('pull.method.' + method)))),
                 h('label', { className: 'dgp-pull-check' },
@@ -12144,252 +13257,147 @@ window.__ModuleLoader__.load({
                     type: 'checkbox',
                     'data-dgp-pull': 'delete-branch',
                     checked: deleteBranch,
-                    onChange: (event) => setDeleteBranch(event.target.checked)
+                    onChange: (event) => {
+                      setDeleteBranch(event.target.checked)
+                      setMergeConfirm(false)
+                    }
                   }),
                   t('pull.deleteBranch', { branch: pull.headBranch })),
-                h('button', {
-                  type: 'button',
-                  className: 'dgp-btn',
-                  'data-size': 'sm',
-                  'data-variant': 'primary',
-                  'data-dgp-pull': 'merge-run',
-                  disabled: busy !== null || mergeBlocked,
-                  onClick: submitMerge
-                }, t(busy === 'merge' ? 'pull.merging' : 'pull.mergeRun'))))
+                mergeConfirm
+                  ? h('span', { className: 'dgp-pull-confirm', 'data-dgp-pull': 'merge-confirm' },
+                    h('button', {
+                      type: 'button',
+                      className: 'dgp-btn',
+                      'data-size': 'sm',
+                      'data-variant': 'ghost',
+                      disabled: busy !== null,
+                      onClick: () => setMergeConfirm(false)
+                    }, t('action.cancel')),
+                    h('button', {
+                      type: 'button',
+                      className: 'dgp-btn',
+                      'data-size': 'sm',
+                      'data-variant': 'primary',
+                      'data-dgp-pull': 'merge-confirm-run',
+                      disabled: busy !== null || mergeBlocked,
+                      onClick: () => run('merge', () => source.onMerge({
+                        accountId: selection.accountId,
+                        fullName: selection.fullName,
+                        number: pull.number,
+                        method: mergeMethod,
+                        deleteBranch
+                      }))
+                    }, t(busy === 'merge' ? 'pull.merging' : 'pull.mergeConfirm')))
+                  : h('button', {
+                    type: 'button',
+                    className: 'dgp-btn',
+                    'data-size': 'sm',
+                    'data-variant': 'primary',
+                    'data-dgp-pull': 'merge-run',
+                    disabled: busy !== null || mergeBlocked,
+                    onClick: () => setMergeConfirm(true)
+                  }, t('pull.mergeRun'))))
             : null,
 
           busy === null ? null : h('p', { className: 'dgp-detail-meta' }, t('pull.working')),
           notice === null ? null : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'notice' }, notice),
-          error === null ? null : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'error' }, error))
+          error === null ? null : h('div', { className: 'dgp-pull-error', 'data-dgp-pull': 'error' },
+            h('p', { className: 'dgp-detail-failure' }, error.text),
+            // 冲突是「可以去网页上解决」的状态问题，不是一个死胡同：给一条直达 PR 的出口
+            error.code === 'pull-conflict'
+              ? h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'ghost',
+                'data-dgp-pull': 'conflict-open-web',
+                onClick: () => {
+                  source.onOpenUrl(pull.htmlUrl)
+                }
+              }, t('pull.conflictOpenWeb'), h(Icon, { name: 'external', size: 12 }))
+              : null))
       }
 
       Object.assign(exports, { PullDetail });
 
     });
-    __define("./store.js", (exports, module) => {
+    __define("./util/draft-cache.js", (exports, module) => {
       /**
-       * src/store.js —— 显示偏好 + 每个工作区记住的选中项 + 两个通用 hook
+       * src/util/draft-cache.js —— 编辑器草稿（内存，模块级）
        *
-       * 放两类「跨会话应该记住」的东西：
-       *   · 显示偏好（mode/diffView/leftWidth…）：全局一份，见 usePref；
-       *   · 每个工作区自己的选中项（目前是「远端」页签选中的账号）：按项目根分开记，
-       *     见 readRemoteAccount / saveRemoteAccount。
-       * status/diff 数据与文件/仓库选中项都是每次重新取的组件状态，不进这里。
+       * 编辑器草稿的生命周期必须比组件长：切到右侧栏别的页签、关掉面板再打开，
+       * 没保存的改动都应该还在。原先草稿只存在 Panel 组件的 state 里，一次 unmount
+       * 就静默丢光 —— 那是最不能接受的失败方式，所以它需要和 resource-cache（首屏快照）
+       * 一样，活在模块级。
        *
-       * 都存在 localStorage 里；读取时只做「结构校验 + 数值钳制」，
-       * 保证手改/旧版本残留的坏数据不会把面板布局搞坏。
+       * 三条硬约束（与 resource-cache 一致）：
+       *  1. 只在内存里，不落 localStorage：草稿是编辑现场，不是配置；
+       *  2. 键 = 仓库根 + 文件相对路径：同一个相对路径在不同项目/仓库里是不同文件；
+       *  3. 有上限（条数 + 总字符数）：淘汰最久没写过的，避免长会话里攒出几百 MB。
        */
-      const { useCallback, useEffect, useMemo, useRef, useState } = __m("./platform.js");
 
-      const MODE = { changes: 'changes', files: 'files', remote: 'remote' }
+      /** 最多保留多少个文件的草稿。 */
+      const MAX_ENTRIES = 60
+      /** 所有草稿正文加起来的字符上限（约 8MB，按 UTF-16 字符数算）。 */
+      const MAX_CHARS = 4_000_000
 
-      /** 三个页签的顺序（工具条与偏好校验共用）。 */
-      const MODES = [MODE.changes, MODE.files, MODE.remote]
+      /** key -> { rootPath, path, draft } */
+      const entries = new Map()
+      let totalChars = 0
 
-      const STORAGE_KEY = 'dsh-git-panel:prefs:v1'
-
-      const DEFAULTS = {
-        mode: MODE.changes,
-        diffView: 'unified',
-        wrap: false,
-        contextLines: 3,
-        ignoreWhitespace: false,
-        autoRefresh: true,
-        leftWidth: 264,
-        collapsedGroups: {},
-        /** 「储存库」区域的展开状态（只在有多个仓库时出现）。 */
-        repositoriesOpen: true,
-        /** 变更列表显示方式：list = 一行一个文件（文件名 + 弱化路径），tree = 按文件夹展开。 */
-        changesView: 'list',
-        /** 未跟踪文件：merge = 并进「未暂存」（VS Code 行为），separate = 单列「未跟踪」组。 */
-        untrackedMode: 'merge',
-        /** 创建 PR 时上次选的目标分支：{ '<provider>:<owner/repo>': 'dev' } */
-        pullTargets: {},
-        /** 已读评论水位：{ '<accountId>#<number>': 已读条数 } */
-        pullSeen: {}
+      function keyOf(rootPath, path) {
+        return rootPath + '\u0000' + path
       }
 
-      /** 未跟踪文件的两种呈现方式（设置页与分组逻辑共用）。 */
-      const UNTRACKED_MODES = ['merge', 'separate']
+      function charsOf(draft) {
+        return draft.text.length + draft.savedText.length
+      }
 
-      /** 变更列表的两种显示方式（设置页与 ⋯ 菜单共用）。 */
-      const CHANGES_VIEWS = ['list', 'tree']
-
-      const GROUPS = ['conflicted', 'staged', 'unstaged', 'untracked']
-
-      /** 把任意输入收敛成合法的偏好对象。 */
-      function sanitize(input) {
-        const out = { ...DEFAULTS }
-        if (MODES.includes(input.mode)) out.mode = input.mode
-        if (input.diffView === 'unified' || input.diffView === 'split') out.diffView = input.diffView
-        if (typeof input.wrap === 'boolean') out.wrap = input.wrap
-        if (typeof input.ignoreWhitespace === 'boolean') out.ignoreWhitespace = input.ignoreWhitespace
-        if (typeof input.autoRefresh === 'boolean') out.autoRefresh = input.autoRefresh
-        if (Number.isFinite(input.contextLines)) {
-          out.contextLines = Math.min(20, Math.max(0, Math.round(input.contextLines)))
-        }
-        if (Number.isFinite(input.leftWidth)) {
-          out.leftWidth = Math.min(720, Math.max(180, Math.round(input.leftWidth)))
-        }
-        if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
-        if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
-        if (UNTRACKED_MODES.includes(input.untrackedMode)) out.untrackedMode = input.untrackedMode
-        if (input.pullSeen !== null && typeof input.pullSeen === 'object' && !Array.isArray(input.pullSeen)) {
-          const seen = {}
-          for (const [key, value] of Object.entries(input.pullSeen)) {
-            if (typeof key === 'string' && key !== '' && Number.isInteger(value) && value >= 0) seen[key] = value
-          }
-          out.pullSeen = seen
-        }
-        if (input.pullTargets !== null && typeof input.pullTargets === 'object' && !Array.isArray(input.pullTargets)) {
-          const targets = {}
-          for (const [key, value] of Object.entries(input.pullTargets)) {
-            if (typeof key === 'string' && key !== '' && typeof value === 'string' && value !== '') targets[key] = value
-          }
-          out.pullTargets = targets
-        }
-        if (input.collapsedGroups && typeof input.collapsedGroups === 'object') {
-          const groups = {}
-          for (const key of GROUPS) if (input.collapsedGroups[key] === true) groups[key] = true
-          out.collapsedGroups = groups
+      /** 读某个仓库根下所有草稿：Map<相对路径, draft>。 */
+      function readDrafts(rootPath) {
+        const out = new Map()
+        for (const entry of entries.values()) {
+          if (entry.rootPath === rootPath) out.set(entry.path, entry.draft)
         }
         return out
       }
 
-      /** 读全部偏好（含默认值兜底由 loadPrefs 内部处理）。 */
-      function readPrefs() {
-        return loadPrefs()
-      }
-
-      /** 写一个偏好键（与已有值合并）。 */
-      function writePref(key, value) {
-        savePrefs({ [key]: value })
-      }
-
-      function loadPrefs() {
-        let raw = null
-        try {
-          raw = localStorage.getItem(STORAGE_KEY)
-        } catch {
-          return { ...DEFAULTS }
+      /** 写一个草稿（覆盖同名）。 */
+      function writeDraft(rootPath, path, draft) {
+        const key = keyOf(rootPath, path)
+        const existing = entries.get(key)
+        if (existing !== undefined) {
+          totalChars -= charsOf(existing.draft)
+          entries.delete(key)
         }
-        if (raw === null) return { ...DEFAULTS }
-        try {
-          return sanitize(JSON.parse(raw))
-        } catch {
-          return { ...DEFAULTS }
+        entries.set(key, { rootPath, path, draft })
+        totalChars += charsOf(draft)
+
+        while (entries.size > MAX_ENTRIES || totalChars > MAX_CHARS) {
+          const oldest = entries.keys().next()
+          if (oldest.done === true) break
+          const dropped = entries.get(oldest.value)
+          entries.delete(oldest.value)
+          totalChars -= charsOf(dropped.draft)
         }
       }
 
-      function savePrefs(patch) {
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...loadPrefs(), ...patch }))
-        } catch {
-          /* 隐私模式/配额满时静默：偏好存不下不影响当前会话 */
-        }
+      /** 丢掉一个草稿（重新加载 / 文件变成不可编辑 / 已保存并清理时）。 */
+      function dropDraft(rootPath, path) {
+        const key = keyOf(rootPath, path)
+        const existing = entries.get(key)
+        if (existing === undefined) return
+        entries.delete(key)
+        totalChars -= charsOf(existing.draft)
       }
 
-      /**
-       * 一个会持久化到 localStorage 的 state。
-       * @param {string} key DEFAULTS 的键
-       */
-      function usePref(key) {
-        const [value, setValue] = useState(() => loadPrefs()[key])
-        const set = useCallback((next) => {
-          setValue((prev) => {
-            const resolved = typeof next === 'function' ? next(prev) : next
-            savePrefs({ [key]: resolved })
-            return resolved
-          })
-        }, [key])
-        return [value, set]
+      /** 清空（测试用：保证每个用例从「没有草稿」开始）。 */
+      function clearDrafts() {
+        entries.clear()
+        totalChars = 0
       }
 
-      /* ==================== 每个工作区记住的远端账号 ==================== */
-
-      /**
-       * 「远端」页签选中的账号按工作区记：`{ "<projectRoot>": "<accountId>" }`。
-       *
-       * 为什么按工作区：账号列表是全局的（DSH 凭据服务里一份），但每个项目日常用的账号
-       * 往往不同（工作号 / 私人号 / 内网 Gitee）。只存组件状态的话，切到别的工作区再回来、
-       * 或者重新打开面板，都会退回账号列表的第一个 —— 每切一次就要重选一次。
-       *
-       * 工作区身份直接用宿主下发的 projectRoot：它已经是 `path.resolve` + 正斜杠的绝对路径，
-       * 同一工作区每次解析都是同一个值。客户端不再自己折叠大小写 / 斜杠 —— 那是宿主的事，
-       * 在这边猜反而会出现「同一目录两个键」。
-       *
-       * 只存账号 id（`provider:login`），不存任何令牌。localStorage 可能被手改 / 写坏，
-       * 读的时候只保留「非空字符串 → 非空字符串」的条目；坏数据当作没记过，不抛异常。
-       */
-      const REMOTE_ACCOUNTS_KEY = 'dsh-git-panel:remote-accounts:v1'
-
-      function readRemoteAccounts() {
-        let raw = null
-        try {
-          raw = localStorage.getItem(REMOTE_ACCOUNTS_KEY)
-        } catch {
-          return {}
-        }
-        if (raw === null) return {}
-        let parsed
-        try {
-          parsed = JSON.parse(raw)
-        } catch {
-          return {}
-        }
-        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-        const out = {}
-        for (const [workspace, accountId] of Object.entries(parsed)) {
-          if (typeof accountId !== 'string' || accountId === '') continue
-          out[workspace] = accountId
-        }
-        return out
-      }
-
-      /**
-       * 某个工作区上次在「远端」页签选中的账号 id。
-       * @param {string} projectRoot 宿主下发的项目根
-       * @returns {string|null} 没记过时返回 null
-       */
-      function readRemoteAccount(projectRoot) {
-        const accountId = readRemoteAccounts()[projectRoot]
-        return accountId === undefined ? null : accountId
-      }
-
-      /**
-       * 记住某个工作区在「远端」页签选中的账号。
-       * @param {string} projectRoot 宿主下发的项目根
-       * @param {string} accountId 账号 id（`provider:login`）
-       */
-      function saveRemoteAccount(projectRoot, accountId) {
-        const accounts = readRemoteAccounts()
-        accounts[projectRoot] = accountId
-        try {
-          localStorage.setItem(REMOTE_ACCOUNTS_KEY, JSON.stringify(accounts))
-        } catch {
-          /* 隐私模式/配额满：记不住不影响当前会话 */
-        }
-      }
-
-      /**
-       * 只保留最新一次异步结果的守护器。
-       *
-       * 返回对象必须**引用稳定**：调用方普遍写成
-       *   const refresh = useCallback(..., [guard]);  useEffect(..., [refresh])
-       * 每次返回新对象会让 refresh 每次渲染都变，effect 就会每渲染重跑 ——
-       * 那会变成「取数 → 渲染 → 再取数」的死循环。
-       */
-      function useLatestGuard() {
-        const seqRef = useRef(0)
-        const begin = useCallback(() => {
-          seqRef.current += 1
-          return seqRef.current
-        }, [])
-        const isLatest = useCallback((token) => token === seqRef.current, [])
-        return useMemo(() => ({ begin, isLatest }), [begin, isLatest])
-      }
-
-      Object.assign(exports, { MODE, MODES, UNTRACKED_MODES, readPrefs, writePref, usePref, readRemoteAccount, saveRemoteAccount, useLatestGuard });
+      Object.assign(exports, { readDrafts, writeDraft, dropDraft, clearDrafts });
 
     });
     __define("./util/remote.js", (exports, module) => {
@@ -12453,27 +13461,31 @@ window.__ModuleLoader__.load({
       /**
        * src/components/HeaderAction.js —— 会话标题栏最右侧的「Git 变更」按钮
        *
-       * 挂在 `conversation.session.header.actions` 槽（session 作用域，官方 jobs 插件同款位置）。
+       * 挂在 `conversation.session.header.utilities` 槽（session 作用域，整行最右侧区域）。
        * 点一下 = 打开当前会话右侧栏的「Git 变更」页签：
        *   sidebarRight.openTabIn(sessionId, 'git')
        * 布局 store 的 openContent 会先执行 planSetExpanded(true)，所以侧栏收起时也会自动展开。
        *
        * 这个按钮的意义：右侧栏可能被收起，光靠「+」菜单里的入口会找不到，标题栏按钮常驻可见。
+       * 失败（没有已挂载会话）与左侧栏「代码坞」共用 `../ui/useOpenPanel.js` 的表现。
        */
       const { h } = __m("./platform.js");
+      const { useOpenPanel } = __m("./ui/useOpenPanel.js");
 
       /** 与 tab 类型一致的 kind（右侧栏按 kind 找到 tab 定义）。 */
       const TAB_KIND = 'git'
 
       function GitHeaderAction(props) {
         const { sessionId, t, openPanel } = props
+        const { failed, activate } = useOpenPanel(() => openPanel(sessionId))
         return h('button', {
           type: 'button',
           className: 'dgp-headerbtn',
-          title: t('header.title'),
-          'aria-label': t('header.title'),
+          title: failed ? t('entry.failed') : t('header.title'),
+          'aria-label': failed ? t('entry.failed') : t('header.title'),
           'data-dgp-header': TAB_KIND,
-          onClick: () => openPanel(sessionId)
+          'data-failed': failed ? 'true' : undefined,
+          onClick: activate
         },
         h('svg', {
           width: 14,
@@ -12494,7 +13506,47 @@ window.__ModuleLoader__.load({
         h('span', { className: 'dgp-headerbtn-label' }, t('header.label')))
       }
 
-      Object.assign(exports, { TAB_KIND, GitHeaderAction });
+      Object.assign(exports, { GitHeaderAction });
+
+    });
+    __define("./ui/useOpenPanel.js", (exports, module) => {
+      /**
+       * src/ui/useOpenPanel.js —— 「打开 Git 页签」按钮的共用行为
+       *
+       * 会话标题栏与左侧栏底部是两个入口，但宿主行为是同一个：
+       * `openTab` 在没有已挂载会话时会**同步抛错**。原先底部入口自己 catch 并显示红点，
+       * 标题栏入口完全不 catch（只在控制台报错），同一个失败有两种表现；而且红点
+       * 只在「下次点击成功」时才消失，可能一直挂着。
+       *
+       * 这里统一成：点击失败 → 标记失败（红点 + 提示文案）→ 5 秒后自动复位。
+       * 不需要兼容分支：宿主抛错就是唯一事实。
+       */
+      const { useCallback, useEffect, useState } = __m("./platform.js");
+
+      /** @param {() => void} openPanel */
+      function useOpenPanel(openPanel) {
+        const [failed, setFailed] = useState(false)
+
+        const activate = useCallback(() => {
+          try {
+            openPanel()
+            if (failed === true) setFailed(false)
+          } catch (error) {
+            setFailed(true)
+            console.error('[dsh-git-panel] 打开 Git 页签失败: ' + error.message)
+          }
+        }, [openPanel, failed])
+
+        useEffect(() => {
+          if (failed !== true) return undefined
+          const timer = setTimeout(() => setFailed(false), 5000)
+          return () => clearTimeout(timer)
+        }, [failed])
+
+        return { failed, activate }
+      }
+
+      Object.assign(exports, { useOpenPanel });
 
     });
     __define("./components/SidebarGitEntry.js", (exports, module) => {
@@ -12506,10 +13558,11 @@ window.__ModuleLoader__.load({
        *   ctx.sidebarRight.openTab('git')
        * 这里不传 sessionId：openTab 自己解析当前挂载的会话面（require()）。
        *
-       * 没有会话面时 openTab 会抛错 —— 那种情况下按钮自己标红并给出原因，
-       * 不静默、也不假装打开成功。
+       * 没有会话面时 openTab 会抛错 —— 与标题栏入口共用 `../ui/useOpenPanel.js`：
+       * 失败时按钮标红并给出原因，5 秒后自动复位，不静默、也不假装打开成功。
        */
-      const { h, useState } = __m("./platform.js");
+      const { h } = __m("./platform.js");
+      const { useOpenPanel } = __m("./ui/useOpenPanel.js");
 
       const TAB_KIND = 'git'
 
@@ -12548,41 +13601,26 @@ window.__ModuleLoader__.load({
 
       function SidebarGitEntry(props) {
         const { wide, t, openPanel } = props
-        const [failed, setFailed] = useState(false)
-
-        const activate = () => {
-          try {
-            openPanel()
-            setFailed(false)
-          } catch (error) {
-            setFailed(true)
-            console.error('[dsh-git-panel] 打开代码坞失败: ' + (error && error.message ? error.message : String(error)))
-          }
-        }
+        const { failed, activate } = useOpenPanel(openPanel)
 
         return h('button', {
           type: 'button',
           className: 'dgp-dockbtn',
           'data-dgp-dock': TAB_KIND,
-          'data-wide': wide ? 'true' : undefined,
+          'data-wide': wide ? 'true' : 'false',
           'data-failed': failed ? 'true' : undefined,
           title: failed ? t('entry.failed') : t('entry.hint'),
-          'aria-label': t('entry.title'),
+          'aria-label': failed ? t('entry.failed') : t('entry.title'),
           onClick: activate
         },
-        h(IconSlot, null),
+        h(ColorfulGitDock, null),
         wide ? h('span', { className: 'dgp-dockbtn-label' }, t('entry.title')) : null,
         failed
           ? h('span', { className: 'dgp-dockbtn-failed', 'aria-hidden': 'true' })
           : null)
       }
 
-      /** 单独包一层，方便测试按组件名找到图标（也避免把 svg 直接塞进按钮属性里）。 */
-      function IconSlot() {
-        return ColorfulGitDock()
-      }
-
-      Object.assign(exports, { TAB_KIND, SidebarGitEntry });
+      Object.assign(exports, { SidebarGitEntry });
 
     });
     var api = __m("./index.js");

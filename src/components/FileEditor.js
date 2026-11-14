@@ -24,7 +24,7 @@ const MAX_GUTTER_LINES = 5000
 const INDENT = '  '
 
 function isBlank(value) {
-  return value === undefined || value === null || value === ''
+  return value === null || value === ''
 }
 
 /** 逻辑行数（结尾换行不算多一行）。 */
@@ -35,7 +35,7 @@ function countLines(text) {
 }
 
 function formatSize(size) {
-  if (typeof size !== 'number' || !Number.isFinite(size) || size <= 0) return ''
+  if (size <= 0) return ''
   if (size < 1024) return size + ' B'
   if (size < 1024 * 1024) return (size / 1024).toFixed(size < 10 * 1024 ? 1 : 0) + ' KB'
   return (size / (1024 * 1024)).toFixed(1) + ' MB'
@@ -99,23 +99,21 @@ function placeholderFor(record, kind, sizeText, relPath, onRetry, t) {
     return h(EmptyState, {
       icon: 'file',
       title: t(kind === 'binary' ? 'viewer.binary' : 'viewer.oversized'),
-      description: isBlank(sizeText) ? undefined : sizeText,
-      t
+      description: isBlank(sizeText) ? undefined : sizeText
     })
   }
   if (kind === 'directory') {
-    return h(EmptyState, { icon: 'folder', title: t('viewer.directory'), t })
+    return h(EmptyState, { icon: 'folder', title: t('viewer.directory') })
   }
   if (kind === 'missing') {
     return h(EmptyState, {
       icon: 'warning',
       title: t('viewer.missing'),
       description: isBlank(relPath) ? undefined : relPath,
-      actions: retryAction(t, onRetry),
-      t
+      actions: retryAction(t, onRetry)
     })
   }
-  const message = record !== null && typeof record.message === 'string' && record.message !== ''
+  const message = record.message !== undefined && record.message !== ''
     ? record.message
     : t('viewer.placeholder')
   if (kind === 'error') return h(ErrorState, { message, onRetry, t })
@@ -123,8 +121,7 @@ function placeholderFor(record, kind, sizeText, relPath, onRetry, t) {
     icon: 'info',
     title: message,
     description: isBlank(sizeText) ? undefined : sizeText,
-    actions: retryAction(t, onRetry),
-    t
+    actions: retryAction(t, onRetry)
   })
 }
 
@@ -152,13 +149,10 @@ export function FileEditor(props) {
   const gutterRef = useRef(null)
 
   // 编辑器显示的内容：优先用草稿（props.text），没有草稿才退回磁盘内容
-  const providedText = props.text
-  const text = typeof providedText === 'string'
-    ? providedText
-    : (record !== null && typeof record.text === 'string' ? record.text : null)
-  const kind = record === null ? null : (typeof record.kind === 'string' ? record.kind : 'text')
-  const name = relPath !== '' && relPath !== undefined ? basename(relPath) : ''
-  const parent = relPath !== '' && relPath !== undefined ? dirname(relPath) : ''
+  const text = props.text !== null ? props.text : (record === null ? null : record.text ?? null)
+  const kind = record === null ? null : record.kind
+  const name = basename(relPath)
+  const parent = dirname(relPath)
   const sizeText = formatSize(record === null ? 0 : record.size)
   const lineCount = useMemo(() => (text === null ? 0 : countLines(text)), [text])
   const showGutter = wrap !== true && text !== null && lineCount <= MAX_GUTTER_LINES
@@ -169,10 +163,10 @@ export function FileEditor(props) {
     return numbers
   }, [showGutter, lineCount])
 
-  const editable = text !== null && Boolean(loading) !== true && isBlank(error)
+  const editable = text !== null && loading !== true && error === null
 
   const subParts = []
-  if (text !== null && record !== null && typeof record.language === 'string' && record.language !== 'text') {
+  if (text !== null && record !== null && record.language !== undefined && record.language !== 'text') {
     subParts.push(record.language)
   }
   if (text !== null) subParts.push(t('viewer.lines', { count: lineCount }))
@@ -199,7 +193,7 @@ export function FileEditor(props) {
       onClick: onSave
     }, t('editor.save')))
 
-  const conflictBar = conflict === null || conflict === undefined
+  const conflictBar = conflict === null
     ? null
     : h('div', { className: 'dgp-errorbar', 'data-conflict': 'true' },
       h(InlineNote, { tone: 'warn' }, t('editor.conflict')),
@@ -219,7 +213,7 @@ export function FileEditor(props) {
         onClick: onOverwrite
       }, t('editor.overwrite')))
 
-  const saveErrorBar = isBlank(saveError)
+  const saveErrorBar = saveError === null
     ? null
     : h('div', { className: 'dgp-errorbar' },
       h(InlineNote, { tone: 'error' }, String(saveError)),
@@ -231,10 +225,10 @@ export function FileEditor(props) {
       }, t('action.retry')))
 
   let body = null
-  if (Boolean(loading)) {
+  if (loading) {
     body = h(LoadingState, { label: t('status.loading'), t })
-  } else if (!isBlank(error)) {
-    body = h(ErrorState, { message: String(error), onRetry, t })
+  } else if (error !== null) {
+    body = h(ErrorState, { message: error, onRetry, t })
   } else if (record === null) {
     body = h(EmptyState, {
       icon: 'file',

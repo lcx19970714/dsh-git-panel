@@ -41,7 +41,12 @@ const MESSAGE_KEYS = {
   'unmerged': 'commit.unmerged',
   'no-llm': 'settings.noLlm',
   'unknown-model': 'settings.unknownModel',
-  'model-failed': 'commit.generateFailed'
+  // 模型失败的原因由宿主翻成人话（余额不足 / 密钥 / 限流 / 断网…），
+  // 这里只加一句上下文；不用提交说明专用的文案，因为同一个码也会出现在 AI 审阅与 PR 文案里。
+  'model-failed': 'error.modelFailed',
+  'model-truncated': 'error.modelFailed',
+  // PR 有冲突不是「鉴权失败」：Gitee 用 403 表达冲突，宿主已按响应体区分成 pull-conflict
+  'pull-conflict': 'pull.conflict'
 }
 
 /**
@@ -77,6 +82,11 @@ export async function call(endpoint, payload, options) {
 
   if (envelope.ok === true) return envelope.value
   throw new RpcError(envelope.error.code, envelope.error.message, envelope.error.details)
+}
+
+/** 给单个端点一个更长的超时；调用方显式传了 timeoutMs 就以它为准。 */
+function withTimeout(options, timeoutMs) {
+  return { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? timeoutMs }
 }
 
 /* ============================ 具体端点 ============================ */
@@ -159,9 +169,10 @@ export function remotePullCounts(payload, options) {
   return call('remote/pr-counts', payload, options)
 }
 
-/** 一个 PR 的详情（含平台能力与审查记录）。 */
+/** 一个 PR 的详情（含平台能力与审查记录；也带回变动文件清单，最多 300 个）。 */
 export function remotePull(payload, options) {
-  return call('remote/pull', payload, options)
+  // 详情现在会顺带读文件清单（最多 6 页）：默认 20s 对慢网络不够
+  return call('remote/pull', payload, withTimeout(options, 60_000))
 }
 
 /** 提交审查结论。 */
@@ -174,35 +185,30 @@ export function remotePullTest(payload, options) {
   return call('remote/pull/test', payload, options)
 }
 
-/** PR 的文件与 patch（AI 审阅的输入）。 */
-export function remotePullDiff(payload, options) {
-  return call('remote/pull/diff', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 60_000 })
+/** PR 里单个文件的 diff（点开文件行时按需读；返回已解析的 hunk）。 */
+export function remotePullFile(payload, options) {
+  return call('remote/pull/file', payload, withTimeout(options, 60_000))
 }
 
 /** 调审阅模型给出结构化结论。 */
 export function remotePullAiReview(payload, options) {
   // 模型调用本身就慢：默认 20s 会让客户端先超时，而宿主还在跑
-  return call('remote/pull/ai-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 240_000 })
+  return call('remote/pull/ai-review', payload, withTimeout(options, 240_000))
 }
 
 /** 深度审阅：宿主拉取 PR head 到临时 worktree，读完整文件后再让模型审。 */
 export function remotePullPrepareReview(payload, options) {
   // 阶段一：找仓库 / 判断是否已在 PR 提交 / 切分支（必要时才 fetch）
-  return call('remote/pull/prepare-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
+  return call('remote/pull/prepare-review', payload, withTimeout(options, 600_000))
 }
 
 export function remotePullSessionReview(payload, options) {
-  return call('remote/pull/session-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 600_000 })
-}
-
-export function remotePullDeepReview(payload, options) {
-  // 阶段二：只读完整文件 + 调模型
-  return call('remote/pull/deep-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
+  return call('remote/pull/session-review', payload, withTimeout(options, 600_000))
 }
 
 /** 把 PR 克隆到指定目录（深度审阅前的准备步骤）。 */
 export function remotePullCloneForReview(payload, options) {
-  return call('remote/pull/clone-for-review', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 900_000 })
+  return call('remote/pull/clone-for-review', payload, withTimeout(options, 900_000))
 }
 
 /** 关闭 / 重新打开 PR（state: 'open' | 'closed'）。 */
@@ -238,6 +244,15 @@ export function hideRoot(payload, options) {
 /** 取消隐藏。 */
 export function unhideRoot(payload, options) {
   return call('roots/unhide', payload, options)
+}
+
+/**
+ * 「储存库」行的改动规模：每个仓库的改动文件数与增删行数。
+ *
+ * 一次请求查完所有仓库（宿主内部限并发，并能命中 status 缓存）；单个仓库失败只影响它自己那一行。
+ */
+export function rootStats(payload, options) {
+  return call('roots/stats', payload, withTimeout(options, 60_000))
 }
 
 /** 列出本地分支 + 分支菜单需要的仓库现状（`state`：HEAD / 进行中操作 / 脏计数）。 */
@@ -291,7 +306,15 @@ export function createBranch(payload, options) {
  * （`not-fast-forward`）都带可操作原因，界面直接显示宿主原文。
  */
 export function pushBranch(payload, options) {
-  return call('branch/push', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
+  return call('branch/push', payload, withTimeout(options, 300_000))
+}
+
+/**
+ * 收尾「远端分支已被删除」的本地分支：`fetch --prune` → 切回默认分支 → 快进 → 删本地分支。
+ * 是一串网络 + 本地写操作，超时给足；失败时会把已完成的步骤一起返回，界面如实显示。
+ */
+export function cleanupBranch(payload, options) {
+  return call('branch/cleanup', payload, withTimeout(options, 300_000))
 }
 
 /** 提交：有暂存只提交暂存，没有则先全部暂存。 */
@@ -301,7 +324,7 @@ export function commitChanges(payload, options) {
 
 /** 按设置里的模型生成提交说明。 */
 export function commitMessage(payload, options) {
-  return call('commit/message', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 70_000 })
+  return call('commit/message', payload, withTimeout(options, 130_000))
 }
 
 /** 创建 PR 前的准备信息（仓库 / 账号 / 源分支 / 目标分支候选 / 是否已推送）。 */
@@ -311,7 +334,7 @@ export function prPrepare(payload, options) {
 
 /** 拉取当前分支最新代码（fetch + 只允许快进）。 */
 export function pullBranch(payload, options) {
-  return call('branch/pull', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 300_000 })
+  return call('branch/pull', payload, withTimeout(options, 300_000))
 }
 
 /** 当前安装的插件版本（本地读，不联网）。 */
@@ -321,7 +344,7 @@ export function pluginInfo(payload, options) {
 
 /** 检查插件是否有新版本（GitHub 最新 release）。 */
 export function pluginUpdate(payload, options) {
-  return call('plugin/update', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 30_000 })
+  return call('plugin/update', payload, withTimeout(options, 30_000))
 }
 
 /** 当前分支关联的 PR 摘要（没有关联 PR 时 linked:false + reason）。 */
@@ -331,12 +354,12 @@ export function prLinked(payload, options) {
 
 /** 用模型生成 PR 标题与描述。 */
 export function prGenerate(payload, options) {
-  return call('pr/generate', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 120_000 })
+  return call('pr/generate', payload, withTimeout(options, 120_000))
 }
 
 /** 创建 PR。 */
 export function prCreate(payload, options) {
-  return call('pr/create', payload, { ...(options ?? {}), timeoutMs: options?.timeoutMs ?? 120_000 })
+  return call('pr/create', payload, withTimeout(options, 120_000))
 }
 
 /** 模型目录（来自 profile 的 llm-pi-ai 配置）。 */

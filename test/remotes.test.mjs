@@ -434,6 +434,29 @@ await test('仓库详情：某一块失败只标记那一块，其余照常返�
   assert.equal(detail.failures[0].section, 'pulls')
 })
 
+await test('Gitee 的网络错误不会把 access_token 抄进提示', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    // 底层的错误信息里故意带上完整 URL（真实环境里 DNS/代理错误就这么写）
+    [/gitee\.com\/api\/v5\/user\/repos/, (url) => {
+      throw new Error('connect ECONNREFUSED ' + url)
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 'gitee_secret_tok' })
+
+  await assert.rejects(
+    () => remotes.listRepos({ accountId: 'gitee:bob', page: 1 }),
+    (error) => {
+      assert.equal(error.code, 'remote-api-failed')
+      assert.ok(!error.message.includes('gitee_secret_tok'), '令牌不能出现在提示里：' + error.message)
+      assert.match(error.message, /access_token=\*\*\*/, '令牌位置要打码：' + error.message)
+      return true
+    }
+  )
+})
+
 await test('PR 详情：返回基础信息、审查记录与平台能力', async () => {
   const credentials = fakeCredentials()
   const fetchImpl = fakeFetch([
@@ -908,6 +931,75 @@ await test('PR 文件 diff：平台没给 patch 的文件标 patchAvailable=fals
   assert.equal(diff.files[1].changes, 1300, '改动行数要保留，界面要显示它有多大')
 })
 
+await test('PR 详情可带文件清单（不含 patch），单文件 diff 按需解析', async () => {
+  const credentials = fakeCredentials()
+  const files = [
+    {
+      filename: 'src/app.js',
+      status: 'modified',
+      additions: 3,
+      deletions: 1,
+      changes: 4,
+      patch: '@@ -1,2 +1,3 @@\n const a = 1\n-const b = 2\n+const b = 3\n+const c = 4'
+    },
+    { filename: 'assets/logo.png', status: 'added', additions: 0, deletions: 0, changes: 0 }
+  ]
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/pulls\/7\/reviews$/, { json: [] }],
+    [/\/pulls\/7\/files\?per_page=50&page=1$/, { json: files }],
+    [/\/pulls\/7$/, {
+      json: { number: 7, title: 'T', state: 'open', base: { ref: 'main' }, head: { ref: 'feat' } }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+  const base = { accountId: 'github:alice', fullName: 'alice/app', number: 7 }
+
+  const detail = await remotes.pullDetail(base, { withFiles: true })
+  assert.equal(detail.files.length, 2, '详情要列出 PR 的变动文件')
+  assert.equal(detail.files[0].filename, 'src/app.js')
+  assert.equal(detail.files[0].patchAvailable, true)
+  assert.equal('patch' in detail.files[0], false, '详情里的文件清单不能带 patch（可能几百个文件）')
+  assert.equal(detail.filesTruncated, false)
+  assert.equal(detail.filesUnavailable, null)
+
+  const text = await remotes.pullFile({ ...base, filename: 'src/app.js' })
+  assert.equal(text.diff.kind, 'text')
+  assert.equal(text.diff.hunks.length, 1, 'patch 要解析成 hunk 给 DiffView')
+  assert.equal(text.diff.stats.adds, 2)
+  assert.equal(text.diff.stats.dels, 1)
+  assert.equal(text.diff.hunks[0].lines[1].kind, 'del')
+  assert.equal(text.file.filename, 'src/app.js')
+  assert.equal('patch' in text.file, false)
+
+  const binary = await remotes.pullFile({ ...base, filename: 'assets/logo.png' })
+  assert.equal(binary.diff.kind, 'oversized', '没有 patch 的文件明确说明读不到')
+  assert.match(binary.diff.message, /二进制|过大/)
+
+  await assert.rejects(
+    () => remotes.pullFile({ ...base, filename: 'src/missing.js' }),
+    (error) => error.code === 'not-found'
+  )
+
+  // 文件列表读失败不拖垮详情，但要明确标记原因
+  const failing = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/pulls\/7\/reviews$/, { json: [] }],
+    [/\/pulls\/7\/files\?per_page=50&page=1$/, { status: 500, json: {} }],
+    [/\/pulls\/7$/, {
+      json: { number: 7, title: 'T', state: 'open', base: { ref: 'main' }, head: { ref: 'feat' } }
+    }]
+  ])
+  const remotes2 = createRemotes({ credentials: fakeCredentials(), fetchImpl: failing })
+  await remotes2.addAccount({ provider: 'github', token: 't' })
+  const partial = await remotes2.pullDetail(base, { withFiles: true })
+  assert.equal(partial.pull.title, 'T', '文件列表失败不影响 PR 详情本身')
+  assert.equal(partial.files.length, 0)
+  assert.ok(typeof partial.filesUnavailable === 'string' && partial.filesUnavailable !== '',
+    '文件列表读失败要明确标记')
+})
+
 await test('仓库详情的 PR 列表：created_at 与 updated_at 都要归一化（前者是提交时间，后者是最后动静）', async () => {
   const credentials = fakeCredentials()
   const fetchImpl = fakeFetch([
@@ -1045,6 +1137,54 @@ await test('一键通过：GitHub 只做审查，Gitee 审查 + 测试都做', a
   const gitee = await remotes.passPull({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 14 })
   assert.deepEqual(gitee.completed, ['review', 'test'], 'Gitee 两个都做')
   assert.deepEqual(gitee.failures, [])
+})
+
+await test('PR 有冲突：Gitee 的 403「存在冲突」是业务拒绝，不能说成令牌失效', async () => {
+  const credentials = fakeCredentials()
+  const conflict = { message: '此 Pull Request 存在冲突，请先解决冲突再继续操作' }
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/pulls\/21\/review\?/, { status: 403, json: conflict }],
+    [/\/pulls\/21\/test\?/, { status: 403, json: conflict }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+
+  await assert.rejects(
+    () => remotes.passPull({ accountId: 'gitee:bob', fullName: 'bob/tool', number: 21 }),
+    (error) => {
+      assert.equal(error.code, 'pull-conflict', '冲突要有自己的错误码')
+      assert.match(error.message, /冲突/, error.message)
+      assert.match(error.message, /解决冲突后再试/, '要给出下一步：' + error.message)
+      assert.match(error.message, /平台原文：此 Pull Request 存在冲突/, '平台原文要留着：' + error.message)
+      assert.ok(!/令牌/.test(error.message), '不能把冲突说成令牌问题：' + error.message)
+      assert.ok(!error.message.includes('{"message"'), '不要直接甩 JSON：' + error.message)
+      return true
+    }
+  )
+  // 冲突是状态问题：第二步必然同样失败，不再打一次
+  const pullCalls = fetchImpl.calls.filter((call) => call.url.includes('/pulls/21/'))
+  assert.equal(pullCalls.length, 1, '冲突之后就停，不再请求 test：' + pullCalls.map((call) => call.url).join(' '))
+})
+
+await test('PR 有冲突：合并接口的 405「not mergeable」同样翻成冲突提示', async () => {
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/api\.github\.com\/user$/, { json: { login: 'alice' } }],
+    [/\/pulls\/22\/merge$/, { status: 405, json: { message: 'Pull Request is not mergeable' } }],
+    [/\/pulls\/22$/, {
+      json: { number: 22, title: 'T', state: 'open', merged: false, mergeable: true, base: { ref: 'main' }, head: { ref: 'feat' } }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'github', token: 't' })
+
+  await assert.rejects(
+    () => remotes.mergePull({ accountId: 'github:alice', fullName: 'alice/app', number: 22, method: 'merge' }),
+    (error) => error.code === 'pull-conflict'
+      && /冲突/.test(error.message)
+      && /not mergeable/.test(error.message)
+  )
 })
 
 await test('一键通过：测试步骤失败时，审查成功照实返回并列出失败步骤', async () => {

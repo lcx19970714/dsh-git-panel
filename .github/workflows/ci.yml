@@ -37,7 +37,7 @@ jobs:
           node build/build-client.mjs
           git diff --exit-code -- client.js
 
-      - name: 运行全部测试（10 套）
+      - name: 运行全部测试（13 套）
         run: node test/run.mjs
 
       # 死代码体检：不可达文件、导出没人 import、样式类没人用

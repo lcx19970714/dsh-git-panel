@@ -13,6 +13,7 @@
  * max-tokens 是**明确可识别的失败**（model-truncated），不是待解析的内容问题。
  */
 import { GitError } from './git.js'
+import { describeModelFailure } from './model-errors.js'
 
 /** 失败原因里保留的模型文本：够看清在哪断的，又不会把信封撑爆。 */
 const PREVIEW_TAIL = 160
@@ -47,7 +48,9 @@ export function modelOutputPreview(text) {
  *   maxTokens: number,
  *   timeoutMs: number,
  *   signal?: AbortSignal,
- *   lowestEffort?: boolean
+ *   lowestEffort?: boolean,
+ *   thinking?: boolean,
+ *   reasoningEffort?: string|null
  * }} args lowestEffort=true 时把推理档位压到该模型的最低档（把预算留给正文）
  * @returns {Promise<{text: string, finish: 'stop'|'tool-calls'}>}
  */
@@ -78,6 +81,20 @@ export async function callModel(args) {
       { provider: pair.provider, model: pair.model, maxTokens },
       controller.signal,
       (controls, info) => {
+        if (typeof args.thinking === 'boolean') {
+          const efforts = info?.reasoning?.efforts ?? []
+          const enabled = efforts.filter((effort) => effort.id !== 'off')
+          const off = efforts.find((effort) => effort.id === 'off')
+          if (args.thinking === false) {
+            if (off !== undefined) return { ...controls, reasoningEffort: off.id }
+            if (enabled.length > 0) throw new GitError('bad-request', '模型 ' + target + ' 无法关闭思考，请启用思考或选择支持关闭思考的模型')
+            return controls
+          }
+          if (enabled.length === 0) throw new GitError('bad-request', '模型 ' + target + ' 没有可用的思考档位')
+          const effort = args.reasoningEffort ?? enabled.find((effort) => effort.id === info.reasoning.defaultEffort)?.id ?? enabled[0].id
+          if (!enabled.some((item) => item.id === effort)) throw new GitError('bad-request', '模型 ' + target + ' 不支持思考档位 ' + effort)
+          return { ...controls, reasoningEffort: effort }
+        }
         if (lowestEffort !== true) return controls
         const effort = info?.reasoning?.efforts?.[0]?.id
         return effort === undefined ? controls : { ...controls, reasoningEffort: effort }
@@ -111,14 +128,15 @@ export async function callModel(args) {
     }
     if (signal !== undefined && signal.aborted === true) throw new GitError('aborted', '操作已取消')
     if (error instanceof GitError) throw error
-    throw new GitError('model-failed', '模型调用失败（' + target + '）：' + messageOf(error))
+    // provider 直接抛出来的异常（断网、密钥、配额）走同一套翻译，别把 raw 堆栈甩给用户
+    throw new GitError('model-failed', describeModelFailure(messageOf(error), target))
   } finally {
     clearTimeout(timer)
     if (signal !== undefined) signal.removeEventListener('abort', forward)
   }
 
   if (failure !== null) {
-    throw new GitError('model-failed', '模型返回了错误（' + target + '）：' + failure)
+    throw new GitError('model-failed', describeModelFailure(failure, target))
   }
   // 没有结束原因 = 流被中断：不能假装成功（那会把半截文本交给上层去解析）
   if (finish === null) {

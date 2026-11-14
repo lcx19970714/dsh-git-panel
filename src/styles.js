@@ -251,6 +251,36 @@ export const CSS = `
 }
 .dgp-repo-branch:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dgp-repo-branch:focus-visible { outline: none; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+/* 行上的改动规模：文件数 + 增删行数（有改动才出现，编号用等宽） */
+.dgp-repo-stats {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  max-width: 42%;
+  padding-left: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--ds-font-family-code);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--dsw-alias-label-tertiary);
+}
+.dgp-repo-stats > .dgp-ico { flex: none; opacity: .8; }
+.dgp-repo-stats-files { color: var(--dsw-alias-label-secondary); }
+.dgp-repo-stats .dgp-add,
+.dgp-repo-stats .dgp-del { font-size: 10px; }
+.dgp-repo-conflict { color: var(--dsw-alias-state-warn-label); font-weight: 600; }
+
+/* 分支菜单里的筛选框（分支多时才出现） */
+.dgp-branch-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 6px;
+}
+.dgp-branch-filter > .dgp-ico { flex: none; color: var(--dsw-alias-label-tertiary); }
+.dgp-branch-filter > .dgp-input { flex: 1 1 auto; min-width: 0; height: 24px; padding: 0 6px; }
 /* 分支条目：本地 / 远程 两个小标签，亮 = 有，暗 = 没有 */
 .dgp-menu-badges { display: inline-flex; gap: 4px; flex: none; }
 .dgp-menu-badge {
@@ -313,6 +343,9 @@ export const CSS = `
 .dgp-branch-blocked .dgp-branch-hint { white-space: pre-line; }
 .dgp-branch-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px; }
 .dgp-addform { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 8px; }
+.dgp-addform-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dgp-addform-path > .dgp-input { flex: 1 1 120px; min-width: 0; padding: 0 8px; }
+.dgp-addform-path > .dgp-btn { flex: none; }
 .dgp-addform-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .dgp-list {
   display: flex;
@@ -644,6 +677,18 @@ export const CSS = `
 .dgp-commit-status[data-tone="info"] { color: var(--dsw-alias-label-secondary); }
 .dgp-commit-status[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
 .dgp-commit-status-text { min-width: 0; }
+/* 错误提示：换行 + 最多 5 行（完整内容仍在 title 上），别让一句「余额不足，去充值或换模型」被省略号吃掉 */
+.dgp-commit-status[data-wrap="true"] { align-items: flex-start; }
+.dgp-commit-status[data-wrap="true"] .dgp-commit-status-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.dgp-commit-settings { flex: none; }
 .dgp-commit-status .dgp-spinner { width: 11px; height: 11px; border-width: 1.2px; }
 .dgp-commit-submit { flex: none; min-width: 64px; }
 
@@ -938,7 +983,6 @@ export const CSS = `
 .dgp-menu-sep { height: .5px; margin: 4px 6px; background: var(--dsw-alias-border-l2); }
 
 /* ===================== 10. 自适应 ===================== */
-.dgp-root[data-narrow="true"] .dgp-meta,
 @media (prefers-reduced-motion: reduce) {
   .dgp-spinner { animation-duration: 2.4s; }
   .dgp-skel-dot, .dgp-skel-bar { animation: none; }
@@ -980,6 +1024,7 @@ export const CSS = `
   color: var(--dsw-alias-label-primary, inherit);
 }
 
+.dgp-headerbtn[data-failed="true"] { color: var(--dsw-alias-state-error-primary); }
 .dgp-headerbtn:active {
   background: var(--dsw-alias-bg-layer-2, rgba(127, 127, 127, 0.18));
 }
@@ -1002,7 +1047,7 @@ export const CSS = `
 }
 
 
-/* 版本号 chip：显示当前提交短 SHA，点击 = 检测更新 */
+/* 插件版本 chip：显示已安装的插件版本，点击 = 检查插件更新（与本仓库的 git 状态无关） */
 .dgp-version {
   display: inline-flex;
   align-items: center;
@@ -1353,6 +1398,51 @@ export const CSS = `
 }
 .dgp-pull-verdict[data-state="APPROVED"] { color: var(--dsw-alias-state-success-primary); }
 .dgp-pull-verdict[data-state="CHANGES_REQUESTED"] { color: var(--dsw-alias-state-error-primary); }
+/* PR 详情 · 变动的文件：一行一个文件，点开就地看 diff（不再跳走或整页刷新） */
+.dgp-pull-files { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.dgp-pull-file { display: flex; flex-direction: column; min-width: 0; border-radius: var(--dsw-radius-xs); }
+.dgp-pull-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: 0 0;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dgp-pull-file-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dgp-pull-file-row:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
+}
+.dgp-pull-file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+}
+.dgp-pull-file-stat { display: inline-flex; flex: none; gap: 6px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dgp-pull-file-diff {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 460px;
+  margin: 2px 0 6px;
+  overflow: hidden;
+  border: .5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dgp-pull-file-diff > .dgp-viewer { min-height: 0; }
+.dgp-pull-file-diff > .dgp-detail-meta { margin: 8px; }
+.dgp-pull-file-error { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; }
+.dgp-pull-file-error > .dgp-detail-failure { flex: 1 1 100%; }
 .dgp-detail-notice { margin: 0; color: var(--dsw-alias-state-success-primary); font-size: 11px; }
 /* 「还没推到远端」的提示：变更页签常驻一条 + 创建 PR 表单里阻断用同一条（PushHint）。
    面板自己不做 push，所以必须把命令摆出来；命令用 user-select: all —— 点一下就能整条复制。 */
@@ -1400,6 +1490,18 @@ export const CSS = `
 .dgp-detail-desc { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.6; }
 .dgp-detail-meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .dgp-detail-failure { margin: 0; color: var(--dsw-alias-state-warn-label); font-size: 11px; }
+/* PR 详情底部的操作失败块：错误说清 + （冲突时）一条去网页解决的出口 */
+.dgp-pull-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-xs);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
+}
+.dgp-pull-error > .dgp-detail-failure { flex: 1 1 100%; line-height: 1.6; }
 .dgp-detail-section { display: flex; flex-direction: column; gap: 4px; }
 .dgp-detail-head { display: flex; align-items: center; gap: 8px; }
 .dgp-detail-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }

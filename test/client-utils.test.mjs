@@ -102,5 +102,55 @@ await check('i18n：中英文 key 集合与占位符必须一致', async () => {
   assert.deepEqual(mismatched, [], '这些 key 的占位符中英不一致：' + mismatched.join(', '))
 })
 
+await check('resource-cache：有快照就零延迟返回，没写过的键返回 undefined', async () => {
+  const cache = await import('../src/util/resource-cache.js')
+  cache.clearSnapshots()
+  assert.equal(cache.readSnapshot('k'), undefined, '没写过就是 undefined（界面据此决定是否骨架屏）')
+  assert.equal(cache.snapshotAge('k'), Infinity, '没有快照时年龄为 Infinity')
+
+  cache.writeSnapshot('k', { v: 1 })
+  assert.deepEqual(cache.readSnapshot('k'), { v: 1 })
+  assert.ok(cache.snapshotAge('k') < 1000, '刚写入的快照是新的')
+
+  cache.dropSnapshot('k')
+  assert.equal(cache.readSnapshot('k'), undefined, '删除后不再命中')
+
+  // 容量上限：写满之后淘汰最旧的键，不会无限增长
+  cache.clearSnapshots()
+  for (let index = 0; index < 130; index += 1) cache.writeSnapshot('k' + index, index)
+  assert.equal(cache.readSnapshot('k0'), undefined, '最旧的键应被淘汰')
+  assert.equal(cache.readSnapshot('k129'), 129, '最新的键仍在')
+})
+
+await check('draft-cache：按仓库根分桶，读/删/清互不串台', async () => {
+  const cache = await import('../src/util/draft-cache.js')
+  cache.clearDrafts()
+  const draft = (text) => ({ text, savedText: 'base', hash: 'h', eol: 'lf', bom: false })
+  cache.writeDraft('C:/w/a', 'src/x.js', draft('a1'))
+  cache.writeDraft('C:/w/b', 'src/x.js', draft('b1'))
+  assert.equal(cache.readDrafts('C:/w/a').get('src/x.js').text, 'a1', '同一个相对路径在不同仓库是不同草稿')
+  assert.equal(cache.readDrafts('C:/w/b').get('src/x.js').text, 'b1')
+  cache.writeDraft('C:/w/a', 'src/x.js', draft('a2'))
+  assert.equal(cache.readDrafts('C:/w/a').get('src/x.js').text, 'a2', '覆盖同一路径')
+  cache.dropDraft('C:/w/a', 'src/x.js')
+  assert.equal(cache.readDrafts('C:/w/a').has('src/x.js'), false, '删除只影响该仓库的该路径')
+  assert.equal(cache.readDrafts('C:/w/b').has('src/x.js'), true, '别的仓库不受影响')
+  cache.clearDrafts()
+  assert.equal(cache.readDrafts('C:/w/b').size, 0)
+})
+
+await check('draft-cache：条数上限淘汰最久没写过的草稿', async () => {
+  const cache = await import('../src/util/draft-cache.js')
+  cache.clearDrafts()
+  const draft = { text: 'x', savedText: 'x', hash: 'h', eol: 'lf', bom: false }
+  for (let index = 0; index < 61; index += 1) cache.writeDraft('C:/w/a', 'f' + index + '.js', draft)
+  // 重写 f0 让它变成最近使用，再写一条把 f1 挤出去
+  cache.writeDraft('C:/w/a', 'f0.js', draft)
+  cache.writeDraft('C:/w/a', 'f61.js', draft)
+  assert.equal(cache.readDrafts('C:/w/a').has('f0.js'), true, '最近写过的草稿保留')
+  assert.equal(cache.readDrafts('C:/w/a').has('f1.js'), false, '最旧的被淘汰')
+  cache.clearDrafts()
+})
+
 console.log('')
 console.log('client-utils：' + passed + ' passed, 0 failed')

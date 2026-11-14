@@ -5,7 +5,7 @@
  *  - GitHub：三种审查结论 + 三种合并方式；删源分支要单独调 git refs
  *  - Gitee：审查只有「通过」（说明文字走评论接口）；合并方法两种；删分支走 prune_source_branch
  */
-import { GitError } from '../git.js'
+import { GitError, parseUnifiedDiff } from '../git.js'
 import { lastPageOf, readArray, readJson, readObject, request, requestJson } from './http.js'
 import { requireFullName, requirePullNumber } from './providers.js'
 
@@ -20,7 +20,13 @@ export function createPulls(deps) {
     return { provider, account }
   }
 
-  /** 一个 PR 的详情：基础信息 + 审查记录（平台支持时）+ 能力清单。 */
+  /**
+   * 一个 PR 的详情：基础信息 + 审查记录（平台支持时）+ 能力清单。
+   *
+   * `options.withFiles === true` 时额外带上变动的文件清单（不含 patch —— patch 由
+   * `pullFile` 在用户点开某个文件时再取，避免打开详情就下载几百个文件的 diff）。
+   * 文件列表读失败不拖垮详情，与评论一样用 `filesUnavailable` 明确标记。
+   */
   async function pullDetail(input, options = {}) {
     const { provider, account } = await findAccount(input.accountId)
     const fullName = requireFullName(input.fullName)
@@ -57,21 +63,57 @@ export function createPulls(deps) {
     }
 
     let reviews = []
+    let reviewsUnavailable = null
     if (provider.pull.reviewsPath !== null) {
-      const listed = await readArray(await send(base + '/reviews'), provider.label + ' 审查记录')
-      reviews = listed.map(provider.pull.normalizeReview)
+      // 与 commits / comments / files 同一口径：一块读不到只标记那一块，
+      // 不能让「读审查记录失败」把整个 PR 详情拖垮。
+      try {
+        const listed = await readArray(await send(base + '/reviews'), provider.label + ' 审查记录')
+        reviews = listed.map(provider.pull.normalizeReview)
+      } catch (error) {
+        if (error instanceof GitError && error.code === 'aborted') throw error
+        reviewsUnavailable = error instanceof GitError ? error.message : String(error)
+      }
     }
     const reviewGate = provider.pull.reviewsPath === null
       ? { state: 'unknown', approvals: 0, changesRequested: 0 }
       : summarizeReviewGate(reviews)
 
+    // 变动文件清单：只在明确要求时读（界面打开 PR 详情时要，其它调用方不要）。
+    // 详情本身不能因为文件列表读失败而挂掉，所以失败只记原因。
+    let files = []
+    let filesTruncated = false
+    let filesUnavailable = null
+    if (options.withFiles === true) {
+      try {
+        const listed = await listPullFiles(provider, account, fullName, number, options)
+        files = listed.files.map((file) => ({
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          patchAvailable: file.patchAvailable
+        }))
+        filesTruncated = listed.truncated
+      } catch (error) {
+        // 请求被取消是整次调用的取消，不能当成「文件列表不可用」继续返回半份详情
+        if (error instanceof GitError && error.code === 'aborted') throw error
+        filesUnavailable = error instanceof GitError ? error.message : String(error)
+      }
+    }
+
     return {
       pull: provider.pull.normalizePull(detail),
       reviews,
+      reviewsUnavailable,
       comments,
       commentsUnavailable,
       commits,
       commitsUnavailable,
+      files,
+      filesTruncated,
+      filesUnavailable,
       gate: {
         review: reviewGate,
         // 两家都没有「查询测试状态」的接口，只能执行或从合并被拒反推
@@ -141,10 +183,20 @@ export function createPulls(deps) {
   }
 
   /**
+   * 一步失败之后，还有没有必要继续跑下一步？
+   *
+   * 冲突、鉴权、门禁这类是**PR 的状态问题**：后面那一步必然同样失败，
+   * 再打一次只会让同一条错误出现两遍（线上就出现过
+   * 「review：…；test：…」两条一模一样的 403 冲突提示）。
+   */
+  const BLOCKING_CODES = new Set(['pull-conflict', 'remote-auth-failed', 'merge-gate', 'bad-request', 'no-llm'])
+
+  /**
    * 一键「审查与测试都通过」。
    *
    * 按平台能力依次执行：有的平台没有测试动作（GitHub 门禁是 CI）就只做审查。
    * 任何一步失败都不静默：成功的步骤照实返回，失败的进 failures，界面据此显示。
+   * 遇到状态类失败（冲突/鉴权/门禁）就停下，并只用**那一条**原因报错 —— 不重复、不串行。
    */
   async function passPull(input, options = {}) {
     const { provider, account } = await findAccount(input.accountId)
@@ -167,11 +219,22 @@ export function createPulls(deps) {
         await run()
         completed.push(name)
       } catch (error) {
-        failures.push({ step: name, message: error instanceof GitError ? error.message : String(error) })
+        const code = error instanceof GitError ? error.code : null
+        failures.push({
+          step: name,
+          code,
+          message: error instanceof GitError ? error.message : String(error)
+        })
+        if (code !== null && BLOCKING_CODES.has(code)) break
       }
     }
     if (completed.length === 0) {
-      throw new GitError(failures[0].step === 'test' ? 'test-failed' : 'review-failed',
+      const first = failures[0]
+      // 只失败一步：那一步的话本身就是完整提示（冲突 / 鉴权），不要再套「一键通过失败：review：」
+      if (failures.length === 1) {
+        throw new GitError(first.code ?? (first.step === 'test' ? 'test-failed' : 'review-failed'), first.message)
+      }
+      throw new GitError(failures[0].code ?? (failures[0].step === 'test' ? 'test-failed' : 'review-failed'),
         '一键通过失败：' + failures.map((item) => item.step + '：' + item.message).join('；'))
     }
     return { completed, failures }
@@ -229,7 +292,7 @@ export function createPulls(deps) {
   }
 
   /**
-   * PR 的文件列表 + 每个文件的 patch（AI 审阅的输入）。
+   * 读 PR 的文件列表（含每个文件的 patch）。
    *
    * 两家都是 `pulls/{n}/files`，每页 50 条（**必须 ≤70**：GitHub 在 per_page>70 时
    * 会让第 70 个之后的文件不再返回 patch，见 openjdk SKARA-1406），最多 6 页（300 个文件）。
@@ -239,15 +302,16 @@ export function createPulls(deps) {
    * 单个文件可能没有 patch（二进制文件，或该文件 diff 过大）；这里用 patchAvailable
    * 明确标出，界面与提示词都要据此说明「这个文件没被读到」，而不是当成空改动。
    */
-  async function pullDiff(input, options = {}) {
-    const { provider, account } = await findAccount(input.accountId)
-    const fullName = requireFullName(input.fullName)
-    const number = requirePullNumber(input.number)
+  async function listPullFiles(provider, account, fullName, number, options = {}) {
     const headers = provider.headers(account.token)
     // filesPath 自带 /pulls/{n}/files，所以这里只拼到 repoPath，不能再带 pullPath
     const repoBase = provider.apiBase + provider.repoPath(fullName)
     const PAGE_SIZE = 50
     const MAX_PAGES = 6
+    // 单文件查询：找到就可以停，不用把后面几百个文件也读一遍。
+    const wanted = typeof options.onlyFilename === 'string' && options.onlyFilename !== ''
+      ? options.onlyFilename
+      : null
 
     const files = []
     let truncated = false
@@ -267,10 +331,85 @@ export function createPulls(deps) {
           patchAvailable: typeof item.patch === 'string' && item.patch !== ''
         })
       }
+      if (wanted !== null && files.some((file) => file.filename === wanted)) break
       if (listed.length < PAGE_SIZE) break
       if (page === MAX_PAGES) truncated = true
     }
     return { files, truncated, pagesRead: Math.min(MAX_PAGES, Math.ceil(files.length / 50) || 1) }
+  }
+
+  /** PR 的文件列表 + 每个文件的 patch（AI 审阅的输入）。 */
+  async function pullDiff(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    return listPullFiles(provider, account, fullName, number, options)
+  }
+
+  /** 单个文件的 diff（界面点开某一行时按需读；不把整个 PR 的 patch 都塞进详情）。 */
+  async function pullFile(input, options = {}) {
+    const { provider, account } = await findAccount(input.accountId)
+    const fullName = requireFullName(input.fullName)
+    const number = requirePullNumber(input.number)
+    const filename = typeof input.filename === 'string' ? input.filename : ''
+    if (filename === '') throw new GitError('bad-request', '缺少文件名')
+
+    const listed = await listPullFiles(provider, account, fullName, number, {
+      ...options,
+      onlyFilename: filename
+    })
+    const found = listed.files.find((file) => file.filename === filename)
+    if (found === undefined) {
+      throw new GitError('not-found', listed.truncated
+        ? '这个 PR 的文件太多，平台只返回了前 300 个，没找到 ' + filename + '（可以到网页上看这个文件）'
+        : '这个 PR 里没有该文件：' + filename + '（可能 PR 已更新，重新打开详情即可）')
+    }
+    const file = {
+      filename: found.filename,
+      status: found.status,
+      additions: found.additions,
+      deletions: found.deletions,
+      changes: found.changes,
+      patchAvailable: found.patchAvailable
+    }
+
+    if (found.patchAvailable === false) {
+      // 重命名但内容没变时平台也不会给 patch：这不是「读不到」，要如实说明。
+      const renameOnly = found.status === 'renamed' && found.changes === 0
+      return {
+        file,
+        truncated: listed.truncated,
+        diff: renameOnly
+          ? {
+              kind: 'empty',
+              hunks: [],
+              stats: { adds: 0, dels: 0 },
+              renameOnly: true,
+              message: '仅重命名，文件内容没有变化'
+            }
+          : {
+              kind: 'oversized',
+              hunks: [],
+              stats: { adds: found.additions, dels: found.deletions },
+              message: '平台没有返回这个文件的 diff（可能是二进制文件，或改动过大）'
+            }
+      }
+    }
+
+    const parsed = parseUnifiedDiff(found.patch)
+    return {
+      file,
+      truncated: listed.truncated,
+      diff: {
+        kind: parsed.isSubmodule ? 'submodule' : (parsed.hunks.length === 0 ? 'empty' : 'text'),
+        hunks: parsed.hunks,
+        stats: parsed.stats,
+        newFile: found.status === 'added',
+        modeOnly: parsed.modeOnly,
+        renameOnly: parsed.renameOnly,
+        message: parsed.isSubmodule ? '子模块指向变更（内部改动需进入子仓库查看）' : ''
+      }
+    }
   }
 
   /**
@@ -426,11 +565,10 @@ export function createPulls(deps) {
     try {
       result = await readJson(await send(base + '/merge', { method: 'PUT', json: payload }))
     } catch (error) {
-      // Gitee 的合并门禁：405「此 Pull Request 未通过设置的测试」
-      const text = error instanceof GitError ? error.message : ''
-      if (/未通过设置的测试|not passed the configured test/i.test(text)) {
-        throw new GitError('merge-gate', provider.label + ' 的合并门禁要求先通过测试：' + text
-          + '（先在面板里点「标记测试通过」再合并）')
+      // 合并门禁：405「此 Pull Request 未通过设置的测试」——readJson 已经归成 merge-gate
+      if (error instanceof GitError && error.code === 'merge-gate') {
+        throw new GitError('merge-gate', provider.label + ' 的合并门禁要求先通过测试：' + error.message
+          + '。先在面板里点「标记测试通过」再合并')
       }
       throw error
     }
@@ -439,11 +577,18 @@ export function createPulls(deps) {
       throw new GitError('merge-failed', typeof result.message === 'string' ? result.message : '平台没有完成合并')
     }
 
+    // 合并已经成功：删源分支是「清理动作」，它失败不能把整次合并报成失败。
+    // （否则界面显示「合并失败」，用户重试只会得到 already-merged，PR 其实是合掉的。）
     let branchDeleted = false
+    let branchDeleteError = null
     if (deleteBranch && provider.pull.mergeDeletesBranch === 'api' && pull.headBranch !== '') {
       const refUrl = provider.apiBase + provider.repoPath(fullName) + '/git/refs/heads/' + encodeURIComponent(pull.headBranch)
-      await readJson(await send(refUrl, { method: 'DELETE' }))
-      branchDeleted = true
+      try {
+        await readJson(await send(refUrl, { method: 'DELETE' }))
+        branchDeleted = true
+      } catch (error) {
+        branchDeleteError = error instanceof GitError ? error.message : String(error)
+      }
     } else if (provider.pull.mergeDeletesBranch === 'flag') {
       branchDeleted = deleteBranch
     }
@@ -452,10 +597,11 @@ export function createPulls(deps) {
       merged: true,
       method,
       branchDeleted,
+      branchDeleteError,
       headBranch: pull.headBranch,
       message: result !== null && typeof result === 'object' && typeof result.message === 'string' ? result.message : ''
     }
   }
 
-  return { pullDetail, pullDiff, reviewSource, assertRepoAccess, reviewPull, testPull, passPull, commentPull, setPullState, createPull, findPullForBranch, mergePull }
+  return { pullDetail, pullDiff, pullFile, reviewSource, assertRepoAccess, reviewPull, testPull, passPull, commentPull, setPullState, createPull, findPullForBranch, mergePull }
 }

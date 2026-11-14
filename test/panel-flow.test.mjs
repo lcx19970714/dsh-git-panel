@@ -11,44 +11,16 @@
  *
  * 运行：node test/panel-flow.test.mjs   （需要先 node build/build-client.mjs，仓库里已提交产物）
  *
- * ══ 两个已确认的 src 缺陷（本文件不修，只用 xfail 用例钉住）═══════════════════════
- *
- * 缺陷 #1（致命）—— store.js:117-125 / Panel.js:191,203,263,292
- *   `useLatestGuard()` 每次渲染都返回**新的** `{ begin, isLatest }` 对象（store.js:124）；
- *   Panel 的 `refreshStatus = useCallback(..., [statusSeq])`、以及依赖
- *   `[..., refreshStatus]` / `[..., diffSeq]` / `[..., fileSeq]` 的三个 effect 因此
- *   **每次渲染依赖都变**。后果是三重的：
- *     a) status effect 每次渲染都重跑，而它开头就是 `setStatus(null)/setSelection(null)/
- *        setDiff(null)/setFileData(null)` → 刚拿到的数据立刻被清掉。面板永久在
- *        「有内容 → 骨架屏 → 有内容」之间摆动（浏览器里表现为闪烁，且看不到 diff/文件内容）。
- *     b) 每遍渲染都会重新发 status / diff / file 请求；每个响应又触发两遍渲染 → 空闲时
- *        也在无限刷 RPC（实测 20 → 40 → 60 次/空闲轮）。
- *     c) diff/file 请求刚发出就被下一遍的 effect cleanup abort，响应永远到不了
- *        DiffView / FileView。
- *   预期：`useLatestGuard` 返回稳定引用（例如 useMemo），effect 只在真正的输入变化时重跑。
- *   实际：每次渲染都是新引用 → 面板永不收敛。
- *
- * 缺陷 #2 —— Panel.js:175
- *   `refreshStatus` 调 `api.readStatus({ rootPath })` 时**没有传 signal**，所以切根 /
- *   卸载时旧根的 in-flight status 请求不会被 abort，只有 statusSeq 序号守护丢弃迟到响应
- *   （正确性尚可，但 Panel.js 文件头「每次请求带序号守护，切根时 abort 掉旧请求」的约定
- *   没兑现）。预期：status 请求带 AbortSignal 并在切根时 abort；实际：signal 从不 abort。
- *
- * 行号对应 2026-10-29 13:51 构建的 client.js；src 若有并发改动，以锚点文本为准：
- *   }, [statusSeq])、[..., refreshStatus]、[..., diffSeq]、[..., fileSeq]、
- *   wait api.readStatus({ rootPath: root.path })（无 signal）。
- *
- * ══ 缺陷 #1 下的断言策略 ═════════════════════════════════════════════════════════
- * 因为面板每帧都在「有内容 / 骨架屏」之间摆动，任何「等它稳定后断言 DOM」的写法都不可能通过。
- * 所以本文件的 DOM 断言分两种：
- *   · 请求载荷 / 交互行为 → 断言「交互之后新发出的那批请求」（载荷逐字段比对）；
- *   · 渲染结果 → 断言「真正被提交过的那一帧」（reconciler 保留提交帧历史，
- *     等价于浏览器里用 MutationObserver 抓到的画面），见 `panel.changesFrame()`。
- * 而「画面本该稳定」「本该只请求一次」「本该 abort 旧请求」「diff/文件内容本该渲染」这几条
- * 用 xfail 用例显式钉住（跑起来必须失败，缺陷修好后会变成 XPASS → 让套件失败，提醒更新）。
+ * 本文件同时钉住几类容易回归的交互不变量：
+ *   · 轮询（每 8 秒）只在 status 内容真的变化时触发重渲染；内容没变时不重取 diff；
+ *   · 「变更」与「文件」两个页签的选中项彼此独立（多仓库项目里相对路径的基准不同）；
+ *   · 暂存/取消暂存后，当前选中项的 diff 要按仍然存在的那一侧取；
+ *   · 储存库行的改动规模（文件数 / +N −N）来自 roots/stats，没改动的仓库不占位；
+ *   · 文件页签的手动刷新会清空目录缓存并重读。
+ * DOM 断言取「真正提交过的那一帧」（等价于浏览器里用 MutationObserver 抓到的画面）。
  * RPC 响应一律走宏任务（setImmediate）投递，避免纯微任务风暴把 flush() 饿死；
  * 每个用例结束 unmount() + router.stop()，让后台循环停下。
- * ─────────────────────────────────────────────────────────────────────────────
+ * 定时器是假的（createFakeTimers）：轮询用例显式 tick 一轮，不真等 8 秒。
  */
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -776,10 +748,31 @@ function createFakeCtx(registrations, router) {
 }
 
 /** 一个永不触发的计时器：api.js 只用 setTimeout 做超时，不需要它真的到点。 */
-function fakeSetTimeout() { return 0 }
-function fakeClearTimeout() {}
-function fakeSetInterval() { return 0 }
-function fakeClearInterval() {}
+/**
+ * 假定时器：只实现「登记 / 撤销 / 手动 tick」。
+ *
+ * 轮询是面板行为的一部分（每 8 秒一次 refreshRepository），但真等 8 秒会让套件变慢；
+ * 假定时器让用例明确地「走一轮轮询」，从而断言轮询不会重取 diff。
+ */
+function createFakeTimers() {
+  const intervals = new Map()
+  let next = 1
+  return {
+    setTimeout() { return 0 },
+    clearTimeout() {},
+    setInterval(callback) {
+      const id = next
+      next += 1
+      intervals.set(id, callback)
+      return id
+    },
+    clearInterval(id) { intervals.delete(id) },
+    tick() {
+      for (const callback of [...intervals.values()]) callback()
+    },
+    size() { return intervals.size }
+  }
+}
 
 /**
  * 内存版 localStorage。
@@ -810,6 +803,7 @@ try {
 
 function loadBundle(storage) {
   let factory = null
+  const timers = createFakeTimers()
   const fakeWindow = {
     __ModuleLoader__: {
       load(definition) {
@@ -828,10 +822,10 @@ function loadBundle(storage) {
     },
     innerWidth: 1280,
     innerHeight: 800,
-    setTimeout: fakeSetTimeout,
-    clearTimeout: fakeClearTimeout,
-    setInterval: fakeSetInterval,
-    clearInterval: fakeClearInterval
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+    setInterval: timers.setInterval,
+    clearInterval: timers.clearInterval
   }
   const fakeDocument = createFakeDocument()
   let fakeReact = null
@@ -847,10 +841,10 @@ function loadBundle(storage) {
   script(
     fakeWindow,
     fakeDocument,
-    fakeSetTimeout,
-    fakeClearTimeout,
-    fakeSetInterval,
-    fakeClearInterval,
+    timers.setTimeout,
+    timers.clearTimeout,
+    timers.setInterval,
+    timers.clearInterval,
     fakeRequire,
     storage // 不传 → undefined：usePref 用内置默认值，按工作区记忆也读不到东西
   )
@@ -863,7 +857,8 @@ function loadBundle(storage) {
       return factory(fakeRequire)
     },
     fakeDocument,
-    fakeWindow
+    fakeWindow,
+    timers
   }
 }
 
@@ -943,6 +938,7 @@ function keydown(node, key, extra) {
 async function setup(config) {
   const reconciler = createReconciler()
   const loaded = loadBundle(config.storage)
+  const timers = loaded.timers
   const api = loaded.create(reconciler)
   const router = createRouter()
   const registrations = {
@@ -963,6 +959,9 @@ async function setup(config) {
   assert(slot !== undefined, 'apply() 没有注册 sidebar.right.pane.tab')
   assert(typeof api.__modules === 'function', '产物缺少 __modules 测试钩子')
   const loadModule = (id) => api.__modules(id)
+  // 首屏快照是模块级的：每个用例从「没有快照」开始，断言才不会互相污染
+  loadModule('./util/resource-cache.js').clearSnapshots()
+  loadModule('./util/draft-cache.js').clearDrafts()
   // 用插件自己的 zh 字典渲染文案（插件不再导出 makeT：t 由宿主 locale 服务注入）
 const ZH = loadModule('./i18n.js').zh
 const t = (key, params) => {
@@ -975,6 +974,10 @@ const t = (key, params) => {
 
   // 路由必须在 render 之前装好：Panel 的解析 effect 在首帧就会发 project/resolve。
   for (const [endpoint, handler] of Object.entries(config.routes ?? {})) router.on(endpoint, handler)
+  // 储存库汇总：用例不关心数字时给空结果，避免每个老用例都要补一条路由
+  if (config.routes === undefined || config.routes['roots/stats'] === undefined) {
+    router.on('roots/stats', () => sayOk({ summaries: [] }))
+  }
 
   const cwd = config.cwd ?? 'C:/work/project'
   const props = {
@@ -992,6 +995,7 @@ const t = (key, params) => {
     t,
     router,
     reconciler,
+    timers,
     registrations,
     ctx,
     document: loaded.fakeDocument,
@@ -1105,8 +1109,8 @@ function statusThree() {
     upstream: 'origin/main',
     ahead: 1,
     behind: 0,
-    // 默认已推到远端：只有专门测「还没推」的用例才覆盖它
-    pushed: true,
+    // 默认已和远端一致：只有专门测「同步状态」的用例才覆盖它
+    sync: { state: 'synced', ahead: 0, behind: 0 },
     files: [
       file({ path: 'util.ts', status: 'M', staged: true, adds: 2, dels: 0 }),
       file({ path: 'app.js', status: 'M', unstaged: true, adds: 3, dels: 1 }),
@@ -1592,6 +1596,41 @@ test('用例 1u：设置按钮打开设置页，选择模型即保存', async ()
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'back'))
     await panel.flush()
     eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-view') === 'settings'), null, '返回后离开设置页')
+  })
+})
+
+test('提交说明思考设置：默认关闭、开启和档位保存、重新进入设置仍保留', async () => {
+  let settings = { commitModel: { provider: 'p', model: 'm' }, commitThinking: false, commitReasoningEffort: null }
+  const patches = []
+  await withPanel({ routes: {
+    'project/resolve': () => resolveOk([ROOT], PROJECT),
+    status: () => sayOk(statusThree()),
+    'models/list': () => sayOk({ models: [{ ref: 'p/m', provider: 'p', model: 'm', providerLabel: 'P', modelLabel: 'M',
+      reasoning: { supported: true, toggleable: true, efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] } }], failed: [] }),
+    'settings/get': () => sayOk(settings),
+    'settings/set': (patch) => { patches.push(patch); settings = { ...settings, ...patch }; return sayOk(settings) }
+  } }, async (panel) => {
+    const control = (key) => panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === key)
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-action') === 'open-settings'))
+    await panel.flush()
+    eq(control('commit-thinking').props.value, 'off')
+    control('commit-thinking').props.onChange({ target: { value: 'on' } })
+    await panel.flush()
+    eq(patches[0], { commitThinking: true })
+    control('commit-reasoning-effort').props.onChange({ target: { value: 'high' } })
+    await panel.flush()
+    eq(patches[1], { commitReasoningEffort: 'high' })
+    click(control('back'))
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-action') === 'open-settings'))
+    await panel.flush()
+    eq(control('commit-thinking').props.value, 'on')
+    eq(control('commit-reasoning-effort').props.value, 'high')
+    control('commit-thinking').props.onChange({ target: { value: 'off' } })
+    await panel.flush()
+    eq(control('commit-reasoning-effort'), null)
+    eq(settings.commitThinking, false)
   })
 })
 
@@ -2236,6 +2275,86 @@ test('用例 1G：已有账号时点 ＋ 也能就地添加', async () => {
   })
 })
 
+test('用例 1G2：点 ＋ 时表单平台来自当前账号（不是账号 id）', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'gitee:bob', provider: 'gitee', login: 'bob', label: '私人号', providerLabel: 'Gitee' }],
+        providers: [
+          { id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' },
+          { id: 'gitee', label: 'Gitee', tokenUrl: 'https://gitee.com/profile/personal_access_tokens' }
+        ]
+      }),
+      'remote/repos': () => sayOk({ repos: [], page: 1, hasMore: false })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'add-account'))
+    await panel.flush()
+    const select = panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote') === 'account-provider')
+    eq(select.props.value, 'gitee', '平台下拉应是当前账号的平台')
+    const options = panel.all((node) => isHost(node) && node.type === 'option').map((node) => attr(node, 'value'))
+    assert(options.includes('gitee'), '下拉里应有该平台：' + JSON.stringify(options))
+  })
+})
+
+test('用例 1C3：克隆失败后该行可重试，不能一直显示「克隆中」', async () => {
+  const clones = []
+  let fail = true
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'main', htmlUrl: '', cloneUrl: 'https://x',
+          provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: { fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main', sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: '', issuesUrl: 'x', pullsUrl: 'x' },
+        issues: { total: 0, items: [] }, pulls: { total: 0, items: [] }, failures: []
+      }),
+      'remote/clone': (payload) => {
+        clones.push(payload)
+        if (fail) { fail = false; return sayFail('clone-failed', '网络断了') }
+        return sayOk({ path: '/tmp/app', name: 'app', fullName: 'alice/app' })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote-clone') === 'alice/app'))
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote-confirm') === 'alice/app'))
+    await panel.flush()
+
+    eq(clones.length, 1, '第一次克隆')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote-cloning') === 'alice/app') === null,
+      '失败后不能继续显示「克隆中」转圈')
+    const retry = panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote-retry') === 'alice/app')
+    assert(retry !== null, '失败后应给重试按钮')
+    click(retry)
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-remote-confirm') === 'alice/app'))
+    await panel.flush()
+    eq(clones.length, 2, '重试应再克隆一次')
+  })
+})
+
 test('用例 1I：账号可以改备注名、显示并复制令牌', async () => {
   const updates = []
   const tokenReads = []
@@ -2405,6 +2524,9 @@ test('用例 1K：点开 PR 能看详情并在面板里审查、合并', async (
             additions: 120, deletions: 8, changedFiles: 6, commits: 3, createdAt: '', updatedAt: '',
             htmlUrl: 'https://github.com/alice/app/pull/7'
           },
+          comments: [],
+          files: [],
+          commits: [],
           reviews: [{ author: 'bob', state: 'APPROVED', body: 'LGTM', submittedAt: '' }],
           capabilities: { verdicts: ['approve', 'request-changes', 'comment'], reviews: true, mergeMethods: ['merge', 'squash', 'rebase'], deleteBranch: true }
         })
@@ -2449,7 +2571,11 @@ test('用例 1K：点开 PR 能看详情并在面板里审查、合并', async (
     const method = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'merge-method')
     method.props.onChange({ target: { value: 'squash' } })
     await panel.flush()
+    // 合并是两步确认：第一次点只进入确认态，第二次才发请求
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'merge-run'))
+    await panel.flush()
+    eq(merges.length, 0, '第一次点击不应直接合并')
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'merge-confirm-run'))
     await panel.flush()
     eq(merges.length, 1, '应合并一次')
     eq(merges[0].method, 'squash')
@@ -2507,6 +2633,9 @@ test('用例 1L：Gitee 的 PR 可以标记测试通过（合并门禁）', asyn
             additions: 0, deletions: 0, changedFiles: 0, commits: 1, statsComplete: false,
             createdAt: '', updatedAt: '', htmlUrl: 'https://gitee.com/bob/tool/pulls/2'
           },
+          comments: [],
+          files: [],
+          commits: [],
           reviews: [],
           capabilities: { verdicts: ['approve'], reviews: false, mergeMethods: ['merge', 'squash'], deleteBranch: true, test: true }
         })
@@ -2580,6 +2709,9 @@ test('用例 1M：门禁状态并排显示，一键按钮按平台能力执行',
           author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 1, deletions: 1, changedFiles: 1,
           commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/5'
         },
+        comments: [],
+        files: [],
+        commits: [],
         reviews: [],
         gate: { review: { state: 'approved', approvals: 1, changesRequested: 0 }, test: { state: 'unknown' }, mergeState: 'blocked' },
         capabilities: { verdicts: ['approve', 'request-changes', 'comment'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
@@ -2623,6 +2755,154 @@ test('用例 1M：门禁状态并排显示，一键按钮按平台能力执行',
     await panel.flush()
     eq(passes.length, 1, '应调用一次 remote/pull/pass')
     eq(passes[0], { accountId: 'github:alice', fullName: 'alice/app', number: 5, body: '' })
+  })
+})
+
+test('用例 1M2：PR 有冲突时，一键通过给一句人话，并给「到网页上解决冲突」的出口', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'gitee:bob', provider: 'gitee', login: 'bob', label: 'Gitee 号', providerLabel: 'Gitee' }],
+        providers: [{ id: 'gitee', label: 'Gitee', tokenUrl: 'https://gitee.com/profile/personal_access_tokens' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'bob/tool', name: 'tool', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'master',
+          htmlUrl: 'https://gitee.com/bob/tool', cloneUrl: 'https://gitee.com/bob/tool.git',
+          provider: 'gitee', accountId: 'gitee:bob'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: {
+          fullName: 'bob/tool', description: '', language: 'Go', private: false, defaultBranch: 'master',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://gitee.com/bob/tool',
+          issuesUrl: 'x', pullsUrl: 'x'
+        },
+        issues: { total: 0, items: [] },
+        pulls: {
+          total: 1,
+          items: [{
+            number: 9, title: 'PR nine', url: 'https://gitee.com/bob/tool/pulls/9', author: 'bob', comments: 0,
+            createdAt: '', updatedAt: ''
+          }]
+        },
+        failures: []
+      }),
+      'remote/pull': () => sayOk({
+        pull: {
+          number: 9, title: 'PR nine', body: '', state: 'open', draft: false, merged: false, mergeable: false,
+          author: 'bob', baseBranch: 'master', headBranch: 'dev', additions: 1, deletions: 1, changedFiles: 1,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '',
+          htmlUrl: 'https://gitee.com/bob/tool/pulls/9'
+        },
+        comments: [],
+        files: [],
+        commits: [],
+        reviews: [],
+        gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: 'blocked' },
+        capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: true }
+      }),
+      // Gitee 用 403 + 「存在冲突」表达业务拒绝，宿主已归成 pull-conflict
+      'remote/pull/pass': () => sayFail('pull-conflict',
+        '平台拒绝了这次操作。解决冲突后再试：把目标分支合进本地分支、解决后推上来，或直接到网页上处理。'
+        + '平台原文：此 Pull Request 存在冲突，请先解决冲突再继续操作')
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'pass-all'))
+    await panel.flush()
+
+    const errorBox = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'error')
+    assert(errorBox !== null, '失败要就地显示')
+    const text = textOf(errorBox)
+    assert(text.includes('有冲突'), '要说清是冲突：' + text)
+    assert(text.includes('解决冲突'), '要给出下一步：' + text)
+    assert(text.includes('存在冲突'), '平台原文要留着：' + text)
+    assert(!text.includes('令牌无效'), '不能把冲突说成令牌失效：' + text)
+    assert(!text.includes('一键通过失败：review'), '不要出现「步骤：原因」这种拼贴：' + text)
+
+    const openWeb = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'conflict-open-web')
+    assert(openWeb !== null, '冲突时应给一条到网页解决的出口')
+    click(openWeb)
+    await panel.flush()
+    eq(panel.window.opened.length, 1, '只打开一次')
+    eq(panel.window.opened[0].url, 'https://gitee.com/bob/tool/pulls/9', '点开就是 PR 网页')
+  })
+})
+
+test('用例 1M3：一键通过只成功一半时，提示同时说清「做了什么」和「没做成什么」', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'gitee:bob', provider: 'gitee', login: 'bob', label: 'Gitee 号', providerLabel: 'Gitee' }],
+        providers: [{ id: 'gitee', label: 'Gitee', tokenUrl: 'https://gitee.com/profile/personal_access_tokens' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'bob/tool', name: 'tool', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'master',
+          htmlUrl: 'https://gitee.com/bob/tool', cloneUrl: 'https://gitee.com/bob/tool.git',
+          provider: 'gitee', accountId: 'gitee:bob'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: {
+          fullName: 'bob/tool', description: '', language: 'Go', private: false, defaultBranch: 'master',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://gitee.com/bob/tool',
+          issuesUrl: 'x', pullsUrl: 'x'
+        },
+        issues: { total: 0, items: [] },
+        pulls: { total: 1, items: [{ number: 9, title: 'PR nine', url: 'x', author: 'bob', comments: 0, createdAt: '', updatedAt: '' }] },
+        failures: []
+      }),
+      'remote/pull': () => sayOk({
+        pull: {
+          number: 9, title: 'PR nine', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'bob', baseBranch: 'master', headBranch: 'dev', additions: 1, deletions: 1, changedFiles: 1,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://gitee.com/bob/tool/pulls/9'
+        },
+        comments: [],
+        files: [],
+        commits: [],
+        reviews: [],
+        gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: null },
+        capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: true }
+      }),
+      // 审查过了，标记测试没权限：不能只报「已通过：review」
+      'remote/pull/pass': () => sayOk({
+        completed: ['review'],
+        failures: [{ step: 'test', code: 'remote-auth-failed', message: '没有权限执行这个操作（HTTP 403）：没有测试权限' }]
+      })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'pass-all'))
+    await panel.flush()
+
+    const notice = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'notice')
+    assert(notice !== null, '部分成功也要有提示')
+    const text = textOf(notice)
+    assert(text.includes('review'), '要说清哪一步做成了：' + text)
+    assert(text.includes('没有测试权限'), '失败原因不能吞掉：' + text)
+    assert(!text.includes('已通过：review  '), '不能只说「已通过」让人以为全过了：' + text)
   })
 })
 
@@ -2789,6 +3069,49 @@ test('用例 1P：粘贴带引号的路径/分支名会自动去掉引号', asyn
   })
 })
 
+for (const outcome of ['selected', 'cancelled', 'failed']) {
+  test('目录选择：' + outcome + ' 保留输入并仅在确认后添加', async () => {
+    const added = []
+    await withPanel({ routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'roots/add': (payload) => { added.push(payload); return resolveOk([ROOT], PROJECT) }
+    } }, async (panel) => {
+      let finish
+      let calls = 0
+      panel.ctx.uiWorkspace = { pickDirectory: () => {
+        calls += 1
+        return new Promise((resolve, reject) => { finish = { resolve, reject } })
+      } }
+      await panel.flush()
+      click(panel.one((node) => attr(node, 'data-action') === 'add-root'))
+      await panel.flush()
+      const form = () => panel.one((node) => attr(node, 'data-dgp-addform') !== undefined)
+      const input = () => findOne(form(), (node) => isHost(node) && node.type === 'input')
+      const browse = () => findOne(form(), (node) => attr(node, 'data-dgp-addform-browse') !== undefined)
+      const confirm = () => findOne(form(), (node) => attr(node, 'data-dgp-addform-confirm') !== undefined)
+      input().props.onChange({ target: { value: 'C:/original' } })
+      await panel.flush()
+      click(browse())
+      click(browse())
+      await panel.flush()
+      eq(calls, 1, '重复点击不能重复打开选择器')
+      assert(browse().props.disabled && confirm().props.disabled, '选择期间禁用浏览和添加')
+      if (outcome === 'failed') finish.reject(new Error('picker unavailable'))
+      else finish.resolve(outcome === 'selected' ? 'C:/中文 repo' : null)
+      await panel.flush()
+      eq(input().props.value, outcome === 'selected' ? 'C:/中文 repo' : 'C:/original')
+      eq(added.length, 0, '选中目录不应自动添加')
+      assert(!browse().props.disabled, '结束后可再次选择')
+      if (outcome === 'failed') assert(textOf(form()).includes('picker unavailable'), '显示错误并允许手动输入')
+      click(confirm())
+      await panel.flush()
+      eq(added.length, 1)
+      eq(added[0].path, outcome === 'selected' ? 'C:/中文 repo' : 'C:/original')
+    })
+  })
+}
+
 test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后手动提交', async () => {
   const comments = []
   await withPanel({
@@ -2825,6 +3148,8 @@ test('用例 1Q：AI 审阅 PR，问题编号列出，评论草稿可编辑后�
           author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 9, deletions: 2, changedFiles: 2,
           commits: 2, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
         },
+        files: [],
+        commits: [],
         reviews: [],
         comments: [{ id: 1, author: 'author-one', body: '这个改动我先看下', createdAt: '2026-11-01T10:00:00Z', url: '' }],
         commentsUnavailable: null,
@@ -2963,6 +3288,9 @@ test('用例 1S：深度审阅先找本地仓库，没有就弹框确认克隆�
           author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 1, deletions: 0, changedFiles: 1,
           commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
         },
+        comments: [],
+        files: [],
+        commits: [],
         reviews: [],
         gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: null },
         capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
@@ -3109,6 +3437,9 @@ test('用例 1T：PR 深度审阅切了本地分支后，储存库行的分支�
           author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 1, deletions: 0, changedFiles: 1,
           commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
         },
+        comments: [],
+        files: [],
+        commits: [],
         reviews: [],
         gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: null },
         capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
@@ -3164,6 +3495,8 @@ test('用例 1U：PR 可以关闭（两步确认）与重新打开，并能看�
       author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 1, deletions: 0, changedFiles: 1,
       commits: 2, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
     },
+    files: [],
+    commits: [],
     reviews: [],
     comments: [],
     commentsUnavailable: null,
@@ -3231,6 +3564,121 @@ test('用例 1U：PR 可以关闭（两步确认）与重新打开，并能看�
     await panel.flush()
     eq(states.length, 2, '重新打开只发一次请求')
     eq(states[1].state, 'open')
+  })
+})
+
+test('用例 1U2：PR 详情列出变动的文件，点开能看该文件的 diff', async () => {
+  const fileCalls = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go',
+          updatedAt: '', sizeKb: 1, defaultBranch: 'main',
+          htmlUrl: 'https://github.com/alice/app', cloneUrl: 'https://github.com/alice/app.git',
+          provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1,
+        hasMore: false
+      }),
+      'remote/detail': () => sayOk({
+        repo: {
+          fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
+          sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
+          issuesUrl: 'x', pullsUrl: 'x'
+        },
+        issues: { total: 0, items: [] },
+        pulls: { total: 1, items: [{ number: 7, title: 'PR seven', url: 'x', author: 'alice', comments: 0, createdAt: '', updatedAt: '' }] },
+        failures: []
+      }),
+      'remote/pull': () => sayOk({
+        pull: {
+          number: 7, title: 'PR seven', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 3, deletions: 1, changedFiles: 2,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
+        },
+        files: [],
+        commits: [],
+        reviews: [],
+        comments: [],
+        commentsUnavailable: null,
+        commits: [],
+        commitsUnavailable: null,
+        files: [
+          { filename: 'src/app.js', status: 'modified', additions: 2, deletions: 1, changes: 3, patchAvailable: true },
+          { filename: 'assets/logo.png', status: 'added', additions: 0, deletions: 0, changes: 0, patchAvailable: false }
+        ],
+        filesTruncated: false,
+        filesUnavailable: null,
+        gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: null },
+        capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
+      }),
+      'remote/pull/file': (payload) => {
+        fileCalls.push(payload)
+        return sayOk({
+          file: { filename: payload.filename, status: 'modified', additions: 2, deletions: 1, changes: 3, patchAvailable: true },
+          truncated: false,
+          diff: {
+            kind: 'text',
+            hunks: [{
+              header: '@@ -1,2 +1,2 @@',
+              section: '',
+              oldStart: 1,
+              oldLines: 2,
+              newStart: 1,
+              newLines: 2,
+              lines: [
+                { kind: 'ctx', oldLine: 1, newLine: 1, text: 'const a = 1' },
+                { kind: 'del', oldLine: 2, newLine: undefined, text: 'const b = 2' },
+                { kind: 'add', oldLine: undefined, newLine: 2, text: 'const b = 3' }
+              ]
+            }],
+            stats: { adds: 1, dels: 1 }
+          }
+        })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+
+    const section = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'files')
+    assert(section !== null, 'PR 详情应有「变动的文件」区')
+    const rows = panel.all((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'file-row')
+    eq(rows.length, 2, '应列出两个文件')
+    assert(textOf(rows[0]).includes('src/app.js'), '文件名：' + textOf(rows[0]))
+    assert(textOf(rows[0]).includes('+2'), '要显示增加行数：' + textOf(rows[0]))
+    assert(textOf(rows[0]).includes('−1'), '要显示删除行数：' + textOf(rows[0]))
+
+    const firstRow = () => panel.one((node) => isHost(node)
+      && attr(node, 'data-dgp-pull') === 'file-row' && attr(node, 'data-file') === 'src/app.js')
+
+    click(firstRow())
+    await panel.flush()
+    eq(fileCalls.length, 1, '点开文件时才读 diff')
+    eq(fileCalls[0], { accountId: 'github:alice', fullName: 'alice/app', number: 7, filename: 'src/app.js' })
+    const diffBox = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'file-diff')
+    assert(diffBox !== null, '应就地展开 diff')
+    assert(textOf(diffBox).includes('const b = 3'), '应显示新增行：' + textOf(diffBox))
+    assert(textOf(diffBox).includes('const b = 2'), '应显示删除行：' + textOf(diffBox))
+
+    // 收起再展开：走缓存，不重复请求
+    click(firstRow())
+    await panel.flush()
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'file-diff'), null, '再点一次应收起')
+    click(firstRow())
+    await panel.flush()
+    eq(fileCalls.length, 1, '再次展开应复用已读到的 diff')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'file-diff') !== null, '应重新展开')
   })
 })
 
@@ -3312,13 +3760,22 @@ test('用例 1V：变更页签创建 PR：选目标分支、生成标题描述�
   })
 })
 
-test('用例 1V2：分支没推到远端时，提示只在左侧出现一处，表单只说明创建为什么点不了', async () => {
+/* ---------------------------------------------- 分支与远端同步状态（sync） */
+
+const SYNC_NEVER = { state: 'never-pushed', ahead: 0, behind: 0 }
+const SYNC_AHEAD = { state: 'ahead', ahead: 2, behind: 0 }
+const SYNC_DELETED = { state: 'remote-deleted', ahead: 0, behind: 0 }
+
+function statusWithSync(sync) {
+  return { ...statusThree(), branch: 'feat/x', sync }
+}
+
+test('用例 1V2：分支从没推过时，提示只在左侧出现一处，表单只说明创建为什么点不了', async () => {
   await withPanel({
     storage: createFakeStorage(),
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
-      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed: false }),
-      // pr/prepare 不再返回 pushed：推没推上去只认 status
+      status: () => sayOk(statusWithSync(SYNC_NEVER)),
       'pr/prepare': () => sayOk({
         repo: { provider: 'github', fullName: 'alice/app' },
         head: 'feat/x',
@@ -3331,151 +3788,164 @@ test('用例 1V2：分支没推到远端时，提示只在左侧出现一处，�
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'create-pr'))
     await panel.flush()
 
-    // 同一句话只出现在一个地方：左栏那条常驻提示。表单不再复制第二份。
-    const hints = panel.all((node) => isHost(node) && attr(node, 'data-dgp-push') === 'true')
-    eq(hints.length, 1, '同一屏只应出现一处推送提示，实际 ' + hints.length + ' 处')
-    assert(textOf(hints[0]).includes('还只在你电脑上'), '左栏那条要继续说人话：' + textOf(hints[0]))
+    // 同一句话只出现在一个地方：左栏那条常驻提示；表单只说明创建按钮为什么不可用
+    const hints = panel.all((node) => isHost(node) && attr(node, 'data-dgp-sync') === 'never-pushed')
+    eq(hints.length, 1, '同一屏只应出现一处同步提示，实际 ' + hints.length + ' 处')
+    assert(textOf(hints[0]).includes('还只在你电脑上'), '左栏要继续说人话：' + textOf(hints[0]))
     eq(textOf(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-command') === 'true')),
       'git push -u origin feat/x', '命令要带真实分支名')
 
-    // 表单里只留「创建按钮为什么是灰的」这一句
     const blocked = panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'blocked')
     assert(blocked !== null, '表单要说明创建按钮为什么不可用')
-    assert(textOf(blocked).includes('还没推送到远端'), '原因要说清楚：' + textOf(blocked))
+    assert(textOf(blocked).includes('还没和远端同步'), '原因要说清楚：' + textOf(blocked))
     eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'create'), 'disabled'), true,
-      '没推送前不能创建 PR')
+      '没同步前不能创建 PR')
   })
 })
 
-test('用例 1V6：左侧推送完后，表单不用重新 prepare 就能创建（pushed 只有 status 一个来源）', async () => {
-  let pushed = false
-  const prepared = []
+test('用例 1V3：从没推过 → 常驻提示带推送按钮；推完提示自动消失', async () => {
+  let sync = SYNC_NEVER
   await withPanel({
     storage: createFakeStorage(),
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
-      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed }),
-      'branch/push': () => {
-        pushed = true
-        return sayOk({ branch: 'feat/x', head: 'abc1234', upstream: 'origin/feat/x', output: '' })
-      },
-      'pr/prepare': (payload) => {
-        prepared.push(payload)
-        return sayOk({
-          repo: { provider: 'github', fullName: 'alice/app' },
-          head: 'feat/x',
-          bases: ['main'],
-          accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }]
-        })
-      }
+      status: () => sayOk(statusWithSync(sync))
     }
   }, async (panel) => {
     await panel.flush()
-    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'create-pr'))
-    await panel.flush()
-    eq(prepared.length, 1, '打开表单要问一次宿主')
-
-    // 先填标题，排除「标题为空」这个禁用原因
-    panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'title')
-      .props.onChange({ target: { value: 'feat: x' } })
-    await panel.flush()
-    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'create'), 'disabled'), true,
-      '还没推送：创建按钮应该是灰的')
-
-    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-run') === 'true'))
-    await panel.flush()
-
-    eq(prepared.length, 1, '推送后不需要再 prepare 一次表单')
-    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'create'), 'disabled'), false,
-      '推完 status 一刷新，创建按钮自己就亮了')
-    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr') === 'blocked'), null,
-      '原因说明也应随之消失')
-  })
-})
-
-test('用例 1V3：变更页签常驻提示「这条分支还没推到远端」，推完自动消失', async () => {
-  let pushed = false
-  await withPanel({
-    storage: createFakeStorage(),
-    routes: {
-      'project/resolve': () => resolveOk([ROOT], PROJECT),
-      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed })
-    }
-  }, async (panel) => {
-    await panel.flush()
-    const hint = panel.one((node) => isHost(node) && attr(node, 'data-dgp-push') === 'true')
+    const hint = panel.one((node) => isHost(node) && attr(node, 'data-dgp-sync') === 'never-pushed')
     assert(hint !== null, '分支没推到远端时应在变更页签常驻提示（创建完分支就能看到）')
-    assert(textOf(hint).includes('还只在你电脑上'), '要用大白话，不用「未推送」这类词：' + textOf(hint))
-    eq(textOf(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-command') === 'true')),
-      'git push -u origin feat/x', '命令要带当前分支名，点一下即可全选')
+    assert(textOf(hint).includes('还只在你电脑上'), '要用大白话：' + textOf(hint))
     assert(textOf(hint).includes('推完这里会自动消失'), '要告诉用户推完会怎样：' + textOf(hint))
 
-    // 在终端里推完之后：下一次 status 刷新（这里用工具条「立即刷新」触发）提示就该消失
-    pushed = true
+    // 在终端里推完之后：下一次 status 刷新（工具条「立即刷新」）提示就该消失
+    sync = { state: 'synced', ahead: 0, behind: 0 }
     await refreshViaMenu(panel)
-    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push') === 'true'), null,
-      '推上去之后不应再提示')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-sync') !== undefined), null,
+      '同步之后不应再提示')
   })
 })
 
-test('用例 1V4：提示块里直接点「推送到远端」就推完了，不让用户去终端敲命令', async () => {
-  let pushed = false
+test('用例 1V4：提示条里点「推送到远端」就推完了，并给出成功确认', async () => {
+  let sync = SYNC_NEVER
   const pushes = []
   await withPanel({
     storage: createFakeStorage(),
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
-      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed }),
+      status: () => sayOk(statusWithSync(sync)),
       'branch/push': (payload) => {
         pushes.push(payload)
-        pushed = true
+        sync = { state: 'synced', ahead: 0, behind: 0 }
         return sayOk({ branch: 'feat/x', head: 'abc1234', upstream: 'origin/feat/x', output: '' })
       }
     }
   }, async (panel) => {
     await panel.flush()
     const run = panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-run') === 'true')
-    assert(run !== null, '提示块里必须有推送按钮')
+    assert(run !== null, '提示条里必须有推送按钮')
     eq(textOf(run), '推送到远端')
 
     click(run)
     await panel.flush()
     eq(pushes.length, 1, '应调用一次 branch/push')
     eq(pushes[0], { rootPath: PROJECT }, '只推当前仓库的当前分支')
-    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push') === 'true'), null,
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-sync') !== undefined), null,
       '推成功后提示应立刻消失')
     const note = panel.one((node) => isHost(node) && attr(node, 'data-update-note') !== undefined)
     assert(note !== null && textOf(note).includes('已推送'), '要有推送成功的确认：' + (note === null ? '(无)' : textOf(note)))
   })
 })
 
-test('用例 1V5：推送失败时把真实原因留在提示块里（不弹窗、不吞、可重试）', async () => {
+test('用例 1V5：推送失败时把真实原因留在提示条里（不弹窗、不吞、可重试）', async () => {
   await withPanel({
     storage: createFakeStorage(),
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
-      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed: false }),
+      status: () => sayOk(statusWithSync(SYNC_NEVER)),
       'branch/push': () => sayFail('git-auth-failed', '远端拒绝了这次推送：这台机器上没有可用的 git 凭据。')
     }
   }, async (panel) => {
     await panel.flush()
     click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-run') === 'true'))
     await panel.flush()
-    const error = panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-error') === 'true')
-    assert(error !== null, '失败原因要显示在提示块里')
+    const error = panel.one((node) => isHost(node) && attr(node, 'data-dgp-sync-error') === 'true')
+    assert(error !== null, '失败原因要显示在提示条里')
     assert(textOf(error).includes('凭据'), '要显示宿主给的真实原因：' + textOf(error))
-    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push') === 'true') !== null,
-      '失败后提示块还在，按钮可重试')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-sync') !== undefined) !== null,
+      '失败后提示条还在，按钮可重试')
   })
 })
 
-test('用例 1V7：没有可作目标的远端分支时，生成与创建都不可点、也不会发出缺 base 的请求', async () => {
+test('用例 1V6：本地领先远端时，标题说清领先几个提交（仍可推送）', async () => {
+  const pushes = []
+  await withPanel({
+    storage: createFakeStorage(),
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusWithSync(SYNC_AHEAD)),
+      'branch/push': (payload) => {
+        pushes.push(payload)
+        return sayOk({ branch: 'feat/x', head: 'abc1234', upstream: 'origin/feat/x', output: '' })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const hint = panel.one((node) => isHost(node) && attr(node, 'data-dgp-sync') === 'ahead')
+    assert(hint !== null, '领先远端时要提示')
+    assert(textOf(hint).includes('本地还有 2 个提交没推到远端'), '标题要写清领先几个：' + textOf(hint))
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-run') === 'true') !== null, true,
+      '领先也走推送按钮')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-cleanup-run') === true), null,
+      '领先不是「远端已删除」，不应出现收尾按钮')
+  })
+})
+
+test('用例 1V7：远端分支已被删除时只给「收尾」，不给普通推送（避免重建已合并分支）', async () => {
+  const cleanupCalls = []
+  let sync = SYNC_DELETED
+  await withPanel({
+    storage: createFakeStorage(),
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk({ ...statusWithSync(sync), branch: 'feat/x', head: 'abc1234', upstream: 'origin/feat/x' }),
+      'branch/cleanup': (payload) => {
+        cleanupCalls.push(payload)
+        sync = { state: 'synced', ahead: 0, behind: 0 }
+        return sayOk({ branch: 'feat/x', base: 'main', deleted: true, current: 'main', steps: ['获取远程更新（--prune）'] })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const hint = panel.one((node) => isHost(node) && attr(node, 'data-dgp-sync') === 'remote-deleted')
+    assert(hint !== null, '远端分支被删时要提示（这是合并后最常见的情况）')
+    assert(textOf(hint).includes('远端分支已被删除'), '标题要说清是远端被删了：' + textOf(hint))
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-run') === 'true'), null,
+      '这里不能给普通推送按钮：推一次会把已合并的分支重建出来')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-push-command') === 'true'), null,
+      '也不该显示 push 命令')
+    assert(textOf(hint).includes('从最新默认分支新建一个分支'), '要告诉用户接下来怎么继续干活：' + textOf(hint))
+
+    const run = panel.one((node) => isHost(node) && attr(node, 'data-dgp-cleanup-run') === 'true')
+    assert(run !== null, '要提供「收尾」动作')
+    click(run)
+    await panel.flush()
+    eq(cleanupCalls.length, 1, '应调用一次 branch/cleanup')
+    eq(cleanupCalls[0], { rootPath: PROJECT })
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-sync') !== undefined), null,
+      '收尾成功后提示消失')
+    const note = panel.one((node) => isHost(node) && attr(node, 'data-update-note') !== undefined)
+    assert(note !== null && textOf(note).includes('已收尾'), '要有收尾成功的确认：' + (note === null ? '(无)' : textOf(note)))
+  })
+})
+
+test('用例 1V8：没有可作目标的远端分支时，生成与创建都不可点、也不会发出缺 base 的请求', async () => {
   const generated = []
   await withPanel({
     storage: createFakeStorage(),
     routes: {
       'project/resolve': () => resolveOk([ROOT], PROJECT),
-      status: () => sayOk({ ...statusThree(), branch: 'feat/x', pushed: true }),
+      status: () => sayOk(statusWithSync({ state: 'synced', ahead: 0, behind: 0 })),
       // 极端但真实的情形：pr/prepare 没给出任何目标分支候选（例如远端只有源分支）
       'pr/prepare': () => sayOk({
         repo: { provider: 'github', fullName: 'alice/app' },
@@ -3502,6 +3972,65 @@ test('用例 1V7：没有可作目标的远端分支时，生成与创建都不�
     generate.props.onClick()
     await panel.flush()
     eq(generated.length, 0, '不应发出缺 base 的请求')
+  })
+})
+
+test('用例 1V9：提交后自动推送默认开；设置里关掉之后提交不再推送', async () => {
+  const commits = []
+  const pushes = []
+  let sync = { state: 'synced', ahead: 0, behind: 0 }
+  await withPanel({
+    storage: createFakeStorage(),
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusWithSync(sync)),
+      commit: (payload) => {
+        commits.push(payload)
+        sync = { state: 'ahead', ahead: 1, behind: 0 }
+        return sayOk({ head: 'def5678', subject: payload.message })
+      },
+      'branch/push': (payload) => {
+        pushes.push(payload)
+        sync = { state: 'synced', ahead: 0, behind: 0 }
+        return sayOk({ branch: 'feat/x', head: 'def5678', upstream: 'origin/feat/x', output: '' })
+      },
+      'models/list': () => sayOk({ models: [], failed: [] }),
+      'settings/get': () => sayOk({ commitModel: null, reviewModel: null }),
+      'accounts/list': () => sayOk({ accounts: [], providers: [] })
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    // 默认开：提交成功后自动推一次
+    const input = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input')
+    const submit = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit')
+    input().props.onChange({ target: { value: 'feat: first' } })
+    await panel.flush()
+    click(submit())
+    await panel.flush()
+    eq(commits.length, 1, '应提交一次')
+    eq(pushes.length, 1, '默认「提交后自动推送」开着：提交成功后应自动推送一次')
+    eq(pushes[0], { rootPath: PROJECT })
+
+    // 设置里关掉：选择立即生效并持久化
+    click(panel.one((node) => isHost(node) && attr(node, 'data-action') === 'open-settings'))
+    await panel.flush()
+    const toggle = panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'post-commit-push')
+    assert(toggle !== null, '设置页要有「提交后自动推送」')
+    eq(toggle.props.value, 'on', '默认是开')
+    toggle.props.onChange({ target: { value: 'off' } })
+    await panel.flush()
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'post-commit-push').props.value, 'off')
+
+    // 回到变更页签再提交：这次不推送
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-settings') === 'back'))
+    await panel.flush()
+    input().props.onChange({ target: { value: 'feat: second' } })
+    await panel.flush()
+    click(submit())
+    await panel.flush()
+    eq(commits.length, 2, '第二次提交仍然成功')
+    eq(pushes.length, 1, '关掉之后提交不应再自动推送')
   })
 })
 
@@ -3543,6 +4072,8 @@ test('用例 1W：变更页签显示当前分支的 PR 状态与未读反馈，�
           author: 'alice', baseBranch: 'dev', headBranch: 'feat/x', additions: 1, deletions: 0, changedFiles: 1,
           commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
         },
+        files: [],
+        commits: [],
         reviews: [],
         comments: [
           { id: 1, author: 'bob', body: '这里没判空', createdAt: '2026-11-01T10:00:00Z', url: '' },
@@ -3584,6 +4115,118 @@ test('用例 1W：变更页签显示当前分支的 PR 状态与未读反馈，�
     assert(Array.isArray(sessionCalls[0].rootPaths), '要带本地仓库候选')
     assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'comment-ai-notice') !== null,
       '要提示已新建会话')
+  })
+})
+
+test('用例 1W2：从 PR 卡片进入、返回后补读仓库详情', async () => {
+  const detailCalls = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'pr/linked': () => sayOk({
+        linked: true, provider: 'github', fullName: 'alice/app', branch: 'feat/x',
+        accountId: 'github:alice', number: 7,
+        pull: {
+          number: 7, title: 'PR seven', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'alice', baseBranch: 'dev', headBranch: 'feat/x', additions: 1, deletions: 0, changedFiles: 1,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
+        },
+        gate: { review: { state: 'approved' }, test: { state: 'unknown' }, mergeState: null },
+        comments: [], commentsUnavailable: null
+      }),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'https://github.com/settings/tokens/new' }]
+      }),
+      'remote/repos': () => sayOk({
+        repos: [{
+          fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go', updatedAt: '',
+          sizeKb: 1, defaultBranch: 'main', htmlUrl: '', cloneUrl: '', provider: 'github', accountId: 'github:alice'
+        }],
+        page: 1, hasMore: false
+      }),
+      'remote/detail': (payload) => {
+        detailCalls.push(payload)
+        return sayOk({
+          repo: { fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main', sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: '', issuesUrl: 'x', pullsUrl: 'x' },
+          issues: { total: 0, items: [] }, pulls: { total: 0, items: [] }, failures: []
+        })
+      },
+      'remote/branches': () => sayOk({
+        accountId: 'github:alice', fullName: 'alice/app', provider: 'github', htmlUrl: '', defaultBranch: 'main',
+        remoteKnown: true, localKnown: true, truncated: false,
+        counts: { total: 0, local: 0, remoteOnly: 0, localOnly: 0 }, branches: [], local: null, failures: []
+      }),
+      'remote/pull': (payload) => sayOk({
+        pull: { ...{
+          number: 7, title: 'PR seven', body: '', state: 'open', draft: false, merged: false, mergeable: true,
+          author: 'alice', baseBranch: 'dev', headBranch: 'feat/x', additions: 1, deletions: 0, changedFiles: 1,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
+        }, number: payload.number },
+        files: [], commits: [], reviews: [], comments: [], commentsUnavailable: null,
+        gate: { review: { state: 'approved' }, test: { state: 'unknown' }, mergeState: null },
+        capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
+      })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pr-card') === 'open'))
+    await panel.flush()
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'detail') !== null, '应进入 PR 详情')
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'back'))
+    await panel.flush()
+    assert(detailCalls.length >= 1, '返回仓库详情时应补读 remote/detail（不能停在旧的空数据上）')
+    const repoDetail = panel.one((node) => isHost(node) && attr(node, 'data-dgp-detail') === 'repo')
+    assert(repoDetail !== null, '应显示仓库详情')
+    assert(textOf(repoDetail).includes('alice/app'), '详情是当前仓库')
+  })
+})
+
+test('用例 1W3：已合并的 PR 不显示「重新打开」', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'accounts/list': () => sayOk({
+        accounts: [{ id: 'github:alice', provider: 'github', login: 'alice', label: '工作号', providerLabel: 'GitHub' }],
+        providers: [{ id: 'github', label: 'GitHub', tokenUrl: 'x' }]
+      }),
+      'remote/repos': () => sayOk({ repos: [{
+        fullName: 'alice/app', name: 'app', private: false, description: '', language: 'Go', updatedAt: '',
+        sizeKb: 1, defaultBranch: 'main', htmlUrl: '', cloneUrl: '', provider: 'github', accountId: 'github:alice'
+      }], page: 1, hasMore: false }),
+      'remote/detail': () => sayOk({
+        repo: { fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main', sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: '', issuesUrl: 'x', pullsUrl: 'x' },
+        issues: { total: 0, items: [] },
+        pulls: { total: 1, items: [{ number: 9, title: 'merged one', url: 'x', author: 'alice', comments: 0, createdAt: '', updatedAt: '' }] },
+        failures: []
+      }),
+      'remote/branches': () => sayOk({
+        accountId: 'github:alice', fullName: 'alice/app', provider: 'github', htmlUrl: '', defaultBranch: 'main',
+        remoteKnown: true, localKnown: true, truncated: false,
+        counts: { total: 0, local: 0, remoteOnly: 0, localOnly: 0 }, branches: [], local: null, failures: []
+      }),
+      'remote/pull': (payload) => sayOk({
+        pull: {
+          number: payload.number, title: 'merged one', body: '', state: 'closed', draft: false, merged: true, mergeable: true,
+          author: 'alice', baseBranch: 'main', headBranch: 'feat/y', additions: 1, deletions: 0, changedFiles: 0,
+          commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'x'
+        },
+        files: [], commits: [], reviews: [], comments: [], commentsUnavailable: null,
+        gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: null },
+        capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
+      })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[2])
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-item') === 'pulls'))
+    await panel.flush()
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-pull') === 'reopen-pull'), null,
+      '已合并的 PR 没有「重新打开」这个必然失败的下一步')
   })
 })
 
@@ -3661,6 +4304,9 @@ test('用例 1R：没配 AI 审阅模型时，报错旁边有「去设置模型�
           author: 'alice', baseBranch: 'main', headBranch: 'feat', additions: 0, deletions: 0, changedFiles: 0,
           commits: 1, statsComplete: true, createdAt: '', updatedAt: '', htmlUrl: 'https://github.com/alice/app/pull/7'
         },
+        comments: [],
+        files: [],
+        commits: [],
         reviews: [],
         gate: { review: { state: 'pending' }, test: { state: 'unknown' }, mergeState: null },
         capabilities: { verdicts: ['approve'], reviews: true, mergeMethods: ['merge'], deleteBranch: true, test: false }
@@ -3889,6 +4535,7 @@ test('用例 1w：变更列表的列表 / 树形两种显示方式，设置页�
     upstream: 'origin/main',
     ahead: 0,
     behind: 0,
+    sync: { state: 'synced', ahead: 0, behind: 0 },
     files: [
       file({ path: 'src/app.js', status: 'M', unstaged: true, adds: 1, dels: 0 }),
       file({ path: 'src/util.ts', status: 'M', unstaged: true, adds: 1, dels: 0 })
@@ -4032,6 +4679,44 @@ test('用例 1y：生成提交说明时显示进度，失败时把真实原因�
     await panel.flush()
     eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input'), 'value'),
       'feat: 生成好了', '生成结果应填进输入框')
+  })
+})
+
+test('用例 1y2：模型失败的错误提示换行显示，并给「去设置换模型」的直达按钮', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'models/list': () => sayOk({ models: [], failed: [] }),
+      'settings/get': () => sayOk({ commitModel: null }),
+      'commit/message': () => sayFail('model-failed',
+        '模型调用失败：模型账号余额不足（deepseek-account/deepseek-flash），这次调用被拒绝了。'
+        + '请到该平台充值，或在设置里换一个可用模型。原始错误：Insufficient Balance (request_id: abc123)')
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'generate'))
+    await panel.flush()
+
+    const statusEl = panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'status')
+    assert(statusEl !== null, '应显示失败提示')
+    eq(attr(statusEl, 'data-tone'), 'error', '错误色调')
+    eq(attr(statusEl, 'data-wrap'), 'true', '错误提示要换行显示，而不是单行省略')
+
+    const text = textOf(statusEl)
+    assert(text.includes('余额不足'), '提示要说清原因：' + text)
+    assert(text.includes('充值'), '提示要给出下一步：' + text)
+    assert(text.includes('Insufficient Balance'), '原始错误要留着：' + text)
+    // 单行省略 class 只给非错误状态用
+    const textNode = panel.one((node) => isHost(node) && hasClass(node, 'dgp-commit-status-text'))
+    assert(!hasClass(textNode, 'dgp-oneline'), '错误提示不能被单行省略吃掉')
+
+    const shortcut = panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'open-settings')
+    assert(shortcut !== null, '「换模型就能解决」时要有直达设置页的按钮')
+    click(shortcut)
+    await panel.flush()
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-view') === 'settings') !== null,
+      '点按钮应进入设置页')
   })
 })
 
@@ -5076,6 +5761,173 @@ test('诊断 2：空闲时不应重复请求同一份 status', async () => {
 /* ================================================================== */
 /* 跑                                                                */
 /* ================================================================== */
+
+/* ================================================================== */
+/* 储存库改动规模 / 选择模型 / 刷新策略                                 */
+/* ================================================================== */
+
+test('用例 1v3：储存库行显示改动文件数与增删行数，没改动的仓库不占位', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT, ROOT_OTHER], PROJECT),
+      status: (payload) => sayOk({
+        ...statusThree(),
+        repoRoot: payload.rootPath,
+        files: payload.rootPath === ROOT.path
+          ? statusThree().files
+          : [],
+        counts: payload.rootPath === ROOT.path
+          ? statusThree().counts
+          : { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 }
+      }),
+      'roots/stats': (payload) => sayOk({
+        summaries: payload.paths.map((path) => (path === ROOT.path
+          ? { path, counts: { total: 3, staged: 1, unstaged: 1, untracked: 1, conflicted: 0 }, adds: 11, dels: 2, binary: 0, truncated: false }
+          : { path, counts: { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 }, adds: 0, dels: 0, binary: 0, truncated: false }))
+      })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const badges = panel.all((node) => isHost(node) && attr(node, 'data-dgp-repo-stats') !== undefined)
+    eq(badges.length, 1, '只有有改动的仓库显示数字')
+    eq(attr(badges[0], 'data-dgp-repo-stats'), '3', '文件数')
+    assert(textOf(badges[0]).includes('+11'), '新增行数：' + textOf(badges[0]))
+    assert(textOf(badges[0]).includes('−2'), '删除行数：' + textOf(badges[0]))
+    assert(String(attr(badges[0], 'title')).includes('3'), 'title 里给出完整说明')
+  })
+})
+
+test('用例 2f：键盘游标 ↑↓ 在列表内移动，Enter 打开当前行', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      diff: () => sayOk(diffText())
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    const list = panel.one((node) => isHost(node) && node.props['data-dgp-list'] === 'changes')
+    assert(list !== null, '没有变更列表容器')
+
+    keydown(list, 'ArrowDown')
+    await panel.flush()
+    const cursored = panel.all((node) => isHost(node) && attr(node, 'data-cursor') === 'true')
+    eq(cursored.length, 1, '↓ 之后应有一行带光标')
+
+    const mark = panel.router.mark()
+    // 重新取容器节点：ArrowDown 之后已经重渲染，旧节点的闭包里 cursor 还是 -1
+    keydown(panel.one((node) => isHost(node) && node.props['data-dgp-list'] === 'changes'), 'Enter')
+    await panel.flush()
+    assert(panel.router.count('diff', mark) >= 1, 'Enter 应打开光标所在行（取 diff）')
+  })
+})
+
+test('用例 4c：轮询一轮只刷新 status / 汇总，不重取 diff', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      diff: () => sayOk(diffText()),
+      'roots/stats': (payload) => sayOk({ summaries: payload.paths.map((path) => ({ path, counts: { total: 3, staged: 1, unstaged: 1, untracked: 1, conflicted: 0 }, adds: 1, dels: 0, binary: 0, truncated: false })) })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.fileRow('app.js', panel.changesFrame()))
+    await panel.flush()
+
+    const mark = panel.router.mark()
+    panel.timers.tick() // 走一轮 8 秒轮询
+    await panel.flush()
+
+    assert(panel.router.count('status', mark) >= 1, '轮询应该刷新 status')
+    eq(panel.router.count('diff', mark), 0, '内容没变时轮询不该重取 diff')
+    assert(panel.fileRow('app.js', panel.changesFrame(mark)) !== null, '轮询后选中行还在')
+  })
+})
+
+test('用例 2d：把选中的未暂存文件暂存后，diff 按已暂存侧重取', async () => {
+  let staged = false
+  const diffs = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => {
+        const base = statusThree()
+        if (!staged) return sayOk(base)
+        return sayOk({
+          ...base,
+          files: base.files.map((item) => (item.path === 'app.js' ? { ...item, staged: true, unstaged: false } : item)),
+          counts: { ...base.counts, staged: 2, unstaged: 0 }
+        })
+      },
+      diff: (payload) => { diffs.push(payload); return sayOk(diffText()) },
+      'index/stage': () => { staged = true; return sayOk({ path: 'app.js', action: 'stage' }) }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.fileRow('app.js', panel.changesFrame()))
+    await panel.flush()
+    eq(diffs[diffs.length - 1].staged, false, '一开始是未暂存')
+
+    click(panel.one((node) => isHost(node) && attr(node, 'data-dgp-action') === 'stage'))
+    await panel.flush()
+    const last = diffs[diffs.length - 1]
+    eq(last.staged, true, '暂存后 diff 必须按已暂存侧取（否则右栏会显示无改动）')
+    eq(last.untracked, false)
+  })
+})
+
+test('用例 2e：变更页签的选中项不会跑到文件页签里打开另一个根下的同名路径', async () => {
+  const BROWSE = { id: 'browse', path: PROJECT, repoRoot: null, name: 'project', kind: 'primary', isGit: false, branch: null }
+  const SUB = { id: 'sub', path: PROJECT + '/sub', repoRoot: PROJECT + '/sub', name: 'sub', kind: 'discovered', isGit: true, branch: 'main' }
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([BROWSE, SUB], PROJECT),
+      status: () => sayOk({
+        ...statusThree(),
+        repoRoot: SUB.path,
+        files: [file({ path: 'src/app.js', status: 'M', unstaged: true, adds: 1, dels: 0 })],
+        counts: { total: 1, staged: 0, unstaged: 1, untracked: 0, conflicted: 0 }
+      }),
+      diff: () => sayOk(diffText()),
+      'tree/list': () => sayOk({ entries: [{ name: 'src', type: 'dir' }], truncated: false }),
+      'file/read': () => sayOk(fileText())
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.fileRow('src/app.js', panel.changesFrame()))
+    await panel.flush()
+
+    const mark = panel.router.mark()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[1])
+    await panel.flush()
+
+    eq(panel.router.count('file/read', mark), 0, '切到文件页签不应自动读「另一个根 + 同名相对路径」的文件')
+    assert(panel.one((node) => isHost(node) && node.type === 'textarea') === null, '文件页签不该直接进入编辑器')
+  })
+})
+
+test('用例 3c：文件页签的手动刷新会清空目录缓存并重读', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'tree/list': () => sayOk({ entries: [{ name: 'app.js', type: 'file' }], truncated: false }),
+      'file/read': () => sayOk(fileText())
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(panel.all((node) => isHost(node) && hasClass(node, 'dgp-seg-btn'))[1])
+    await panel.flush()
+    const before = panel.router.count('tree/list')
+    assert(before >= 1, '进入文件页签应读取根目录')
+
+    await refreshViaMenu(panel)
+    await panel.flush()
+    assert(panel.router.count('tree/list') > before, '手动刷新应重读目录（否则外部新建的文件永远看不到）')
+  })
+})
 
 let passed = 0
 let failed = 0

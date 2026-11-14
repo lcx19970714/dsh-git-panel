@@ -122,7 +122,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 
 **通用**
 
-- 变更区顶部是「储存库」列表（VS Code 的 Repositories）：每个仓库一行，点选切换下方变更区，可折叠；外部仓库行尾可移除，标题行 `+` 添加。当前分支是贴在行最右侧的按钮，点仓库名只选中仓库，只有点这个按钮才打开分支菜单；菜单里可切到已有分支，也可在底部输入名字创建新分支：创建区能选「从」哪里开始（默认当前分支；其它本地分支标「（本地）」、远端分支标「（远端）」，选了非当前分支会补一句人话说明新分支从哪开始、改动会怎样），并决定是否「创建后切换」；工作区脏时先显示改动计数（`当前 main · 3 处改动（1 已暂存 · 2 未暂存）`）；合并 / 变基 / 拣选 / 回滚进行中时只留「只建分支」一个出口；跨起点撞车时把重叠文件摊开，给两个零风险出口：「改为从当前分支创建」/「只建分支」（不切换、改动不动）。用不上的根（测试夹具、vendor 仓库）可以在行尾隐藏：只是从储存库里收起，仓库本身不动，配置持久化在 `roots.json` 的 `hidden` 段；标题行的眼睛按钮展开「已隐藏」，在那里取消隐藏。项目根本身不给隐藏入口。文件模式固定浏览项目根，没有根选择器
+- 变更区顶部是「储存库」列表（VS Code 的 Repositories）：每个仓库一行，点选切换下方变更区，可折叠；外部仓库行尾可移除，标题行 `+` 添加。**有改动的仓库行尾显示改动规模**（文件数 + `+N −N`，由 `roots/stats` 一次查完所有仓库；二进制文件只计文件数、行数不编 0），单个仓库读失败只在该行给一个可悬停的 `!`，不影响其它行。当前分支是贴在行最右侧的按钮，点仓库名只选中仓库，只有点这个按钮才打开分支菜单；菜单里可切到已有分支，也可在底部输入名字创建新分支：创建区能选「从」哪里开始（默认当前分支；其它本地分支标「（本地）」、远端分支标「（远端）」，选了非当前分支会补一句人话说明新分支从哪开始、改动会怎样），并决定是否「创建后切换」；工作区脏时先显示改动计数（`当前 main · 3 处改动（1 已暂存 · 2 未暂存）`）；合并 / 变基 / 拣选 / 回滚进行中时只留「只建分支」一个出口；跨起点撞车时把重叠文件摊开，给两个零风险出口：「改为从当前分支创建」/「只建分支」（不切换、改动不动）。用不上的根（测试夹具、vendor 仓库）可以在行尾隐藏：只是从储存库里收起，仓库本身不动，配置持久化在 `roots.json` 的 `hidden` 段；标题行的眼睛按钮展开「已隐藏」，在那里取消隐藏。项目根本身不给隐藏入口。文件模式固定浏览项目根，没有根选择器
 - 变更列表有两种显示方式，设置页与 `⋯` 菜单共用同一个偏好：**列表**（一行一个文件，文件名为主体、路径弱化在后，路径先截断）/ **树形**（按文件夹展开折叠）
 - 未跟踪文件有两种归属：**并进未暂存**（默认，VS Code 的 Changes 里同时有改动和新文件）或**单列未跟踪组**。批量按钮跟着分组内容走：合并模式是「全部暂存」（`git add -A`），分开模式才是「暂存已跟踪改动」（`git add -u`）+「只暂存新文件」（逐路径 `git add`）
 - 提交框只有两行：输入框（右上角生成按钮）+ 一行「状态 + 提交按钮」。输入框随内容自动长高（两行起步、约七行封顶，超出改为内部滚动），生成的说明有好几行时不会被压成两行只露一截
@@ -148,6 +148,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 ├─ host/
 │  ├─ git.js                零依赖 git 引擎（spawn git；porcelain=v2 -z 解析、unified diff、目录、仓库发现、文件读写）
 │  ├─ llm-call.js           一次模型调用的唯一实现：超时/abort/拼 text-delta/判 finish（stop·tool-calls 成功，max-tokens 报 model-truncated）
+│  ├─ model-errors.js       模型失败的翻译层：余额不足 / 密钥失效 / 限流 / 模型不存在 / 上下文超限 / 断网 → 一句人话 + 下一步
 │  ├─ models.js             提交说明生成 + 模型目录/设置（模型目录来自宿主注入的 llm 服务）
 │  ├─ remotes/              GitHub / Gitee 远端能力（令牌存 DSH 凭据服务，克隆不落盘令牌）
 │  │  ├─ index.js           门面：账号增删改 + 组装下面几块
@@ -161,14 +162,17 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 │  ├─ roots.js              三种根的解析（primary / discovered / extra）
 │  └─ config.js             外部根持久化（原子写、损坏自动备份）
 ├─ src/                     ← 客户端源码（ESM，构建成 client.js）
-│  ├─ index.js              apply(ctx)：字典 / tab 类型 / 快捷键 / tab body
+│  ├─ index.js              apply(ctx)：字典 / tab 类型 / tab body
 │  ├─ platform.js           唯一接触 react 与宿主桥的文件
 │  ├─ api.js                宿主 RPC 封装（超时、abort、错误归一）
 │  ├─ store.js              显示偏好 + 每个工作区记住的远端账号 + 小 hook
 │  ├─ i18n.js               内联 zh/en 字典（文案一律由框架注入的 t 取）
 │  ├─ styles.js             全部样式（令牌取色，注入 <style>）
 │  ├─ util/{paths,diff,changes,remote,time}.js  纯函数（有单测）
+│  ├─ util/{resource-cache,draft-cache}.js  模块级缓存：首屏快照 / 未保存草稿（切页签不丢）
 │  ├─ ui/{Icon,Menu}.js     内联 SVG 图标 + 轻量浮层菜单
+│  ├─ ui/{useTreeCursor,useTimedNotice,useAutoGrow}.js  两棵树共用的键盘游标 / 提示定时 / 输入框自动高度
+│  ├─ ui/{useSnapshotResource,useOpenPanel}.js  远端四类资源的快照加载 / 两个入口共用的打开失败态
 │  └─ components/           Panel / RepoList / ChangesList / FileTree / DiffView / FileEditor / CommitBox / States / RemotePane / RemoteDetail / BranchList
 ├─ build/build-client.mjs   零依赖微型打包器（ESM → 经典脚本 __ModuleLoader__）
 ├─ test/                    13 套测试（见下）
@@ -183,7 +187,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 55 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）、`branch/create`（选基准建分支、可选建完就切过去；基准是当前 HEAD 时未提交改动原样跟随，跨基准撞车直接拒绝并给两个零风险出口）和 `branch/delete`（删除本地分支，默认只删已合并的）。
+通过 56 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）、`branch/create`（选基准建分支、可选建完就切过去；基准是当前 HEAD 时未提交改动原样跟随，跨基准撞车直接拒绝并给两个零风险出口）、`branch/delete`（删除本地分支，默认只删已合并的）和 `branch/cleanup`（收尾「远端分支已被删除」的当前本地分支：取远程更新 → 切回默认分支并快进 → 删掉这条本地分支，一条链做完；只走 `branch -d`，不加强制删除）。
 git 层面的**远端写**只有 `branch/push`（把当前分支推到 origin，用本机 git 凭据，
 `git push --set-upstream origin <当前分支>`；失败按认证 / 非快进分类）。
 `remote/fetch`（只更新远端跟踪引用，不动工作区与本地分支）与 `branch/pull`（fetch + 只允许快进）
@@ -196,7 +200,8 @@ git 层面的**远端写**只有 `branch/push`（把当前分支推到 origin，
 | `project/resolve` | `{sessionId?} \| {cwd?}` | `{projectRoot, roots[], warnings[]}` |
 | `roots/add` / `roots/remove` | `{projectRoot, path}` | 同上 |
 | `roots/hide` / `roots/unhide` | `{projectRoot, path}` | 同上；隐藏只持久化「不在储存库里显示」，不动仓库；项目本身报 `cannot-hide` |
-| `status` | `{rootPath}` | `{branch, head, detached, upstream, ahead, behind, pushed, files[], counts, truncated}`；`pushed` = 远端有没有 HEAD 这个提交（true 一致 / false 要推 / null 无从判断：无 origin、游离 HEAD、空仓库），比对的是 `refs/remotes/origin/<branch>` 的 sha 而不是「有没有 upstream」 |
+| `roots/stats` | `{paths[]}` | `{summaries: [{path, counts, adds, dels, binary, truncated}]}`；一次把所有仓库的改动规模查完（宿主限并发 4，能命中 status 缓存）。单个仓库失败只回 `{path, error}`，不影响其它行；不是 Git 仓库/裸仓库同样按行报错，不拖垮整张列表 |
+| `status` | `{rootPath}` | `{branch, head, detached, upstream, ahead, behind, sync, files[], counts, truncated}`；`sync` 是本地分支与远端同名分支的关系，**是一个状态而不是布尔**：`{state, ahead, behind}`，`state` ∈ `unknown`（没有 origin / 游离 HEAD / 空仓库，无从判断）、`never-pushed`（远端没有对应引用，本地也没有上游配置 `branch.<name>.merge`）、`remote-deleted`（远端没有对应引用，但本地还留着上游配置 —— 推过、后来被删了）、`synced` / `ahead` / `behind` / `diverged`（远端引用存在，按 `rev-list --count --left-right refs/remotes/origin/<branch>...HEAD` 的双向差集判定）；`ahead` / `behind` 就是这两个方向各自独有的提交数 |
 | `diff` | `{rootPath, path, staged, untracked, contextLines, ignoreWhitespace}` | `{kind, hunks[], stats, language}` |
 | `remote/fetch` | `{rootPath}` | `{url, branch, head, upstream, ahead, behind, fetchedAt}`（执行 git fetch --prune） |
 | `file/read` | `{rootPath, path}` | `{kind, text, size, language, eol, bom, hash, lines}`（文本一律 LF 归一） |
@@ -207,7 +212,8 @@ git 层面的**远端写**只有 `branch/push`（把当前分支推到 origin，
 | `branch/track` | `{rootPath, remote, name}` | `{branch, head, upstream}`；`git switch -c <name> --track <remote>/<name>`，本地同名分支已存在报 `branch-exists` |
 | `branch/switch` | `{rootPath, name}` | `{branch, head}`；`git switch`，工作区怎么处理由 git 决定 |
 | `branch/create` | `{rootPath, name, base, checkout}` | 创建分支，可选建完立刻切过去；三个字段全部必填（缺一个就 `bad-request`）。返回 `{branch, head, previousBranch, previousHead, base:{ref, kind, sha}, switched, carried}`：`base.kind` ∈ `head / local / remote / commit`、`carried` 是创建后的工作区脏计数（与 `status.counts` 同形）。不 stash、不 force，撞车直接拒绝。流程与错误码见下面「创建分支约定」 |
-| `branch/push` | `{rootPath}` | `{branch, head, upstream, output}`；把**当前**分支推到 origin：`git push --set-upstream origin <当前分支>`（一条命令同时覆盖「从没推过 / 已经推过」，上游已存在时只是重新确认）。凭据用本机 git（SSH key / 凭据管理器），与 `branch/pull` 的 fetch 同口径。游离 HEAD → `detached-head`、空仓库 → `unborn`、没有 origin → `no-remote`、远端拒绝认证 → `git-auth-failed`、远端有你没有的提交 → `not-fast-forward`（提示先拉取） |
+| `branch/push` | `{rootPath}` | `{branch, head, upstream, output}`；把**当前**分支推到 origin：`git push --set-upstream origin <当前分支>`（一条命令同时覆盖「从没推过 / 已经推过」，上游已存在时只是重新确认）。凭据用本机 git（SSH key / 凭据管理器），与 `branch/pull` 的 fetch 同口径。游离 HEAD → `detached-head`、空仓库 → `unborn`、没有 origin → `no-remote`、远端拒绝认证 → `git-auth-failed`、远端有你没有的提交 → `not-fast-forward`（提示先拉取）。**它只执行推送、不判断此刻该不该推**：`remote-deleted` 该收尾而不是推送，那由 `status.sync` 决定、由界面只给收尾按钮 |
+| `branch/cleanup` | `{rootPath}` | `{branch, base, deleted: true, current, steps[]}`；收尾「远端分支已被删除」的当前本地分支，宿主一次做完：`fetch --prune origin` → 切到远端默认分支（`refs/remotes/origin/HEAD`；本地没有就 `switch -c <base> --track origin/<base>`）→ `merge --ff-only origin/<base>` → `git branch -d <branch>`。不做强删（`-D` 只在用户到分支菜单里显式点「强制删除」时用）。错误码：`detached-head`、`no-remote`、`no-default-branch`（origin/HEAD 缺失，不去猜 main/master）、`on-default-branch`（当前就在默认分支上）、`not-fast-forward`（本地默认分支与远端分叉，停下来并给 `details.steps`）、`branch-unmerged`（已切回默认分支但分支有未合并提交，拒绝删除，`details` 含 `{branch, base, steps}`） |
 | `branch/delete` | `{rootPath, name, force?}` | `{name, deleted, forced}`；`git branch -d`（force 时 `-D`）。当前分支 `current-branch`、不存在 `branch-not-found`、未合并 `branch-unmerged`（提示用强制删除） |
 | `accounts/list` | `{}` | `{accounts: [{id, provider, login, label}], providers}`；**不含令牌** |
 | `accounts/add` | `{provider, label?, token}` | `{account}`；先用令牌调 `/user` 验证，通过后存进凭据服务 |
@@ -226,10 +232,10 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 远端时间一律用 `formatDateTime`：今天 = HH:MM，今年 = MM-DD HH:MM，跨年 = YYYY-MM-DD HH:MM
 （只显示时分秒会让人误以为是当天）。
 
-**深度审阅约定**：`remote/pull/deep-review` 不只发 diff：直接读**真实本地目录**里改动文件的完整内容再审。
+**深度审阅约定**：`remote/pull/session-review` 是唯一实现 —— 先把真实的本地目录切到 PR 分支，
+再新建一个 Agent 会话把审阅指令发过去（不再有「本地一次性喂完整文件」的第二条路径）。
 
 - **两阶段**：`remote/pull/prepare-review` 只做「找目录 + 切分支」（界面文案「正在准备本地代码」），
-  `remote/pull/deep-review` 只做「读完整文件 + 调模型」（界面文案「正在读取完整文件并审阅」）；
   `remote/pull/session-review` 复用阶段一，然后新建会话把审阅指令发过去（界面文案「正在准备本地代码」→ 自动打开新会话）；
   两个阶段的步骤合并显示，失败时能看到卡在哪一阶段；
 - 目录来源（按顺序）：
@@ -247,7 +253,7 @@ Gitee 会直接回 `406 {"error":"The requested content-type 'text/plain' is not
 - 切换分支不动未提交改动：工作区脏时 git 自己拒绝，错误原样上抛；
 - 二进制、超过 2MB、已删除的文件不读完整内容，原因随 `fullFilesSkipped` 返回并显示。
 - 超时：客户端 RPC 默认 20s 只适合普通请求；`remote/pull/ai-review` 240s、
-  `remote/pull/deep-review` 600s、`remote/pull/clone-for-review` 900s，
+  `remote/pull/prepare-review` / `remote/pull/session-review` 600s、`remote/pull/clone-for-review` 900s，
   避免「客户端超时了但宿主还在跑」；
 - 跳过重复拉取：PR 详情带 `headSha`，本地 HEAD 已经等于它时只做 `git switch`（甚至什么都不做），
   不执行 `git fetch`；
@@ -372,22 +378,49 @@ release 页、失败给 error 并说清原因。
 未读反馈用本地水位 `pullSeen['<accountId>#<number>'] = 已读条数`，在打开 PR 详情时写入；
 未读 = 评论总数 − 水位，下限 0。
 
-**未推送提示约定**（`PushHint` 组件，**唯一渲染点：变更页签**）：
+**同步状态提示约定**（`PushHint` 组件，**唯一渲染点：变更页签**）：
 
-- **变更页签常驻一条**：`status.pushed === false` 时，在提交框上方显示「这条分支还只在你电脑上」+
-  「**推送到远端**」按钮 + 可照抄的 `git push -u origin <当前分支>`（`user-select: all`）。
-  创建完分支、或提交完还没推，都能立刻看到 —— 这就是「要不要推送」的回答，**点按钮即可，不用去终端**。
+- **`status.sync` 是七态之一，不是一个布尔**：`unknown` / `never-pushed` / `remote-deleted` /
+  `synced` / `ahead` / `behind` / `diverged`。界面按「下一步该做什么」分三种显示，
+  而不是按「推没推过」分两种：
+  - `never-pushed` / `ahead` → **推送提示**：说明 + 可照抄的 `git push -u origin <当前分支>`
+    （`user-select: all`）+「**推送到远端**」按钮；
+  - `remote-deleted` → **收尾提示**：说明「远端分支已被删除（PR 合并后常见）」+
+    「收尾：切到默认分支并删除本地分支」按钮，**不给推送按钮、也不显示 push 命令**；
+  - `behind` / `diverged` → 不显示推送提示：那是「该拉取 / 处理分叉」，入口在分支菜单的「拉取当前分支最新代码」；
+  - `synced`（已经一致）与 `unknown`（无从判断）什么都不显示，不能误报。
+- **`remote-deleted` 为什么不能提示普通推送**：PR 合并后删分支是常态，本地还留着上游配置
+  （`branch.<name>.merge`，`git push -u` 写下的，删远端分支不会清它）。这时再推一次会把**已合并删除的分支
+  重新建出来** —— 「推送到远端」在这个状态下是错的下一步，正确的事是收尾：切回默认分支、删掉这条本地分支。
+  `branch/push` 端点本身不拦（它只执行推送）；「现在该不该推」由 `status.sync` 判断，界面据此只给收尾。
+- **收尾由宿主执行** `branch/cleanup`，把合并后该做的事一条链做完（五步，其中建跟踪分支只在本地还没有
+  默认分支时发生）：`fetch --prune origin` → 切到远端默认分支（`refs/remotes/origin/HEAD`）→
+  本地没有就 `switch -c <base> --track origin/<base>` → `merge --ff-only origin/<base>` →
+  `git branch -d <branch>`。中间不猜、不强行动作：origin/HEAD 缺失报 `no-default-branch` 让人先「获取远程更新」，
+  不去猜 main/master；本地默认分支与远端分叉就停在 `not-fast-forward` 并给出已完成的步骤 `details.steps`；
+  删除只用 `branch -d`，分支有未合并提交时报 `branch-unmerged`（已切回默认分支、但没删分支），
+  要不要强制删除留给用户到分支菜单里显式点。**收尾永不做强删（`-D` 只在显式点「强制删除」时用）。**
 - **推送由宿主执行** `branch/push`：一条 `git push --set-upstream origin <当前分支>` 同时覆盖
   「从没推过 / 已经推过」两种状态；凭据口径与 `branch/pull` 的 fetch 一致（本机 git 凭据，
   插件不掺和令牌）。认证失败、远端有你没有的提交都翻译成可操作原因显示在提示块里，不弹窗、不吞。
-- `pushed === null`（没有 origin / 游离 HEAD / 空仓库）与 `true` 都不显示：无从判断或不必要，不能误报。
-- **创建 PR 表单里不放同一块内容**：表单与变更页签同屏，复制一遍就会让同一句话在一屏里出现两次。
-  表单只回答「创建按钮为什么是灰的」（`pr.blockedNotPushed` 一行），推送按钮仍然只有左栏那一处。
-- **`pushed` 只有一个来源**：宿主 `status.pushed`。`pr/prepare` 不返回它 —— 那是同一事实的第二份快照，
+- **`sync` 只有一个来源**：宿主 `status.sync`。`pr/prepare` 不返回「是否已推送」 —— 那是同一事实的第二份快照，
   会随表单停留而过期，也让两处提示对不上。真正的推送校验在 `pr/create`（绕过界面直接调接口也拦得住）。
-- 判定必须比对远端跟踪引用的 sha，而不是「有没有 upstream」：`git push origin x`（不带 `-u`）推成功
-  也没有 upstream，那时不该继续提示去推。
-- 推送成功后客户端刷新 `status`，`pushed` 变 true，左栏提示与表单里的禁用一起消失，不需要用户手动关。
+- 判定必须比对**远端跟踪引用的双向差集**，而不是「有没有 upstream」：`git push origin x`（不带 `-u`）推成功
+  也没有 upstream，那时不该继续提示去推；反过来，只有 `branch.<name>.merge`、没有远端引用，正是
+  `remote-deleted` 的判据。
+- 推送 / 收尾成功后客户端刷新 `status`，提示条按新状态自己消失或换形态，不需要用户手动关。
+- 两种形态的可测试属性：`data-dgp-sync="<state>"`（状态值，挂在提示条根上）、`data-dgp-push-run`、
+  `data-dgp-cleanup-run`、`data-dgp-push-command`（只在推送形态出现）、`data-dgp-sync-error`（失败原因那一行）。
+
+**提交后自动推送**（客户端偏好，默认开）：
+
+- `postCommitPush` 存在**客户端 localStorage 的偏好里**（与 `changesView` / `untrackedMode` 同一个
+  `usePref` store，key `postCommitPush`，默认 `true`），**不在** `settings.json`、也不在 `settings/get` 接口里
+  —— 它是每个浏览器/用户的操作习惯，不是仓库或模型的配置。设置页有「提交后自动推送」（开 / 关，默认「开」），
+  可测试属性 `data-dgp-settings="post-commit-push"`。
+- 行为：提交成功后自动调 `branch/push`。**推送失败不影响这次提交**：提交成功的结果照常提示，
+  失败原因显示在 `PushHint` 提示条里（`data-dgp-sync-error`），不弹窗、不回滚提交。
+- 关掉它之后，推送只由提示条上的「推送到远端」按钮触发 —— 提交本身不依赖推送成功。
 
 **评论转会话（AI 处理反馈）**：PR 详情每条评论有「让 AI 处理」，调 `remote/pull/session-review`
 并带 `comment {id, author, body, createdAt}`；宿主用 `buildCommentSessionPrompt` 生成指令：
@@ -397,17 +430,21 @@ release 页、失败给 error 并说清原因。
 
 **创建 PR 约定**：入口在「变更」页签（提交框右侧「创建 PR」），表单渲染在右侧面板。
 
-- 宿主先 `pr/prepare`：从 `remote.origin.url` 认出 provider 与 `owner/repo`、列出远端分支作为目标候选、
-  检查当前分支是否已推送；不满足条件直接报明确错误，不在界面上假装可创建；
+- 宿主先 `pr/prepare`：从 `remote.origin.url` 认出 provider 与 `owner/repo`、列出远端分支作为目标候选；
+  不满足条件直接报明确错误，不在界面上假装可创建；它**仍然不返回**「是否已推送」——
+  分支与远端的关系唯一来源是 `status.sync`；
 - 目标分支默认按 `dev → develop → main → master → 自然序` 排序；**客户端按仓库（provider:owner/repo）
   记住上次选择**（`pullTargets` 偏好），下次自动带出；
 - 标题与描述用「提交说明模型」（设置里同一个模型）生成：输入是 base..HEAD 的提交标题 + diff 统计 +
   diff 片段（40k 截断），输出严格 JSON `{title, body}`，不合法就报 bad-model-output。
   输出上限 **4096**、推理档位取最低（标题 + 三节中文正文在 1024 下会被砍断，那是真实踩过的坑）。
-- 「分支还没推到远端」时**给按钮，不给作业**：推送按钮在左栏 `PushHint` 里，与表单同屏可见；
-  表单自己只把「创建 PR」置灰并给一行原因（`pr.blockedNotPushed`）。点推送 → 宿主 `branch/push`
-  → 刷新 `status` → `pushed` 变 true，创建按钮自动可用，**不需要重新 `pr/prepare`**。
-  宿主 `pr/create` 的 `not-pushed` 错误照样带可照抄的命令（绕过界面直接调接口时兜底）。
+- **只有 `status.sync.state === 'synced'` 才允许创建**：分支与远端不一致时**给按钮，不给作业** ——
+  推送 / 收尾按钮在左栏 `PushHint` 里，与表单同屏可见；表单自己只把「创建 PR」置灰并给一行原因，
+  文案按状态分两套：`sync.prBlockedPush`（还没同步：先在左侧推送）与 `sync.prBlockedDeleted`
+  （远端分支已被删除：先在左侧「收尾」，再从默认分支新建分支）。点推送 → 宿主 `branch/push`
+  → 刷新 `status` → `sync.state` 变 `synced`，创建按钮自动可用，**不需要重新 `pr/prepare`**。
+  宿主 `pr/create` 要求 `status.sync.state === 'synced'`，否则报 `not-pushed`，message 按状态给不同下一步
+  （从未推送→去推；远端已删除→先收尾；领先→先推；落后/分叉→先拉取）—— 绕过界面直接调接口也拦得住。
 - 用户可改，点「创建 PR」才真正发出去；成功后显示 PR 编号与「打开 PR」，并记住这次的目标分支。
 
 **PR 评论约定**：PR 详情（`remote/pull`）会一并读评论列表：
@@ -415,6 +452,13 @@ GitHub 走 `GET /issues/{n}/comments`、Gitee 走 `GET /pulls/{n}/comments`（�
 读失败不拖垮详情，但会带上 `commentsUnavailable` 原因，界面明确显示。
 发表评论是 `remote/pull/comment`，内容以界面评论框里的文本为准（AI 草稿只是「填入评论框」，
 不直接提交）。
+
+**PR 变动文件约定**：PR 详情（`remote/pull`）一并带回 `files` 清单（文件名 / 状态 / 增删行，
+**不带 patch**），界面一打开就能看到这次改了哪些文件。点开某一行时才调 `remote/pull/file`
+读该文件的 patch 并解析成 `hunk`，交给与「变更」页签同一个 `DiffView` 渲染。
+文件清单与 AI 审阅共用 `pulls/{n}/files`（每页 50、最多 6 页 / 300 个，到上限给 `filesTruncated`）；
+平台对二进制或过大的文件不返回 patch，此时 `patchAvailable=false`，界面明确写「读不到」而不是当成空改动。
+文件列表读失败不拖垮 PR 详情：只给 `filesUnavailable`，其余区块照常显示。
 
 **AI 审阅约定**：`remote/pull/ai-review` 由宿主取 `pulls/{n}/files` 的 patch，拼成
 PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 JSON（summary / verdict / findings[] / comment）。
@@ -444,6 +488,14 @@ PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 J
   两个调用点把推理档位取该模型最低档（推理 token 也算在 maxTokens 里，小上限会被思考吃光）。
 - JSON 类输出解析失败时，错误里打印「共 N 字符 + **末尾**片段」：开头永远长得像正常 JSON，
   问题一定在断点上（早先只打印开头，正是它误导了排查方向）。解析本身仍然严格：不抠大括号、不剥代码块。
+- **原始错误要翻成人话再给用户看**（`host/model-errors.js`）：provider 吐的是
+  `Insufficient Balance (request_id: …)`、`connect ECONNREFUSED`、`429 rate limit` 这类给开发者看的文本。
+  翻译层按类别给「原因 + 下一步」：余额不足 → 去充值或换模型；密钥失效 → 重配密钥；限流 → 等一会；
+  模型不存在 → 换模型；上下文超限 → 减少改动；断网 → 查网络。**原始错误仍附在末尾**（截 240 字符），
+  这样既不丢排查信息，用户也不用先看懂英文才知道该干什么。
+  客户端 `model-failed` / `model-truncated` 统一映射到 `error.modelFailed`（「模型调用失败：{message}」），
+  不再套「生成提交说明失败」——同一个码也出现在 AI 审阅与 PR 文案里，套错上下文比不套更糟。
+  提交框里错误提示会换行显示（最多 5 行），并在「换模型就能解决」时给一个直达设置页的按钮。
 
 **外部目录约定**：`roots/add` 只接受「含 .git 的目录」，存的就是用户给的那个路径本身
 （不做 realpath 归一、不向上找祖先仓库、不向下扫描子仓库）。因此 `add` 与 `remove` 用的是同一个键，
@@ -459,38 +511,68 @@ PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 J
 `authorize()`**：Gitee 对「无权访问的私有仓库」返回 404 `{"message":"Not Found Project"}`，
 漏掉 token 会表现为「仓库不存在」，而不是 401。
 
+**令牌不外泄约定**（三条通道都必须堵住，都真实发生过）：
+1. **URL 脱敏**：Gitee 的 token 在 query 上，错误信息里的 URL 一律过 `redactUrl()`（`access_token=***`）；
+2. **命令行脱敏**：`-c http.extraHeader=Authorization: Basic …` 会进 `GitError.details.args` 并回传客户端，
+   `redactArgs()` 只把那一个参数改成 `http.extraHeader=***`；
+3. **不接受客户端给的克隆地址**：http(s) 克隆一律用 `provider.gitUrl(fullName)` 重新拼，
+   否则「把令牌发给任意主机」只差一次构造请求。
+
+**平台 4xx 分类约定**（`host/remotes/http.js: readJson`）：**只看状态码会把业务拒绝误报成鉴权问题**。
+Gitee 的「此 Pull Request 存在冲突，请先解决冲突再继续操作」返回的是 **403**，和真正的令牌失效一模一样；
+早先一律报「令牌无效或已过期」，用户会跑去重配令牌，而真正要做的是解决冲突。现在按响应体分类：
+
+| 判定 | 错误码 | 界面文案 |
+|---|---|---|
+| 响应体含「存在冲突 / not mergeable / merge conflict」且状态不是 401 | `pull-conflict` | 「这个 PR 和目标分支有冲突：…解决冲突后再试…平台原文：…」+「到网页上解决冲突」按钮 |
+| 响应体含「未通过设置的测试」 | `merge-gate` | 合并门禁要求先过测试（`mergePull` 再补「点『标记测试通过』」） |
+| 401 | `remote-auth-failed` | 令牌无效或已过期 |
+| 403（其余） | `remote-auth-failed` | 没有权限执行这个操作（不再说成令牌失效） |
+| 404 | `remote-auth-failed` | 仓库/PR 不存在或令牌无权访问 |
+
+平台原文从 `{"message":"…"}` 里取出来再拼进提示（`serverMessage` 也放进 `details`），
+不再把 JSON 外壳直接甩给用户。**一键通过**遇到这类状态问题时立即停下并只报一条原因 ——
+原先 review 与 test 各失败一次，界面会拼出两段一模一样的 403。
+
+**端点表（续）**：上面的表被这几段约定打断了，Markdown 会在断点重新开一张表；
+这里补上表头，渲染时才不会把第一行当表头。
+
+| 端点 | 入参 | 返回 |
+|---|---|---|
 | `remote/detail` | `{accountId, fullName, pageSize?}` | `{repo, issues:{total,items}, pulls:{total,items}, failures}`；总数由 provider 的 `countsPath` 单独取：GitHub 的 issues 走 search 的 `total_count`（`type:issue` 天然排除 PR），pulls 与 Gitee 两者都用列表的 Link 末页 / `total_count`；拿不到就是 `null`（界面显示「数量未知」） |
 | `remote/pr-counts` | `{accountId, fullNames[]}` | `{counts: {fullName: number\|null}, failures}`；每个仓库一次 per_page=1 请求，上限 50 个、并发 6 |
 | `remote/branches` | `{accountId, fullName, rootPaths?}` | `{provider, htmlUrl, defaultBranch, remoteKnown, localKnown, truncated, counts, branches[], local, failures}`；远端分支走平台 API（最多 10 页、到上限报 `truncated`），本地状态由 `rootPaths` 里 origin 匹配的仓库读出来再合成一条（`mergeBranches`）：每行 `{name, local, current, remote, default, protected, remoteSha, upstream, ahead, behind, upstreamGone, upstreamMissing, remoteUpdated}`。远端/本地任一侧失败只记进 `failures` 并把 `*Known` 置 false，另一侧照常返回 |
 | `remote/branch/delete` | `{accountId, fullName, name}` | `{name, deleted}`；平台 DELETE。默认分支 `default-branch`、受保护 `protected-branch`，其余错误原样上抛 |
-| `remote/pull` | `{accountId, fullName, number}` | `{pull, reviews, capabilities}`；capabilities 说明平台支持哪些审查结论与合并方式 |
+| `remote/pull` | `{accountId, fullName, number}` | `{pull, reviews, comments, commentsUnavailable, commits, commitsUnavailable, files, filesTruncated, filesUnavailable, gate, capabilities}`；`files` 是变动文件清单（`filename/status/additions/deletions/changes/patchAvailable`，**不含 patch**，最多 300 个）；文件列表读失败不拖垮详情，只给 `filesUnavailable` |
 | `remote/pull/review` | `{accountId, fullName, number, verdict, body?}` | `{verdict, bodyPosted}`；GitHub 三种结论，Gitee 只有 approve（说明走评论接口） |
-| `remote/pull/pass` | `{accountId, fullName, number, body?}` | `{completed, failures}`；按平台能力依次执行审查/测试，部分成功照实返回 |
-| `remote/pull/diff` | `{accountId, fullName, number}` | `{files: [{filename, status, additions, deletions, changes, patch}], truncated}`；两家都走 `pulls/{n}/files`，每页 100、最多 3 页 |
+| `remote/pull/pass` | `{accountId, fullName, number, body?}` | `{completed, failures:[{step, code, message}]}`；按平台能力依次执行审查/测试。遇到状态类失败（`pull-conflict` / `remote-auth-failed` / `merge-gate`）**立即停下**，只抛那一条原因；部分成功时界面同时说清「做了什么」与「没做成什么」 |
+| `remote/pull/file` | `{accountId, fullName, number, filename}` | `{file, diff, truncated}`；只读一个文件的 patch 并解析成 `diff.hunks`（`kind` / `stats` 与本地 diff 同形）；没有 patch 时 `kind:'oversized'` 并说明原因，文件不在这个 PR 里报 `not-found` |
 | `remote/pull/ai-review` | `{accountId, fullName, number}` | `{summary, verdict, findings[], comment, model, truncated, filesIncluded}`；读 `reviewModel`，输出严格校验 |
 | `remote/pull/prepare-review` | `{accountId, fullName, number, rootPaths?, rootPath?, branch?}` | `{mode:'local', rootPath, branch, pull, steps, logPath}` 或 `{needsClone, repoUsed, headBranch, suggestedName, url, steps}`；阶段一：找仓库/判是否已在 PR 提交/切分支（必要时才 fetch） |
-| `remote/pull/deep-review` | `{accountId, fullName, number, rootPath?}` | 同 ai-review 的返回 + `deep, filesRead, fullFilesSkipped, objectSource`；把 PR head 拉到临时裸仓库/worktree 读完整文件再审，临时目录用完即删 |
 | `remote/pull/session-review` | `{accountId, fullName, number, rootPaths?, rootPath?, branch?}` | `{sessionId, rootPath, branch, steps, logPath}`；阶段一与 prepare-review 相同（主工作区切分支；没有本地仓库返回 `needsClone`），阶段二新建真实会话并把审阅指令作为首条消息发过去，用户在会话里继续追问 |
 | `remote/pull/clone-for-review` | `{accountId, fullName, number, targetDir}` | `{rootPath, branch, head}`；目标目录必须绝对且为空/不存在；克隆后切到 PR 分支 |
 | `remote/pull/state` | `{accountId, fullName, number, state}` | `{number, state}`；`PATCH /pulls/{n}` 带 `state: open/closed`（两家一致），关闭需界面二次确认 |
 | `remote/pull/comment` | `{accountId, fullName, number, comment}` | `{posted, url}`；内容由用户在面板里确认/编辑后提交 |
 | `remote/pull/test` | `{accountId, fullName, number}` | `{tested}`；Gitee 专用（POST /pulls/{n}/test，无请求体），GitHub 报不支持 |
 | `remote/pull/merge` | `{accountId, fullName, number, method, deleteBranch?}` | `{merged, method, branchDeleted, headBranch}`；不可合并/已合并/非打开状态在宿主侧拦下 |
-| `remote/clone` | `{accountId, fullName, cloneUrl, projectRoot, targetName?}` | `{path, name, fullName}`；鉴权只走 `-c http.extraHeader`，不写进 `.git/config` |
+| `remote/clone` | `{accountId, fullName, cloneUrl, projectRoot, targetName?}` | `{path, name, fullName}`；鉴权只走 `-c http.extraHeader`，不写进 `.git/config`。**http(s) 的克隆地址由宿主按 provider 重新拼**（`provider.gitUrl(fullName)`），客户端传的 URL 只用来判断「是本地路径还是远端」——否则令牌（Basic 头）会被发给任意主机；本地绝对路径（测试/离线）原样使用 |
 | `commit` | `{rootPath, message}` | `{head, subject, includedUnstaged}`；有暂存只提交暂存，没有则先 `git add -A` 再提交 |
 | `branch/pull` | `{rootPath}` | `{branch, upstream, head, previousHead, ahead, behind}`；`git fetch origin` + `git merge --ff-only @{u}`；游离 HEAD→detached-head、无上游→no-upstream、分叉或工作区冲突→not-fast-forward（不自动 merge/stash） |
 | `plugin/info` | `{}` | `{name, version, repositoryUrl, fullName}`；本地读 package.json，不联网 |
 | `plugin/update` | `{}` | `{currentVersion, latestVersion, url, publishedAt, newer}`；查 GitHub 最新 release 并严格比较版本，失败抛 `update-check-failed`（不把失败当成「已是最新」） |
 | `pr/linked` | `{rootPath, accountId?}` | `{linked:true, provider, fullName, branch, accountId, number, pull, gate, comments}` 或 `{linked:false, reason}`；reason ∈ no-remote-repo / detached-head / no-account / no-pull。没有 PR 不是错误 |
-| `pr/prepare` | `{rootPath}` | `{repo:{provider,fullName}, head, bases, accounts}`；origin 指向 GitHub/Gitee、当前在分支上、有对应账号，否则直接报错（no-remote-repo / no-account / detached-head / no-base-branch）。**不返回是否已推送**：那是 `status.pushed` 的唯一职责，这里再算一遍只会多一份会过期的快照 |
+| `pr/prepare` | `{rootPath}` | `{repo:{provider,fullName}, head, bases, accounts}`；origin 指向 GitHub/Gitee、当前在分支上、有对应账号，否则直接报错（no-remote-repo / no-account / detached-head / no-base-branch）。**不返回是否已推送**：那是 `status.sync` 的唯一职责，这里再算一遍只会多一份会过期的快照 |
 | `pr/generate` | `{rootPath, base}` | `{title, body, commits}`；`git log origin/base..HEAD` + `git diff origin/base...HEAD` 交给提交说明模型，严格 JSON |
-| `pr/create` | `{rootPath, accountId, fullName, base, title, body}` | `{number, url, state, head, base}`；先校验 origin 与 fullName 一致、分支已推送（not-pushed），再 `POST /pulls` |
+| `pr/create` | `{rootPath, accountId, fullName, base, title, body}` | `{number, url, state, head, base}`；先校验 origin 与 fullName 一致、`status.sync.state === 'synced'`（否则 `not-pushed`，message 按状态给下一步：从未推送→去推；远端已删除→先收尾；领先→先推；落后/分叉→先拉取），再 `POST /pulls` |
 | `commit/message` | `{rootPath}` | `{message, model, source}`；有暂存看暂存，否则看未暂存 |
 | `models/list` | `{}` | `{models[], failed[]}`；模型来自 DSH 的 `llm` 服务，不读配置文件、不碰密钥 |
 | `settings/get` / `settings/set` | `{commitModel?}` | `{commitModel: {provider, model} \| null}`；生成提交说明所用的模型 |
 | `tree/list` | `{rootPath, path}` | `{entries[], truncated}` |
 
 所有失败都返回 `{ok:false, error:{code, message, details}}`，宿主 handler 绝不抛错（避免裸 500）。
+**取消信号**：`createRouteFetch` 把 Fetch 的 `request.signal` 透传给 handler（第三个参数），
+handler → `host/*` 的 `signal` 一路下到 git 子进程与 fetch。客户端超时 / 切根 abort 时宿主真的会停 ——
+否则「客户端已经超时，宿主还在 clone / push」会变成重试撞 `target-exists` 或重复推送。
 
 ## 4. 开发
 
@@ -516,7 +598,7 @@ node scripts/install-profile.mjs --dry-run
 | `remote` | 远端地址 → 网页地址（scp/ssh/https/git 形式）、凭据不入地址栏、本地路径 → null |
 | `build` | 打包器：产物无残留 import/export、能真跑、循环依赖报错 |
 | `git` | git 引擎（需要 `_sandbox/repo` 夹具：`node test/make-fixture.mjs`） |
-| `host` | 54 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表、切换/创建/删除本地分支、远端分支视图合成（`mergeBranches`）、代码托管账号（令牌存 DSH 凭据服务）、远端仓库列表与克隆、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
+| `host` | 56 个端点的信封契约、错误码、文件写入（哈希/冲突/原子/EOL 保真）、暂存/取消暂存/提交、分支列表、切换/创建/删除本地分支、同步状态七态（`status.sync`）、收尾已删远端分支（`branch/cleanup`）、远端分支视图合成（`mergeBranches`）、代码托管账号（令牌存 DSH 凭据服务）、远端仓库列表与克隆、仓库发现（深层目录 / 联接 / 依赖树跳过 / 截断告警）、远端 fetch、配置持久化与损坏恢复 |
 | `client` | 产物装载 + `apply()` 契约 + 用假 react 真渲染 tab body（不需要浏览器）+ 样式表合法性（规则外不得有裸文本行，否则浏览器会吞掉下一条规则） |
 | `components` | 组件渲染契约：编辑器脏/冲突态、不可编辑占位、换行开关下的行号隐藏；远端仓库详情的分支区（本地/远端标签三态、当前/默认、加载/失败/未克隆、旧仓库数据不串台） |
 | `remotes` | 平台差异表与远端 API：仓库/PR 归一分页、令牌位置、分支列表与删除（默认分支拦截、protected 映射） |

@@ -571,7 +571,7 @@ test('左侧栏入口：注册到 sidebar.footer.action，点击打开当前会�
     t: (key) => 'T:' + key,
     openPanel: injected.openPanel
   }))
-  eq(rail.props['data-wide'], undefined, '图标条不标宽栏')
+  eq(rail.props['data-wide'], 'false', '图标条明确标成窄栏（样式靠这个值居中）')
   assert(!textOf(rail).includes('T:entry.title'), '图标条不显示文案：' + textOf(rail))
 })
 

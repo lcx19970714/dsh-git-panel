@@ -144,8 +144,12 @@ export async function startSessionReview(input) {
   if (!controller || typeof controller.create !== 'function' || typeof controller.prompt !== 'function') {
     throw new GitError('no-session-api', '当前 DSH 版本不支持插件创建会话，无法做会话级深度审阅')
   }
-  // 一定要有 AbortSignal：DSH 内部会直接对它调用 throwIfAborted()
-  const signal = input.signal instanceof AbortSignal ? input.signal : new AbortController().signal
+  // DSH 内部会直接对 signal 调用 throwIfAborted()：缺了就是契约违背。
+  // 以前这里伪造了一个「永不 abort」的 signal，等于把取消能力静默丢掉 —— 现在直接报错。
+  const signal = input.signal
+  if (!(signal instanceof AbortSignal)) {
+    throw new GitError('bad-request', '创建审阅会话缺少 AbortSignal（调用方必须把请求的取消信号传下来）')
+  }
 
   // 有工作区就加入工作区（界面里分组显示）；没有才自建目录
   const createRequest = typeof input.workspaceId === 'string' && input.workspaceId !== ''

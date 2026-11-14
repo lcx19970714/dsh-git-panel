@@ -73,20 +73,19 @@ function primaryActionOf(row, hasLocalRepo) {
 export function BranchList(props) {
   const source = props
   const translate = source.t
-  const state = source.state === null || source.state === undefined ? null : source.state
-  const rawData = state === null || state.data === null || state.data === undefined ? null : state.data
-  const selection = source.selection === null || source.selection === undefined ? null : source.selection
+  const state = source.state
+  const rawData = state === null ? null : state.data
+  const selection = source.selection
   /**
    * 数据是「按仓库」的：切到另一个仓库而新数据还没回来时，手里这份是上一个仓库的分支。
    * 这种情况当加载中处理，不能把别人的分支列表画在标题下面。
    */
-  const dataBelongsToSelection = rawData === null || selection === null
-    || typeof rawData.fullName !== 'string' || rawData.fullName === selection.fullName
-  const data = dataBelongsToSelection ? rawData : null
-  const loading = (state !== null && state.loading === true) || (rawData !== null && dataBelongsToSelection !== true)
-  const loadError = state !== null && typeof state.error === 'string' && state.error !== '' ? state.error : null
-  const branches = data !== null && Array.isArray(data.branches) ? data.branches : []
-  const hasLocalRepo = data !== null && data.local !== null && data.local !== undefined
+  const belongs = rawData !== null && (selection === null || rawData.fullName === selection.fullName)
+  const data = belongs ? rawData : null
+  const loading = (state !== null && state.loading === true) || (rawData !== null && belongs !== true)
+  const loadError = state === null ? null : state.error
+  const branches = data === null ? [] : data.branches
+  const hasLocalRepo = data !== null && data.local !== null
   const localRootPath = hasLocalRepo ? data.local.rootPath : null
   // 分支少时不放筛选框；此时残留的筛选词也必须失效，否则列表看着被过滤却找不到筛选框
   const showFilter = branches.length > 8
@@ -106,12 +105,14 @@ export function BranchList(props) {
   const closeConfirm = () => setConfirm(null)
 
   // 换仓库时把筛选 / 菜单 / 确认 / 提示全部清掉：它们都属于上一个仓库的上下文
-  const dataRepo = data === null || typeof data.fullName !== 'string' ? null : data.fullName
+  const dataRepo = data === null ? null : data.fullName
   useEffect(() => {
     setFilter('')
     setMenu(null)
     setConfirm(null)
     setNote(null)
+    setBusy(null)
+    setFetching(false)
   }, [dataRepo])
 
   const needle = showFilter ? filter.trim().toLowerCase() : ''
@@ -134,14 +135,14 @@ export function BranchList(props) {
     Promise.resolve(started)
       .then((result) => {
         setBusy(null)
-        if (result !== null && result !== undefined && result.ok === true) {
+        if (result.ok === true) {
           setNote({
             tone: 'info',
             text: translate(action === 'switch' ? 'branch.switched' : 'branch.tracked', { name: row.name })
           })
           return
         }
-        setNote({ tone: 'error', text: result === null || result === undefined ? translate('branch.failed', { message: '' }) : result.error })
+        setNote({ tone: 'error', text: translate('branch.failed', { message: result.error }) })
       })
       .catch((error) => {
         setBusy(null)
@@ -165,7 +166,7 @@ export function BranchList(props) {
       : source.onDeleteRemoteBranch(row)
     Promise.resolve(started)
       .then((result) => {
-        if (result !== null && result !== undefined && result.ok === true) {
+        if (result.ok === true) {
           setBusy(null)
           setConfirm(null)
           setNote({
@@ -174,9 +175,9 @@ export function BranchList(props) {
           })
           return
         }
-        const error = result === null || result === undefined ? translate('branch.failed', { message: '' }) : result.error
+        const error = translate('branch.failed', { message: result.error })
         // 未合并的本地分支：把「强制删除」按钮放出来，让用户明确决定，不默认 force
-        if (kind === 'local' && result !== null && result !== undefined && result.code === 'branch-unmerged') {
+        if (kind === 'local' && result.code === 'branch-unmerged') {
           setBusy(null)
           setConfirm({ row, kind, force: true, error })
           return
@@ -202,11 +203,11 @@ export function BranchList(props) {
     Promise.resolve(source.onFetchBranches())
       .then((result) => {
         setFetching(false)
-        if (result !== null && result !== undefined && result.ok === true) {
+        if (result.ok === true) {
           setNote({ tone: 'info', text: translate('branch.fetchingDone') })
           return
         }
-        setNote({ tone: 'error', text: result === null || result === undefined ? translate('branch.failed', { message: '' }) : result.error })
+        setNote({ tone: 'error', text: translate('branch.failed', { message: result.error }) })
       })
       .catch((error) => {
         setFetching(false)
@@ -226,7 +227,7 @@ export function BranchList(props) {
   const openWeb = (row) => {
     setMenu(null)
     if (data === null || typeof data.htmlUrl !== 'string' || data.htmlUrl === '') return
-    if (typeof source.onOpenUrl === 'function') source.onOpenUrl(data.htmlUrl + '/tree/' + encodeURI(row.name))
+    source.onOpenUrl(data.htmlUrl + '/tree/' + row.name.split('/').map(encodeURIComponent).join('/'))
   }
 
   const summary = data !== null && data.localKnown === true
@@ -249,7 +250,7 @@ export function BranchList(props) {
         disabled: loading,
         onClick: () => {
           setNote(null)
-          if (typeof source.onReloadBranches === 'function') source.onReloadBranches()
+          source.onReloadBranches()
         }
       }, translate('action.retry'))))
   } else if (loading === true && data === null) {
@@ -277,7 +278,7 @@ export function BranchList(props) {
   if (data !== null && data.localKnown === true && data.local === null) {
     hints.push(h('div', { key: 'not-cloned', className: 'dgp-branch-hint' }, translate('branch.notCloned')))
   } else if (hasLocalRepo === true) {
-    const folder = String(localRootPath).split(/[\\/]/).filter(Boolean).pop() ?? String(localRootPath)
+    const folder = String(localRootPath).split(/[\\/]/).filter(Boolean).pop()
     hints.push(h('div', { key: 'local-repo', className: 'dgp-branch-hint' }, translate('branch.localRepo', { name: folder })))
   }
   if (data !== null && data.truncated === true) {
@@ -292,8 +293,6 @@ export function BranchList(props) {
     const action = primaryActionOf(row, hasLocalRepo === true)
     const rowBusy = busy === row.name
     const confirmHere = confirm !== null && confirm.row.name === row.name
-    const canDeleteLocal = row.local === true
-    const canDeleteRemote = row.remote === true
     return h('li', {
       key: row.name,
       className: 'dgp-branch-item',
@@ -370,7 +369,7 @@ export function BranchList(props) {
             'data-variant': 'danger',
             'data-dgp-branch-delete-run': row.name,
             disabled: busy !== null,
-            onClick: () => runDelete(confirm.force === true)
+            onClick: () => runDelete(false)
           }, translate('branch.deleteRun'))))
       : null)
   })
@@ -482,7 +481,7 @@ export function BranchList(props) {
           disabled: loading,
           onClick: () => {
             setNote(null)
-            if (typeof source.onReloadBranches === 'function') source.onReloadBranches()
+            source.onReloadBranches()
           }
         }, h(Icon, { name: 'refresh', size: 12 })))),
     showFilter

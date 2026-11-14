@@ -18,7 +18,7 @@ function dshHomeDir() {
   return path.join(os.homedir(), '.dsh')
 }
 
-export function reviewLogPath() {
+function reviewLogPath() {
   return path.join(dshHomeDir(), 'dsh-git-panel', 'review.log')
 }
 

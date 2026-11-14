@@ -15,82 +15,63 @@
  *   └─ ...
  *
  * 纯逻辑（分组、压树、折叠单链、过滤、自动展开链）全在 `../util/changes.js`，
- * 那里可以在 Node 里单测（见 `test/tree.test.mjs`）。
+ * 那里可以在 Node 里单测（见 `test/tree.test.mjs`）。键盘游标与「文件」树共用
+ * `../ui/useTreeCursor.js`。
+ *
+ * 筛选时的展开规则：命中项必须看得见。所以只要筛选框非空，所有分组与目录
+ * 一律按展开处理 —— 否则用户输入关键词，看到的却是一排折叠的分组标题。
  */
-import { h, useEffect, useMemo, useRef, useState } from '../platform.js'
+import { h, useEffect, useMemo, useState } from '../platform.js'
 import { Icon, StatusLetter } from '../ui/Icon.js'
-import { basename, dirname, formatCount } from '../util/paths.js'
+import { useTreeCursor } from '../ui/useTreeCursor.js'
+import { dirname, formatCount } from '../util/paths.js'
 import { ancestorsFor, buildGroupRows, buildListRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } from '../util/changes.js'
-import { EmptyState, InlineNote, SkeletonRows } from './States.js'
-
-/** 把 props 里可能出现的各种 error 形状收敛成一个字符串或 null。 */
-function toErrorText(error) {
-  if (error === null || error === undefined || error === '') return null
-  if (typeof error === 'string') return error
-  if (typeof error.message === 'string' && error.message !== '') return error.message
-  return String(error)
-}
+import { EmptyState, SkeletonRows } from './States.js'
 
 export function ChangesList(props) {
-  const source = props
-  const status = source.status === undefined ? null : source.status
-  const loading = source.loading === true
-  const selectedPath = typeof source.selectedPath === 'string' && source.selectedPath !== ''
-    ? source.selectedPath
-    : null
-  const filter = typeof source.filter === 'string' ? source.filter : ''
-  const collapsedGroups = source.collapsedGroups !== null && typeof source.collapsedGroups === 'object'
-    ? source.collapsedGroups
-    : null
-  const onSelect = typeof source.onSelect === 'function' ? source.onSelect : null
-  const onToggleGroup = typeof source.onToggleGroup === 'function' ? source.onToggleGroup : null
-  const onStage = typeof source.onStage === 'function' ? source.onStage : null
-  const onStageGroup = typeof source.onStageGroup === 'function' ? source.onStageGroup : null
-  const pendingPath = typeof source.pendingPath === 'string' && source.pendingPath !== ''
-    ? source.pendingPath
-    : null
-  const pendingGroup = typeof source.pendingGroup === 'string' && source.pendingGroup !== ''
-    ? source.pendingGroup
-    : null
-  /** 显示方式：list = 一行一个文件（文件名 + 弱化路径）；tree = 按文件夹展开。 */
-  const view = source.view === 'tree' ? 'tree' : 'list'
-  /** 未跟踪文件：merge = 并进「未暂存」，separate = 单列一组。 */
-  const untrackedMode = source.untrackedMode === 'separate' ? 'separate' : 'merge'
-  const translate = source.t
-  // 注意：`onFilterChange` 归 Panel 管（它渲染筛选输入框），这里只消费 `filter`。
+  const {
+    status,
+    loading = false,
+    selectedPath = null,
+    onSelect,
+    filter = '',
+    collapsedGroups = {},
+    onToggleGroup,
+    view = 'list',
+    untrackedMode = 'merge',
+    onStage,
+    pendingPath = null,
+    onStageGroup,
+    pendingGroup = null,
+    t
+  } = props
 
-  const errorText = toErrorText(source.error)
-  const files = status !== null && status !== undefined && Array.isArray(status.files) ? status.files : []
+  const files = status === null ? [] : status.files
+  const filtering = filter.trim() !== ''
 
   const [expanded, setExpanded] = useState(() => new Set())
-  const [cursor, setCursor] = useState(-1)
-  const rowRefs = useRef([])
-  const wantFocusRef = useRef(false)
-
-  /* ------------------------------ 派生数据 ------------------------------ */
 
   const filteredFiles = useMemo(() => filterEntries(files, filter), [files, filter])
   const groups = useMemo(() => groupChanges(filteredFiles, { untrackedMode }), [filteredFiles, untrackedMode])
 
-  /** 分组可见性 + 每组要渲染的行（含固定顺序的扁平序号基数）。 */
+  /** 分组可见性 + 每组要渲染的行（offset 是跨分组的扁平行序号基数）。 */
   const layout = useMemo(() => {
     const out = []
     let offset = 0
     for (const group of groups) {
-      const open = !(collapsedGroups !== null && collapsedGroups[group.key] === true)
-      let rows = []
-      if (open) {
-        rows = view === 'tree'
-          ? buildGroupRows(group.entries, (dirPath) => expanded.has(dirPath))
-          : buildListRows(group.entries)
-      }
+      const open = filtering || collapsedGroups[group.key] !== true
+      const rows = open
+        ? (view === 'tree'
+          ? buildGroupRows(group.entries, (dirPath) => filtering || expanded.has(dirPath))
+          : buildListRows(group.entries))
+        : []
       out.push({ key: group.key, entries: group.entries, open, rows, offset })
       if (open) offset += rows.length
     }
     return out
-  }, [groups, collapsedGroups, expanded, view])
+  }, [groups, collapsedGroups, expanded, view, filtering])
 
-  /** 键盘光标走查的扁平行序列（跨分组：冲突 → 已暂存 → 未暂存 → 未跟踪）。 */
+  /** 键盘游标走查的扁平行序列（跨分组：冲突 → 已暂存 → 未暂存 → 未跟踪）。 */
   const flatRows = useMemo(() => {
     const out = []
     for (const group of layout) {
@@ -102,13 +83,33 @@ export function ChangesList(props) {
     return out
   }, [layout])
 
-  /* ------------------------------ 副作用 ------------------------------ */
+  function toggleDirPath(dirPath) {
+    setExpanded((previous) => {
+      const next = new Set(previous)
+      if (next.has(dirPath)) next.delete(dirPath)
+      else next.add(dirPath)
+      return next
+    })
+  }
+
+  function activateRow(item) {
+    if (item.row.kind === 'file') onSelect(item.row.node.entry, item.group)
+    else toggleDirPath(item.row.path)
+  }
+
+  const cursorState = useTreeCursor({
+    rows: flatRows,
+    isDir: (item) => item.row.kind === 'dir',
+    isOpen: (item) => expanded.has(item.row.path),
+    onToggle: (item) => toggleDirPath(item.row.path),
+    onActivate: activateRow
+  })
+  const { cursor, rowRefs, focusRow, handleKeyDown } = cursorState
 
   // 把选中文件的目录链自动展开，保证选中项可见（Panel 可能在外部改 selectedPath）。
   // 列表模式没有目录行，不需要展开任何东西。
   useEffect(() => {
-    if (view !== 'tree') return
-    if (selectedPath === null) return
+    if (view !== 'tree' || selectedPath === null) return
     setExpanded((previous) => {
       let next = null
       for (const group of groups) {
@@ -126,134 +127,16 @@ export function ChangesList(props) {
   useEffect(() => {
     if (selectedPath === null) return
     const index = flatRows.findIndex((item) => item.row.kind === 'file' && item.row.path === selectedPath)
-    if (index >= 0) setCursor(index)
+    if (index >= 0) focusRow(index)
   }, [selectedPath, flatRows])
-
-  // 行数变少（折叠分组 / 过滤）时收敛光标。
-  useEffect(() => {
-    setCursor((previous) => (previous >= flatRows.length ? flatRows.length - 1 : previous))
-  }, [flatRows.length])
-
-  // 光标行滚进可视区；键盘移动时顺带把真实焦点也移过去（Enter 由原生 click 处理）。
-  useEffect(() => {
-    const element = rowRefs.current[cursor]
-    if (element === null || element === undefined) return
-    try {
-      if (typeof element.scrollIntoView === 'function') element.scrollIntoView({ block: 'nearest' })
-    } catch {
-      /* 老宿主/测试环境里没有 scrollIntoView，忽略 */
-    }
-    if (wantFocusRef.current) {
-      wantFocusRef.current = false
-      try {
-        if (typeof element.focus === 'function') element.focus()
-      } catch {
-        /* 忽略 */
-      }
-    }
-  }, [cursor])
-
-  /* ------------------------------ 交互 ------------------------------ */
-
-  const toggleDirPath = (dirPath) => {
-    setExpanded((previous) => {
-      const next = new Set(previous)
-      if (next.has(dirPath)) next.delete(dirPath)
-      else next.add(dirPath)
-      return next
-    })
-  }
-
-  const selectRow = (row, groupKey) => {
-    if (row === null || row === undefined || onSelect === null) return
-    const node = row.node
-    const entry = node !== null && node !== undefined && node.entry !== undefined ? node.entry : null
-    if (entry === null || entry === undefined) return
-    onSelect(entry, groupKey)
-  }
-
-  const consume = (event) => {
-    try {
-      event.preventDefault()
-      event.stopPropagation()
-    } catch {
-      /* 忽略 */
-    }
-  }
-
-  const handleKeyDown = (event) => {
-    if (event === null || event === undefined || typeof event.key !== 'string') return
-    const container = event.currentTarget
-    const target = event.target
-    const onContainer = target !== null && target !== undefined && target === container
-    const inside = !onContainer
-      && container !== null && container !== undefined
-      && typeof container.contains === 'function'
-      && target !== null && target !== undefined
-      && container.contains(target)
-    // 只在「列表自身」范围内响应按键，绝不抢 Panel 的全局快捷键。
-    if (!onContainer && !inside) return
-
-    const key = event.key
-    const total = flatRows.length
-
-    if (key === 'ArrowDown') {
-      consume(event)
-      if (total === 0) return
-      wantFocusRef.current = true
-      setCursor((previous) => {
-        if (previous < 0 || previous >= total) return 0
-        return Math.min(previous + 1, total - 1)
-      })
-      return
-    }
-
-    if (key === 'ArrowUp') {
-      consume(event)
-      if (total === 0) return
-      wantFocusRef.current = true
-      setCursor((previous) => {
-        if (previous <= 0) return 0
-        return Math.min(previous - 1, total - 1)
-      })
-      return
-    }
-
-    if (key === 'Enter') {
-      // 行上的 Enter 交给原生 button click（避免重复 onSelect）。
-      if (!onContainer) return
-      const item = flatRows[cursor]
-      if (item === undefined) return
-      consume(event)
-      if (item.row.kind === 'file') selectRow(item.row, item.group)
-      else toggleDirPath(item.row.path)
-      return
-    }
-
-    if (key === 'ArrowRight' || key === 'ArrowLeft') {
-      const item = flatRows[cursor]
-      if (item === undefined || item.row.kind !== 'dir') return
-      const open = expanded.has(item.row.path)
-      if (key === 'ArrowRight' && !open) {
-        consume(event)
-        toggleDirPath(item.row.path)
-      } else if (key === 'ArrowLeft' && open) {
-        consume(event)
-        toggleDirPath(item.row.path)
-      }
-    }
-  }
 
   /* ------------------------------ 渲染 ------------------------------ */
 
-  const renderRow = (group, row, index) => {
-    const depth = typeof row.depth === 'number' && row.depth > 0 ? row.depth : 0
+  function renderRow(group, row, index) {
+    const depth = row.depth
     const style = { '--dgp-depth': depth }
     const isActive = selectedPath !== null && row.path === selectedPath
     const isCursor = cursor === index
-    const displayName = typeof row.displayName === 'string' && row.displayName !== ''
-      ? row.displayName
-      : basename(row.path)
     const common = {
       type: 'button',
       className: 'dgp-row',
@@ -273,7 +156,7 @@ export function ChangesList(props) {
       const open = expanded.has(row.path)
       const count = countFilesUnder(group.entries, row.path)
       return h('li', {
-        key: index,
+        key: 'dir:' + row.path,
         className: 'dgp-item',
         role: 'treeitem',
         'aria-level': depth + 1,
@@ -286,35 +169,33 @@ export function ChangesList(props) {
         'aria-expanded': open,
         'data-open': open ? 'true' : 'false',
         onClick: () => {
-          setCursor(index)
+          focusRow(index)
           toggleDirPath(row.path)
         }
       },
       h('span', { className: 'dgp-caret', 'data-open': open ? 'true' : 'false' },
         h(Icon, { name: 'chevron-right', size: 12 })),
       h(Icon, { name: open ? 'folder-open' : 'folder', size: 14 }),
-      h('span', { className: 'dgp-name dgp-name-dir dgp-oneline' }, displayName),
+      h('span', { className: 'dgp-name dgp-name-dir dgp-oneline' }, row.displayName),
       count > 0 ? h('span', { className: 'dgp-meta' }, formatCount(count)) : null))
     }
 
-    const entry = row.node !== null && row.node !== undefined && row.node.entry !== undefined
-      ? row.node.entry
-      : null
+    const entry = row.node.entry
     const parent = dirname(row.path)
-    const adds = entry !== null && entry !== undefined && typeof entry.adds === 'number' ? entry.adds : -1
-    const dels = entry !== null && entry !== undefined && typeof entry.dels === 'number' ? entry.dels : -1
+    const sideStats = group.key === 'staged' ? entry.stagedStats : entry.unstagedStats
+    const stats = sideStats ?? entry
     const counts = []
-    if (adds > 0) {
-      counts.push(h('span', { key: 'add', className: 'dgp-add' }, translate('viewer.adds', { count: formatCount(adds) })))
+    if (stats.adds >= 0) {
+      counts.push(h('span', { key: 'add', className: 'dgp-add' }, t('viewer.adds', { count: String(stats.adds) })))
     }
-    if (dels > 0) {
-      counts.push(h('span', { key: 'del', className: 'dgp-del' }, translate('viewer.dels', { count: formatCount(dels) })))
+    if (stats.dels >= 0) {
+      counts.push(h('span', { key: 'del', className: 'dgp-del' }, t('viewer.dels', { count: String(stats.dels) })))
     }
 
     // 行尾操作只由所在分组决定：已暂存 = 取消暂存，未暂存/未跟踪 = 暂存，冲突不给按钮。
     const action = rowActionOf(group.key)
     const busy = pendingPath !== null && pendingPath === row.path
-    const actionButton = action === null || onStage === null
+    const actionButton = action === null
       ? null
       : h('button', {
         type: 'button',
@@ -322,19 +203,17 @@ export function ChangesList(props) {
         'data-dgp-action': action,
         'data-busy': busy ? 'true' : undefined,
         disabled: busy,
-        title: translate(action === 'stage' ? 'row.stage' : 'row.unstage'),
-        'aria-label': translate(action === 'stage' ? 'row.stage' : 'row.unstage'),
+        title: t(action === 'stage' ? 'row.stage' : 'row.unstage'),
+        'aria-label': t(action === 'stage' ? 'row.stage' : 'row.unstage'),
         onClick: (event) => {
-          if (event !== null && event !== undefined) {
-            event.preventDefault()
-            event.stopPropagation()
-          }
+          event.preventDefault()
+          event.stopPropagation()
           onStage(row.path, action)
         }
       }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 13 }))
 
     return h('li', {
-      key: index,
+      key: 'file:' + row.path,
       className: 'dgp-item',
       role: 'treeitem',
       'aria-level': depth + 1,
@@ -346,23 +225,21 @@ export function ChangesList(props) {
         'data-kind': 'file',
         'data-dgp-entry': 'file',
         onClick: () => {
-          setCursor(index)
-          selectRow(row, group.key)
+          focusRow(index)
+          activateRow({ group: group.key, row })
         }
       },
-      entry !== null && entry !== undefined
-        ? h(StatusLetter, { status: entry.status })
-        : null,
-      h('span', { className: 'dgp-name dgp-oneline' }, displayName),
+      h(StatusLetter, { status: entry.status }),
+      h('span', { className: 'dgp-name dgp-oneline' }, row.displayName),
       parent === '' ? null : h('span', { className: 'dgp-sub dgp-oneline' }, parent),
       counts.length === 0 ? null : h('span', { className: 'dgp-meta' }, counts)),
       actionButton))
   }
 
-  const renderGroup = (group) => {
+  function renderGroup(group) {
     const action = groupActionOf(group.key, untrackedMode)
     const busy = pendingGroup !== null && pendingGroup === action
-    const actionButton = action === null || onStageGroup === null
+    const actionButton = action === null
       ? null
       : h('button', {
         type: 'button',
@@ -370,13 +247,11 @@ export function ChangesList(props) {
         'data-dgp-group-action': action,
         'data-busy': busy ? 'true' : undefined,
         disabled: busy,
-        title: translate(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
-        'aria-label': translate(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
+        title: t(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
+        'aria-label': t(action === 'unstage' ? 'group.unstageAll' : 'group.stageAll'),
         onClick: (event) => {
-          if (event !== null && event !== undefined) {
-            event.preventDefault()
-            event.stopPropagation()
-          }
+          event.preventDefault()
+          event.stopPropagation()
           onStageGroup(action)
         }
       }, h(Icon, { name: action === 'unstage' ? 'minus' : 'plus', size: 13 }))
@@ -392,12 +267,12 @@ export function ChangesList(props) {
         'data-open': group.open ? 'true' : 'false',
         'aria-expanded': group.open,
         onClick: () => {
-          if (onToggleGroup !== null) onToggleGroup(group.key)
+          onToggleGroup(group.key)
         }
       },
       h('span', { className: 'dgp-group-caret', 'data-open': group.open ? 'true' : 'false' },
         h(Icon, { name: 'chevron-right', size: 12 })),
-      h('span', { className: 'dgp-group-title' }, translate('group.' + group.key)),
+      h('span', { className: 'dgp-group-title' }, t('group.' + group.key)),
       h('span', { className: 'dgp-group-count' }, formatCount(group.entries.length))),
       actionButton),
     group.open
@@ -410,23 +285,19 @@ export function ChangesList(props) {
     className: 'dgp-list',
     role: 'tree',
     tabIndex: 0,
-    'aria-label': translate('mode.changes'),
+    'aria-label': t('mode.changes'),
     'data-dgp-list': 'changes',
     'data-view': view,
     onKeyDown: handleKeyDown
   }, children)
 
-  /* --- 状态分支（没有 status：加载 / 出错 / 无仓库） --- */
-  if (status === null || status === undefined) {
-    if (errorText !== null) {
-      return container(h(InlineNote, { tone: 'error' }, translate('error.generic', { message: errorText })))
-    }
+  /* --- 没有 status：加载 / 空仓库 --- */
+  if (status === null) {
     if (loading) return container(h(SkeletonRows, { rows: 6 }))
     return container(h(EmptyState, {
       icon: 'git-branch',
-      title: translate('status.noRoots'),
-      description: translate('status.noRootsHint'),
-      t: translate
+      title: t('status.noRoots'),
+      description: t('status.noRootsHint')
     }))
   }
 
@@ -434,29 +305,18 @@ export function ChangesList(props) {
   if (files.length === 0) {
     return container(h(EmptyState, {
       icon: 'check-circle',
-      title: translate('status.clean'),
-      description: translate('status.cleanHint'),
-      t: translate
+      title: t('status.clean'),
+      description: t('status.cleanHint')
     }))
   }
 
   /* --- 有改动，但被过滤词筛空了 --- */
   if (groups.length === 0) {
-    if (filter === '') {
-      return container(h(EmptyState, {
-        icon: 'check-circle',
-        title: translate('status.clean'),
-        description: translate('status.cleanHint'),
-        t: translate
-      }))
-    }
     return container(h(EmptyState, {
       icon: 'search',
-      title: translate('status.emptyFilter', { filter }),
-      t: translate
+      title: t('status.emptyFilter', { filter })
     }))
   }
 
-  // 注意：status 有值时的 statusError 由 Panel 统一渲染（避免重复提示），这里只在「没有 status」时自己提示。
   return container(layout.map((group) => renderGroup(group)))
 }

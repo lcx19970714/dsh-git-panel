@@ -25,10 +25,10 @@ export function PopupMenu(props) {
       return
     }
     const node = menuRef.current
-    const viewportW = typeof window === 'undefined' ? 1024 : window.innerWidth
-    const viewportH = typeof window === 'undefined' ? 768 : window.innerHeight
+    const viewportW = window.innerWidth
+    const viewportH = window.innerHeight
     const anchor = anchorRect
-    const box = node === null ? { width: minWidth, height: 0 } : node.getBoundingClientRect()
+    const box = node.getBoundingClientRect()
     const width = Math.max(box.width, minWidth)
     const height = box.height
 
@@ -80,7 +80,7 @@ export function PopupMenu(props) {
     }, children))
 }
 
-/** 菜单项。 */
+/** 菜单项。`checked` 有值时显示勾选位（此时不再画 icon）；两种标记不要同时传。 */
 export function MenuItem(props) {
   const { icon, label, sub, checked, disabled, onClick, danger, dataKey, badges } = props
   const left = checked === undefined
@@ -99,7 +99,7 @@ export function MenuItem(props) {
     onClick: (event) => {
       event.preventDefault()
       event.stopPropagation()
-      if (disabled !== true && typeof onClick === 'function') onClick(event)
+      if (disabled !== true) onClick(event)
     }
   },
   left,

@@ -44,10 +44,12 @@ const FILLED_DOTS = {
   more: [[3, 8], [8, 8], [13, 8]]
 }
 
-const warned = new Set()
-
 /**
  * 渲染一个图标。
+ *
+ * 未知名字是编程错误：图标表就是契约，缺了就应该在开发时炸出来，
+ * 而不是静默返回 null 让界面少一块（那种「少了个图标」的问题极难发现）。
+ *
  * @param {{name: string, size?: number, className?: string, title?: string}} props
  */
 export function Icon(props) {
@@ -56,12 +58,7 @@ export function Icon(props) {
   const paths = ICONS[name]
 
   if (filledDots === undefined && paths === undefined) {
-    if (!warned.has(name)) {
-      warned.add(name)
-      // eslint-disable-next-line no-console
-      console.error('[dsh-git-panel] 未知图标: ' + name)
-    }
-    return null
+    throw new Error('[dsh-git-panel] 未知图标: ' + name)
   }
 
   const children = filledDots === undefined

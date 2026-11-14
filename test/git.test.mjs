@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import {
   discoverRepos,
   languageForPath,
@@ -101,6 +101,28 @@ test('numstat 行数统计正确', async () => {
   const util = status.files.find((f) => f.path === 'src/util.ts')
   assert.equal(util.adds, 1)
   assert.equal(util.dels, 0)
+})
+
+test('大仓库逐文件统计不因 400 个变动或 40 个未跟踪文件而缺失', async () => {
+  const repo = mkdtempSync(path.join(os.tmpdir(), 'dgp-counts-'))
+  await runGit(repo, ['init', '-b', 'main'])
+  writeFileSync(path.join(repo, 'tracked.txt'), 'before\n')
+  await runGit(repo, ['add', '.'])
+  await runGit(repo, ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'base'])
+  writeFileSync(path.join(repo, 'tracked.txt'), 'staged\nextra\n')
+  await runGit(repo, ['add', 'tracked.txt'])
+  writeFileSync(path.join(repo, 'tracked.txt'), 'staged\nextra\nworking\n')
+  for (let i = 0; i < 405; i += 1) writeFileSync(path.join(repo, `new-${i}.txt`), 'one\ntwo')
+  const status = await readStatus(repo)
+  assert.equal(status.files.length, 406)
+  for (const file of status.files.filter((file) => file.untracked)) {
+    assert.equal(file.adds, 2, file.path)
+    assert.equal(file.dels, 0, file.path)
+  }
+  const tracked = status.files.find((file) => file.path === 'tracked.txt')
+  assert.deepEqual(tracked.stagedStats, { adds: 2, dels: 1, binary: false })
+  assert.deepEqual(tracked.unstagedStats, { adds: 1, dels: 0, binary: false })
+  assert.equal(tracked.adds, 3)
 })
 
 test('readDiff 未暂存：结构化 hunk 与行号', async () => {

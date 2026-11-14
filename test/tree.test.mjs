@@ -25,6 +25,8 @@ import {
   normalizeRelPath,
   orderTreeEntries,
   reconcileSelection,
+  sideForEntry,
+  statusSignature,
   groupActionOf,
   rowActionOf,
   singleFileShortcut
@@ -144,7 +146,7 @@ test('singleFileShortcut：只有 1 个条目时返回该条目，否则 null', 
   assert.equal(singleFileShortcut([one]), one)
   assert.equal(singleFileShortcut([]), null)
   assert.equal(singleFileShortcut([one, entry('d.js')]), null)
-  assert.equal(singleFileShortcut(null), null)
+
 })
 
 test('buildGroupRows：分组只有 1 个文件时直接一行文件行（不造目录行）', () => {
@@ -335,18 +337,47 @@ test('paths.collectDirPaths / parentChain / dirname / basename', () => {
 /* reconcileSelection：status 刷新后如何校正选中项                       */
 /* ------------------------------------------------------------------ */
 
-test('reconcileSelection：来自变更列表的选中项会被更新/清空', () => {
-  const entry = { path: 'src/app.js', status: 'M', adds: 1, dels: 0 }
-  const files = [{ path: 'src/app.js', status: 'M', adds: 3, dels: 1 }]
-  const selection = { path: 'src/app.js', entry, side: 'unstaged' }
+test('reconcileSelection：更新 entry / 保住 rootPath / 文件消失时清空', () => {
+  const entry = { path: 'src/app.js', status: 'M', adds: 1, dels: 0, unstaged: true }
+  const files = [{ path: 'src/app.js', status: 'M', adds: 3, dels: 1, unstaged: true }]
+  const selection = { rootPath: 'C:/w/a', path: 'src/app.js', entry, side: 'unstaged' }
 
   const kept = reconcileSelection(selection, files)
   assert.notEqual(kept, null, '文件仍在 status 里，不应清空')
-  assert.notEqual(kept, selection, '应返回新对象，好让 diff 重取')
+  assert.equal(kept.rootPath, 'C:/w/a', 'rootPath 必须原样带回来（多仓库项目靠它区分根）')
   assert.equal(kept.entry.adds, 3, '应换成最新的 entry')
-  assert.equal(kept.side, 'unstaged', 'side 必须保留')
+  assert.equal(kept.side, 'unstaged', '原 side 仍然成立时保留')
 
   assert.equal(reconcileSelection(selection, []), null, '文件从 status 里消失时应清空选中')
+  assert.equal(reconcileSelection(null, []), null, 'null 进 null 出')
+})
+
+test('sideForEntry：文件移动了分组，side 跟着落到仍然存在的一侧', () => {
+  // 刚把「未暂存」暂存掉：只剩已暂存，diff 不该继续按未暂存取（那样会显示无改动）
+  assert.equal(sideForEntry({ staged: true, unstaged: false, untracked: false }, 'unstaged'), 'staged')
+  // 取消暂存：只剩未暂存
+  assert.equal(sideForEntry({ staged: false, unstaged: true, untracked: false }, 'staged'), 'unstaged')
+  // 未跟踪文件被 add 之后不再 untracked
+  assert.equal(sideForEntry({ staged: true, unstaged: false, untracked: false }, 'untracked'), 'staged')
+  // MM 文件：用户原来选的那一侧仍然成立，就留在那一侧
+  assert.equal(sideForEntry({ staged: true, unstaged: true }, 'unstaged'), 'unstaged')
+  assert.equal(sideForEntry({ staged: true, unstaged: true }, 'staged'), 'staged')
+})
+
+test('statusSignature：内容相同则指纹相同，任何界面读到的字段变化都会换指纹', () => {
+  const base = () => ({
+    repoRoot: 'C:/w/a', branch: 'main', head: 'abc1234', detached: false, ahead: 0, behind: 0,
+    sync: { state: 'synced', ahead: 0, behind: 0 }, truncated: false,
+    counts: { total: 1, staged: 0, unstaged: 1, untracked: 0, conflicted: 0 },
+    files: [{ path: 'a.js', status: 'M', staged: false, unstaged: true, untracked: false, conflicted: false, binary: false, adds: 1, dels: 0 }]
+  })
+  assert.equal(statusSignature(base()), statusSignature(base()), '同样内容必须同指纹（否则轮询会反复重渲染）')
+  const changedAdds = base(); changedAdds.files[0].adds = 2
+  assert.notEqual(statusSignature(base()), statusSignature(changedAdds), '行数变了要换指纹')
+  const changedSync = base(); changedSync.sync = { state: 'ahead', ahead: 1, behind: 0 }
+  assert.notEqual(statusSignature(base()), statusSignature(changedSync), '同步态变了要换指纹')
+  const addedFile = base(); addedFile.files.push({ path: 'b.js', status: '?', staged: false, unstaged: false, untracked: true, conflicted: false, binary: false, adds: 5, dels: 0 })
+  assert.notEqual(statusSignature(base()), statusSignature(addedFile), '文件列表变了要换指纹')
 })
 
 test('rowActionOf：行尾按钮只由所在分组决定', () => {
@@ -390,13 +421,7 @@ test('groupActionOf：批量按钮必须与组里到底有什么一致', () => {
   assert.equal(groupActionOf(undefined), null)
 })
 
-test('reconcileSelection：来自文件浏览树的选中项原样保留（未修改文件不在 status 里）', () => {
-  const selection = { path: 'README.md', entry: null, side: 'unstaged' }
-  // 未修改的文件本来就不在 status.files 里 —— 刷新绝不能因此清空
-  assert.equal(reconcileSelection(selection, []), selection, '应原样返回同一个对象')
-  assert.equal(reconcileSelection(selection, [{ path: 'src/app.js' }]), selection, 'status 里有别的文件也不受影响')
-  assert.equal(reconcileSelection(null, []), null, 'null 进 null 出')
-})
+
 
 
 /* ==========================================================================

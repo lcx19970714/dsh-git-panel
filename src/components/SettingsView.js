@@ -5,45 +5,135 @@
  * 选项一律来自宿主读到的事实（模型目录、已保存账号），读不到就只展示错误，
  * 不给一个假的默认项。
  */
-import { h, useState } from '../platform.js'
+import { h, useEffect, useRef, useState } from '../platform.js'
 import { openExternalUrl } from '../util/openUrl.js'
 import { copyText } from '../util/clipboard.js'
 import { Icon } from '../ui/Icon.js'
 import { InlineNote } from './States.js'
 
 export function SettingsView(props) {
+  const { models, accounts, providers, loading, error, saved, accountsBusy, accountsError, accountsNotice, commitModel: commitModelRef, reviewModel, commitThinking, commitReasoningEffort, changesView, untrackedMode, postCommitPush, t } = props
+  /** 回调集中在 props 上，渲染代码只关心「点了会发生什么」。 */
   const source = props
-  const translate = source.t
-  const models = Array.isArray(source.models) ? source.models : []
-  const accounts = Array.isArray(source.accounts) ? source.accounts : []
-  const loading = source.loading === true
-  const error = typeof source.error === 'string' && source.error !== '' ? source.error : null
-  const saved = source.saved === true
-  const accountsBusy = source.accountsBusy === true
-  const accountsError = typeof source.accountsError === 'string' && source.accountsError !== ''
-    ? source.accountsError
-    : null
-  const providers = Array.isArray(source.providers) ? source.providers : []
+  const translate = t
 
-  const [provider, setProvider] = useState(providers.length > 0 ? providers[0].id : 'github')
+  const commitModel = models.find((model) => model.ref === commitModelRef)
+  const reasoning = commitModel === undefined || commitModel.reasoning === undefined ? null : commitModel.reasoning
+  const efforts = reasoning === null || reasoning.efforts === undefined ? [] : reasoning.efforts.filter((effort) => effort.id !== 'off')
+  const thinkingSupported = reasoning !== null && reasoning.supported === true && efforts.length > 0
+  const thinkingHint = commitModel === undefined ? 'settings.thinkingSelectModel'
+    : !thinkingSupported ? 'settings.thinkingUnsupported'
+      : reasoning.toggleable !== true ? 'settings.thinkingRequired' : 'settings.commitThinkingHint'
+
+  // 初始 provider 为空：平台列表是异步读到的，等它到了再选第一个（不在列表里也重新选）。
+  const [provider, setProvider] = useState('')
   const [label, setLabel] = useState('')
   const [token, setToken] = useState('')
   // 点过「获取令牌」之后给什么提示：'opened' 或拦截时的地址
   const [tokenHint, setTokenHint] = useState(null)
+  /** 添加账号失败的原因：显示在表单下方（不只看页面顶部的账号区错误）。 */
+  const [addError, setAddError] = useState(null)
+  const [addBusy, setAddBusy] = useState(false)
   // 正在编辑的账号：{ id, label, token, tokenText, revealed, busy, error, notice }
   const [editing, setEditing] = useState(null)
+  /** 编辑区的世代号：关闭 / 换账号后，旧的令牌读取结果不能再把编辑区「复活」。 */
+  const editAttemptRef = useRef(0)
 
-  const selected = providers.find((item) => item.id === provider) ?? { id: provider, label: provider }
+  useEffect(() => {
+    setProvider((previous) => (providers.some((item) => item.id === previous) ? previous : (providers[0]?.id ?? '')))
+  }, [providers])
+
+  // 被删掉的账号不能继续留在编辑区（否则再点保存会报「账号不存在」）。
+  useEffect(() => {
+    if (editing === null) return
+    if (accounts.some((account) => account.id === editing.id)) return
+    setEditing(null)
+  }, [accounts, editing])
+
+  const selected = providers.find((item) => item.id === provider) ?? null
   // 每个平台的三步都不同（菜单路径、scope 名都不一样），文案按平台 id 取
   const steps = provider === 'gitee'
     ? ['accounts.guideGitee1', 'accounts.guideGitee2', 'accounts.guideGitee3'].map((key) => translate(key))
     : ['accounts.guideGithub1', 'accounts.guideGithub2', 'accounts.guideGithub3'].map((key) => translate(key))
 
-  const submitAccount = () => {
-    if (typeof source.onAddAccount !== 'function' || token.trim() === '') return
-    source.onAddAccount({ provider, label: label.trim(), token: token.trim() })
-    setToken('')
-    setLabel('')
+  const submitAccount = async () => {
+    if (token.trim() === '' || provider === '' || addBusy || accountsBusy) return
+    setAddError(null)
+    setAddBusy(true)
+    try {
+      const result = await source.onAddAccount({ provider, label: label.trim(), token: token.trim() })
+      if (result.ok) {
+        setToken('')
+        setLabel('')
+        return
+      }
+      setAddError(result.error)
+    } finally {
+      setAddBusy(false)
+    }
+  }
+
+  /* ------------------------------ 账号编辑区 ------------------------------ */
+
+  const patchEditing = (patch) => {
+    setEditing((previous) => (previous === null ? null : { ...previous, ...patch }))
+  }
+
+  const openEditing = (account) => {
+    editAttemptRef.current += 1
+    setEditing({
+      id: account.id,
+      label: account.label,
+      token: '',
+      tokenText: null,
+      revealed: false,
+      busy: false,
+      error: null,
+      notice: null
+    })
+  }
+
+  const closeEditing = () => {
+    editAttemptRef.current += 1
+    setEditing(null)
+  }
+
+  const readToken = async () => {
+    if (editing === null || editing.busy) return
+    const attempt = editAttemptRef.current
+    patchEditing({ busy: true, error: null })
+    const result = await source.onReadToken(editing.id)
+    if (editAttemptRef.current !== attempt) return
+    if (result.ok === true) {
+      patchEditing({ busy: false, revealed: true, tokenText: result.token })
+      return
+    }
+    patchEditing({ busy: false, error: result.error })
+  }
+
+  const copyToken = async () => {
+    if (editing === null || editing.tokenText === null) return
+    const attempt = editAttemptRef.current
+    const copied = await copyText(editing.tokenText)
+    if (editAttemptRef.current !== attempt) return
+    patchEditing({
+      notice: copied.ok ? translate('accounts.copied') : translate('accounts.copyFailed'),
+      error: null
+    })
+  }
+
+  const saveEditing = async () => {
+    if (editing === null || editing.busy) return
+    const attempt = editAttemptRef.current
+    const submitted = { id: editing.id, label: editing.label, token: editing.token }
+    patchEditing({ busy: true, error: null, notice: null })
+    const result = await source.onUpdateAccount(submitted)
+    if (editAttemptRef.current !== attempt) return
+    if (result.ok === true) {
+      patchEditing({ busy: false, token: '', notice: translate('accounts.updated') })
+      return
+    }
+    patchEditing({ busy: false, error: result.error })
   }
 
   return h('div', { className: 'dgp-settings', 'data-dgp-view': 'settings' },
@@ -54,7 +144,7 @@ export function SettingsView(props) {
         'data-size': 'sm',
         'data-dgp-settings': 'back',
         onClick: () => {
-          if (typeof source.onBack === 'function') source.onBack()
+          source.onBack()
         }
       }, translate('settings.back')),
       h('h2', { className: 'dgp-settings-title' }, translate('settings.title'))),
@@ -71,23 +161,47 @@ export function SettingsView(props) {
         h('select', {
           className: 'dgp-select',
           'data-dgp-settings': 'model',
-          value: typeof source.commitModel === 'string' ? source.commitModel : '',
+          value: commitModelRef ?? '',
           onChange: (event) => {
-            if (typeof source.onChangeModel === 'function') source.onChangeModel(event.target.value)
+            source.onChangeModel(event.target.value)
           }
         },
         h('option', { value: '' }, translate('settings.modelNone')),
         models.map((model) => h('option', { key: model.ref, value: model.ref },
           model.providerLabel + ' · ' + model.modelLabel))),
-        h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint'))),
+        h('p', { className: 'dgp-settings-hint' }, translate('settings.modelHint')),
+        h('label', { className: 'dgp-settings-field dgp-settings-label' },
+          h('span', null, translate('settings.commitThinkingLabel')),
+          h('select', {
+            className: 'dgp-select',
+            'data-dgp-settings': 'commit-thinking',
+            value: commitThinking ? 'on' : 'off',
+            disabled: !thinkingSupported,
+            onChange: (event) => source.onChangeCommitThinking({ commitThinking: event.target.value === 'on' })
+          },
+          h('option', { value: 'off' }, translate('settings.thinkingOff')),
+          h('option', { value: 'on' }, translate('settings.thinkingOn')))),
+        h('p', { className: 'dgp-settings-hint' }, translate(thinkingHint)),
+        commitThinking && thinkingSupported
+          ? h('label', { className: 'dgp-settings-field dgp-settings-label' },
+            h('span', null, translate('settings.commitEffortLabel')),
+            h('select', {
+              className: 'dgp-select',
+              'data-dgp-settings': 'commit-reasoning-effort',
+              value: commitReasoningEffort ?? '',
+              onChange: (event) => source.onChangeCommitThinking({ commitReasoningEffort: event.target.value || null })
+            },
+            h('option', { value: '' }, translate('settings.effortDefault')),
+            efforts.map((effort) => h('option', { key: effort.id, value: effort.id, title: effort.description }, effort.name))))
+          : null),
       h('div', { className: 'dgp-settings-field' },
         h('label', { className: 'dgp-settings-label' }, translate('settings.reviewModelLabel')),
         h('select', {
           className: 'dgp-select',
           'data-dgp-settings': 'review-model',
-          value: typeof source.reviewModel === 'string' ? source.reviewModel : '',
+          value: reviewModel ?? '',
           onChange: (event) => {
-            if (typeof source.onChangeReviewModel === 'function') source.onChangeReviewModel(event.target.value)
+            source.onChangeReviewModel(event.target.value)
           }
         },
         h('option', { value: '' }, translate('settings.modelNone')),
@@ -100,9 +214,9 @@ export function SettingsView(props) {
       h('select', {
         className: 'dgp-select',
         'data-dgp-settings': 'changes-view',
-        value: source.changesView === 'tree' ? 'tree' : 'list',
+        value: changesView === 'tree' ? 'tree' : 'list',
         onChange: (event) => {
-          if (typeof source.onChangeChangesView === 'function') source.onChangeChangesView(event.target.value)
+          source.onChangeChangesView(event.target.value)
         }
       },
       h('option', { value: 'list' }, translate('settings.viewList')),
@@ -112,13 +226,26 @@ export function SettingsView(props) {
       h('select', {
         className: 'dgp-select',
         'data-dgp-settings': 'untracked-mode',
-        value: source.untrackedMode === 'separate' ? 'separate' : 'merge',
+        value: untrackedMode === 'separate' ? 'separate' : 'merge',
         onChange: (event) => {
-          if (typeof source.onChangeUntrackedMode === 'function') source.onChangeUntrackedMode(event.target.value)
+          source.onChangeUntrackedMode(event.target.value)
         }
       },
       h('option', { value: 'merge' }, translate('settings.untrackedMerge')),
       h('option', { value: 'separate' }, translate('settings.untrackedSeparate')))),
+    h('div', { className: 'dgp-settings-field' },
+      h('label', { className: 'dgp-settings-label' }, translate('settings.postPushLabel')),
+      h('select', {
+        className: 'dgp-select',
+        'data-dgp-settings': 'post-commit-push',
+        value: postCommitPush ? 'on' : 'off',
+        onChange: (event) => {
+          source.onChangePostCommitPush(event.target.value === 'on')
+        }
+      },
+      h('option', { value: 'on' }, translate('settings.postPushOn')),
+      h('option', { value: 'off' }, translate('settings.postPushOff'))),
+      h('p', { className: 'dgp-settings-hint' }, translate('settings.postPushHint'))),
 
     /* ------------------------------ 代码托管账号 ------------------------------ */
     h('div', { className: 'dgp-settings-field' },
@@ -136,18 +263,7 @@ export function SettingsView(props) {
               'data-dgp-account-edit': account.id,
               title: translate('accounts.edit', { name: account.label }),
               'aria-label': translate('accounts.edit', { name: account.label }),
-              onClick: () => {
-                setEditing({
-                  id: account.id,
-                  label: account.label,
-                  token: '',
-                  tokenText: null,
-                  revealed: false,
-                  busy: false,
-                  error: null,
-                  notice: null
-                })
-              }
+              onClick: () => openEditing(account)
             }, h(Icon, { name: 'file', size: 13 })),
             h('button', {
               type: 'button',
@@ -156,12 +272,26 @@ export function SettingsView(props) {
               title: translate('accounts.remove', { name: account.label }),
               'aria-label': translate('accounts.remove', { name: account.label }),
               onClick: () => {
-                if (typeof source.onRemoveAccount === 'function') source.onRemoveAccount(account.id)
+                source.onRemoveAccount(account.id)
               }
             }, h(Icon, { name: 'trash', size: 13 }))))),
       editing === null
         ? null
-        : h('div', { className: 'dgp-account-inline', 'data-dgp-accounts': 'editor' },
+        : h('div', {
+          className: 'dgp-account-inline',
+          'data-dgp-accounts': 'editor',
+          onKeyDown: (event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              closeEditing()
+              return
+            }
+            if (event.key === 'Enter' && event.target.tagName === 'INPUT') {
+              event.preventDefault()
+              saveEditing()
+            }
+          }
+        },
           h('div', { className: 'dgp-account-inline-head' },
             h('span', { className: 'dgp-account-guide-title' },
               translate('accounts.edit', { name: editing.label })),
@@ -171,7 +301,7 @@ export function SettingsView(props) {
               'data-size': 'sm',
               'data-variant': 'ghost',
               'data-dgp-accounts': 'hide-token',
-              onClick: () => setEditing({ ...editing, revealed: false, tokenText: null })
+              onClick: () => patchEditing({ revealed: false, tokenText: null })
             }, translate('accounts.hide'))),
           h('div', { className: 'dgp-account-form' },
             h('input', {
@@ -179,14 +309,16 @@ export function SettingsView(props) {
               'data-dgp-accounts': 'edit-label',
               placeholder: translate('accounts.editLabel'),
               value: editing.label,
-              onChange: (event) => setEditing({ ...editing, label: event.target.value })
+              disabled: editing.busy,
+              onChange: (event) => patchEditing({ label: event.target.value })
             }),
             h('input', {
               className: 'dgp-input',
               'data-dgp-accounts': 'edit-token',
               placeholder: translate('accounts.tokenReplaceHint'),
               value: editing.token,
-              onChange: (event) => setEditing({ ...editing, token: event.target.value })
+              disabled: editing.busy,
+              onChange: (event) => patchEditing({ token: event.target.value })
             }),
             h('button', {
               type: 'button',
@@ -194,19 +326,12 @@ export function SettingsView(props) {
               'data-size': 'sm',
               'data-dgp-accounts': 'reveal-token',
               disabled: editing.busy,
-              onClick: async () => {
+              onClick: () => {
                 if (editing.revealed) {
-                  setEditing({ ...editing, revealed: false, tokenText: null })
+                  patchEditing({ revealed: false, tokenText: null })
                   return
                 }
-                if (typeof source.onReadToken !== 'function') return
-                setEditing({ ...editing, busy: true, error: null })
-                const result = await source.onReadToken(editing.id)
-                if (result !== null && result !== undefined && result.ok === true) {
-                  setEditing({ ...editing, busy: false, revealed: true, tokenText: result.token })
-                  return
-                }
-                setEditing({ ...editing, busy: false, error: result === null || result === undefined ? '读取失败' : result.error })
+                readToken()
               }
             }, translate(editing.revealed ? 'accounts.hide' : 'accounts.reveal')),
             h('button', {
@@ -215,14 +340,7 @@ export function SettingsView(props) {
               'data-size': 'sm',
               'data-dgp-accounts': 'copy-token',
               disabled: editing.tokenText === null,
-              onClick: async () => {
-                const copied = await copyText(editing.tokenText)
-                setEditing({
-                  ...editing,
-                  notice: copied.ok ? translate('accounts.copied') : translate('accounts.copyFailed'),
-                  error: null
-                })
-              }
+              onClick: () => copyToken()
             }, translate('accounts.copy')),
             h('button', {
               type: 'button',
@@ -231,26 +349,13 @@ export function SettingsView(props) {
               'data-variant': 'primary',
               'data-dgp-accounts': 'save-account',
               disabled: editing.busy,
-              onClick: async () => {
-                if (typeof source.onUpdateAccount !== 'function') return
-                setEditing({ ...editing, busy: true, error: null, notice: null })
-                const result = await source.onUpdateAccount({
-                  id: editing.id,
-                  label: editing.label,
-                  token: editing.token
-                })
-                if (result !== null && result !== undefined && result.ok === true) {
-                  setEditing({ ...editing, busy: false, token: '', notice: translate('accounts.updated') })
-                  return
-                }
-                setEditing({ ...editing, busy: false, error: result === null || result === undefined ? '保存失败' : result.error })
-              }
-            }, translate(accountsBusy ? 'accounts.adding' : 'accounts.saveLabel')),
+              onClick: () => saveEditing()
+            }, translate(editing.busy ? 'accounts.saving' : 'accounts.saveLabel')),
             h('button', {
               type: 'button',
               className: 'dgp-btn',
               'data-size': 'sm',
-              onClick: () => setEditing(null)
+              onClick: closeEditing
             }, translate('remote.cloneCancel'))),
           editing.revealed && editing.tokenText !== null
             ? h('code', {
@@ -270,11 +375,11 @@ export function SettingsView(props) {
       accountsError !== null
         ? h(InlineNote, { tone: 'error' }, accountsError)
         : null,
-      typeof source.accountsNotice === 'string' && source.accountsNotice !== ''
-        ? h(InlineNote, { tone: 'info' }, source.accountsNotice)
-        : null,
-      /* 引导：按当前平台给三步 + 一键打开令牌页，免得用户自己去翻设置菜单 */
-      h('div', { className: 'dgp-account-guide', 'data-dgp-accounts': 'guide' },
+      accountsNotice === null
+        ? null
+        : h(InlineNote, { tone: 'info' }, accountsNotice),
+      /* 引导：按当前平台给三步 + 一键打开令牌页（平台列表还没读到时整块不渲染） */
+      selected === null ? null : h('div', { className: 'dgp-account-guide', 'data-dgp-accounts': 'guide' },
         h('div', { className: 'dgp-account-guide-head' },
           h('span', { className: 'dgp-account-guide-title' },
             translate('accounts.guideTitle') + ' · ' + selected.label),
@@ -315,6 +420,7 @@ export function SettingsView(props) {
           type: 'password',
           placeholder: translate('accounts.tokenPlaceholder'),
           value: token,
+          disabled: addBusy,
           onChange: (event) => setToken(event.target.value),
           onKeyDown: (event) => {
             if (event.key === 'Enter' && !accountsBusy && token.trim() !== '') submitAccount()
@@ -326,9 +432,12 @@ export function SettingsView(props) {
           'data-size': 'sm',
           'data-variant': 'primary',
           'data-dgp-accounts': 'add',
-          disabled: accountsBusy || token.trim() === '',
+          disabled: accountsBusy || addBusy || provider === '' || token.trim() === '',
           onClick: submitAccount
-        }, translate(accountsBusy ? 'accounts.adding' : 'accounts.add'))),
+        }, translate(addBusy ? 'accounts.adding' : 'accounts.add')),
+      addError === null
+        ? null
+        : h('div', { className: 'dgp-remote-status', 'data-tone': 'error' }, h('span', null, addError))),
 
       tokenHint === null
         ? null

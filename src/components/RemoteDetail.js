@@ -16,7 +16,7 @@ import { formatDateTime } from '../util/time.js'
 import { BranchList } from './BranchList.js'
 
 function Section(props) {
-  const { title, total, itemsTheLabel, items, emptyLabel, openLabel, onOpen, t, kind } = props
+  const { title, total, items, emptyLabel, openLabel, onOpen, t, kind } = props
   const countText = total === null ? t('detail.countUnknown') : t('detail.countOf', { count: total })
   return h('section', { className: 'dgp-detail-section', 'data-dgp-section': kind },
     h('div', { className: 'dgp-detail-head' },
@@ -40,7 +40,7 @@ function Section(props) {
             title: item.title,
             'data-dgp-item': kind,
             onClick: () => {
-              if (kind === 'pulls' && item.number !== null && typeof props.onOpenPull === 'function') {
+              if (kind === 'pulls' && item.number !== null) {
                 props.onOpenPull(item.number)
                 return
               }
@@ -50,20 +50,17 @@ function Section(props) {
           h('span', { className: 'dgp-detail-meta' },
             item.author === '' ? null : h('span', { className: 'dgp-detail-author' }, item.author),
             // 明确区分：创建 = 提交 PR 的时间，更新 = 最后一次有动静
-            typeof item.createdAt === 'string' && item.createdAt !== ''
+            item.createdAt !== ''
               ? h('span', null, t('detail.created', { time: formatDateTime(Date.parse(item.createdAt)) }))
               : null,
             // 只有确实给了更新时间、且与创建时间不同才显示；缺失就不显示（不要占位符）
-            typeof item.updatedAt === 'string' && item.updatedAt !== '' && item.updatedAt !== item.createdAt
+            item.updatedAt !== '' && item.updatedAt !== item.createdAt
               ? h('span', null, t('detail.updated', { time: formatDateTime(Date.parse(item.updatedAt)) }))
               : null)))))
 }
 
 export function RemoteDetail(props) {
-  const source = props
-  const t = source.t
-  const selection = source.selection === null || source.selection === undefined ? null : source.selection
-  const detail = source.detail === null || source.detail === undefined ? null : source.detail
+  const { selection, detail, branchState, t } = props
 
   if (selection === null) {
     return h('div', { className: 'dgp-viewer' },
@@ -73,7 +70,7 @@ export function RemoteDetail(props) {
         h('div', { className: 'dgp-state-desc' }, t('detail.pickRepoHint'))))
   }
 
-  if (detail === null || detail.loading === true) {
+  if (detail === null || detail.loading) {
     return h('div', { className: 'dgp-viewer' },
       h('div', { className: 'dgp-state', 'data-dgp-detail': 'loading' },
         h('div', { className: 'dgp-state-icon' }, h('span', { className: 'dgp-spinner' })),
@@ -91,16 +88,23 @@ export function RemoteDetail(props) {
           className: 'dgp-btn',
           'data-size': 'sm',
           onClick: () => {
-            if (typeof source.onRetry === 'function') source.onRetry()
+            props.onRetry()
           }
         }, t('action.retry'))))
   }
 
   const data = detail.data
+  // 切仓库时旧数据还在手里：不属于当前选中的一份按加载中处理，绝不画在别的标题下。
+  if (data.accountId !== selection.accountId || data.repo.fullName !== selection.fullName) {
+    return h('div', { className: 'dgp-viewer' },
+      h('div', { className: 'dgp-state', 'data-dgp-detail': 'loading' },
+        h('div', { className: 'dgp-state-icon' }, h('span', { className: 'dgp-spinner' })),
+        h('div', { className: 'dgp-state-title' }, t('detail.loading', { name: selection.fullName }))))
+  }
   const repo = data.repo
   const sizeText = repo.sizeKb > 0 ? t('detail.sizeKb', { size: repo.sizeKb }) : ''
-  // 语言 / 大小 / 默认分支原先在「代码」块里又写了一遍，现在只保留这一行
-  const meta = [repo.language, sizeText, repo.defaultBranch === '' ? '' : t('detail.defaultBranch', { name: repo.defaultBranch })]
+  // 语言 / 大小只在这里说一次；「默认分支」唯一来源是分支区（remote/branches 的 default 标签），不在两处各存一份快照。
+  const meta = [repo.language, sizeText]
     .filter((part) => part !== '').join(' · ')
 
   return h('div', { className: 'dgp-detail', 'data-dgp-detail': 'repo' },
@@ -116,7 +120,7 @@ export function RemoteDetail(props) {
           'data-variant': 'primary',
           'data-dgp-detail-clone': repo.fullName,
           onClick: () => {
-            if (typeof source.onClone === 'function') source.onClone(selection)
+            props.onClone(selection)
           }
         }, t('remote.clone')),
         h('button', {
@@ -125,7 +129,7 @@ export function RemoteDetail(props) {
           'data-size': 'sm',
           'data-dgp-detail-open': 'repo',
           onClick: () => {
-            if (typeof source.onOpenUrl === 'function') source.onOpenUrl(repo.htmlUrl)
+            props.onOpenUrl(repo.htmlUrl)
           }
         }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 })))),
     repo.description === '' ? null : h('p', { className: 'dgp-detail-desc' }, repo.description),
@@ -135,21 +139,22 @@ export function RemoteDetail(props) {
       h('span', null, t('detail.forks', { count: repo.forks })),
       repo.updatedAt === '' ? null : h('span', null, t('remote.updatedAt', { time: formatDateTime(Date.parse(repo.updatedAt)) }))),
 
-    (Array.isArray(data.failures) ? data.failures : []).map((failure) => h('p', {
+    data.failures.map((failure) => h('p', {
       key: failure.section,
       className: 'dgp-detail-failure'
-    }, t('detail.sectionFailed', { section: failure.section, message: failure.message }))),
+    }, t('detail.sectionFailed', { section: t('detail.' + failure.section), message: failure.message }))),
 
     h(BranchList, {
+      key: selection.accountId + '#' + selection.fullName,
       selection,
-      state: source.branchState,
-      onReloadBranches: source.onReloadBranches,
-      onFetchBranches: source.onFetchBranches,
-      onSwitchBranch: source.onSwitchBranch,
-      onTrackBranch: source.onTrackBranch,
-      onDeleteLocalBranch: source.onDeleteLocalBranch,
-      onDeleteRemoteBranch: source.onDeleteRemoteBranch,
-      onOpenUrl: source.onOpenUrl,
+      state: branchState,
+      onReloadBranches: props.onReloadBranches,
+      onFetchBranches: props.onFetchBranches,
+      onSwitchBranch: props.onSwitchBranch,
+      onTrackBranch: props.onTrackBranch,
+      onDeleteLocalBranch: props.onDeleteLocalBranch,
+      onDeleteRemoteBranch: props.onDeleteRemoteBranch,
+      onOpenUrl: props.onOpenUrl,
       t
     }),
 
@@ -161,7 +166,7 @@ export function RemoteDetail(props) {
       emptyLabel: t('detail.noIssues'),
       openLabel: t('detail.openOnWeb'),
       onOpen: (url) => {
-        if (typeof source.onOpenUrl === 'function') source.onOpenUrl(url ?? repo.issuesUrl)
+        props.onOpenUrl(url || repo.issuesUrl)
       },
       t
     }),
@@ -173,9 +178,9 @@ export function RemoteDetail(props) {
       emptyLabel: t('detail.noPulls'),
       openLabel: t('detail.openOnWeb'),
       onOpen: (url) => {
-        if (typeof source.onOpenUrl === 'function') source.onOpenUrl(url ?? repo.pullsUrl)
+        props.onOpenUrl(url || repo.pullsUrl)
       },
-      onOpenPull: typeof source.onOpenPull === 'function' ? source.onOpenPull : undefined,
+      onOpenPull: props.onOpenPull,
       t
     }))
 }

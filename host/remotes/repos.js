@@ -238,17 +238,19 @@ export function createRepos(deps) {
       throw new GitError('target-exists', '目标文件夹已存在：' + targetName)
     }
 
-    // 克隆地址由调用方从仓库记录里带过来（平台自己给的才是准的，不自造）
+    // 克隆地址：本地路径（测试/离线场景）原样用；http(s) 一律按账号所属平台重新拼。
+    // 绝不把客户端传来的 URL 直接拿去 clone —— 令牌会作为 Authorization Basic 头发给那个地址，
+    // 等于「任意主机都能骗到令牌」。
     const cloneUrl = typeof input.cloneUrl === 'string' ? input.cloneUrl.trim() : ''
     if (cloneUrl === '') throw new GitError('bad-request', '缺少克隆地址')
-    const isHttp = /^https?:\/\//i.test(cloneUrl)
     const isLocalPath = path.isAbsolute(cloneUrl) && existsSync(cloneUrl)
-    if (!isHttp && !isLocalPath) {
+    if (!isLocalPath && !/^https?:\/\//i.test(cloneUrl)) {
       throw new GitError('bad-request', '克隆地址必须是 http(s) URL 或本地仓库路径：' + cloneUrl)
     }
+    const remoteUrl = isLocalPath ? cloneUrl : provider.gitUrl(fullName)
 
     const args = []
-    if (isHttp) {
+    if (isLocalPath !== true) {
       const basicUser = provider.gitUser === null ? account.login : provider.gitUser
       const auth = Buffer.from(basicUser + ':' + account.token, 'utf8').toString('base64')
       // 只在本条命令里带鉴权头：不进 .git/config，进程结束后不留痕。
@@ -256,7 +258,7 @@ export function createRepos(deps) {
       args.push('-c', 'credential.helper=')
       args.push('-c', 'http.extraHeader=Authorization: Basic ' + auth)
     }
-    args.push('clone', '--progress', cloneUrl, targetPath)
+    args.push('clone', '--progress', remoteUrl, targetPath)
     await runGit(projectRoot, args, { signal: options.signal, timeoutMs: 15 * 60 * 1000 })
 
     return { path: targetPath, name: targetName, fullName }

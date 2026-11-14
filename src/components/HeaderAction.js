@@ -1,27 +1,31 @@
 /**
  * src/components/HeaderAction.js —— 会话标题栏最右侧的「Git 变更」按钮
  *
- * 挂在 `conversation.session.header.actions` 槽（session 作用域，官方 jobs 插件同款位置）。
+ * 挂在 `conversation.session.header.utilities` 槽（session 作用域，整行最右侧区域）。
  * 点一下 = 打开当前会话右侧栏的「Git 变更」页签：
  *   sidebarRight.openTabIn(sessionId, 'git')
  * 布局 store 的 openContent 会先执行 planSetExpanded(true)，所以侧栏收起时也会自动展开。
  *
  * 这个按钮的意义：右侧栏可能被收起，光靠「+」菜单里的入口会找不到，标题栏按钮常驻可见。
+ * 失败（没有已挂载会话）与左侧栏「代码坞」共用 `../ui/useOpenPanel.js` 的表现。
  */
 import { h } from '../platform.js'
+import { useOpenPanel } from '../ui/useOpenPanel.js'
 
 /** 与 tab 类型一致的 kind（右侧栏按 kind 找到 tab 定义）。 */
-export const TAB_KIND = 'git'
+const TAB_KIND = 'git'
 
 export function GitHeaderAction(props) {
   const { sessionId, t, openPanel } = props
+  const { failed, activate } = useOpenPanel(() => openPanel(sessionId))
   return h('button', {
     type: 'button',
     className: 'dgp-headerbtn',
-    title: t('header.title'),
-    'aria-label': t('header.title'),
+    title: failed ? t('entry.failed') : t('header.title'),
+    'aria-label': failed ? t('entry.failed') : t('header.title'),
     'data-dgp-header': TAB_KIND,
-    onClick: () => openPanel(sessionId)
+    'data-failed': failed ? 'true' : undefined,
+    onClick: activate
   },
   h('svg', {
     width: 14,

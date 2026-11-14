@@ -11,12 +11,18 @@
  *   │ 左列（树/列表）        ‖ 右栏（diff / 文件内容）      │
  *   └──────────────────────────────────────────────────────┘
  *
- * 刷新策略：挂载 / 切根 / 切模式 / 窗口重新可见+聚焦 / 手动 ⟳ / 可选 8s 轮询；
- * 每次请求带序号守护，切根时 abort 掉旧请求。
+ * 刷新策略：
+ *  · 轮询（8s）/ 窗口重新可见+聚焦 → status + 储存库汇总；status 内容没变就不落状态，
+ *    所以也不会连带重取 diff；
+ *  · 手动刷新（R / 立即刷新）→ 额外重读当前 diff、文件内容与文件树（外部改动是显式意图）；
+ *  · 任何写操作（暂存 / 提交 / 保存 / 分支）→ 一次 refreshRepository（status + 汇总）。
+ * 每次请求带序号守护与 AbortController，切根 / 卸载时旧请求会被真正取消。
  */
 import { h, useCallback, useEffect, useMemo, useRef, useState, getPluginContext } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
 import { PopupMenu, MenuItem, MenuLabel, MenuSeparator } from '../ui/Menu.js'
+import { useTimedNotice } from '../ui/useTimedNotice.js'
+import { useSnapshotResource } from '../ui/useSnapshotResource.js'
 import { RepoList } from './RepoList.js'
 import { ChangesList } from './ChangesList.js'
 import { FileTree } from './FileTree.js'
@@ -34,15 +40,21 @@ import { PullDetail } from './PullDetail.js'
 import { MODE, readPrefs, writePref, readRemoteAccount, saveRemoteAccount, usePref, useLatestGuard } from '../store.js'
 import * as api from '../api.js'
 import { openExternalUrl } from '../util/openUrl.js'
-import { reconcileSelection } from '../util/changes.js'
+import { reconcileSelection, statusSignature } from '../util/changes.js'
+import { readSnapshot, writeSnapshot, snapshotAge } from '../util/resource-cache.js'
+import { readDrafts, writeDraft, dropDraft } from '../util/draft-cache.js'
 import { webUrlOf } from '../util/remote.js'
 import { formatClock } from '../util/time.js'
 
 const POLL_INTERVAL_MS = 8000
-/** 提交成功提示的存活时间：看一眼就够，别一直占着位置。 */
-const COMMIT_NOTE_TTL_MS = 8000
+/** 工具条与提交框的信息类提示：看一眼就够，别一直占着位置。 */
+const NOTE_TTL_MS = 8000
 const MIN_LEFT = 180
 const MIN_RIGHT = 280
+/** 需要展示提示条的 sync 状态：该推送的两种 + 远端已被删除（要收尾）。 */
+const SYNC_HINT_STATES = ['never-pushed', 'ahead', 'remote-deleted']
+
+const NO_ROOTS = { projectRoot: null, roots: [], warnings: [] }
 
 function documentVisible() {
   return document.visibilityState !== 'hidden'
@@ -52,12 +64,25 @@ function documentFocused() {
   return document.hasFocus()
 }
 
-
-function initialSide(entry) {
-  if (entry === null) return 'unstaged'
-  if (entry.untracked) return 'untracked'
-  if (entry.unstaged) return 'unstaged'
-  return 'staged'
+/**
+ * 两份「改动规模」是否一样。
+ *
+ * 轮询每 8 秒回来一次，内容一致时不该让整张储存库列表重渲染 —— 那会连带
+ * 重新计算行布局，并让「有数字」的视觉稳定感碎掉。
+ */
+function sameRootStats(previous, next) {
+  const previousKeys = Object.keys(previous)
+  if (previousKeys.length !== Object.keys(next).length) return false
+  for (const key of previousKeys) {
+    const before = previous[key]
+    const after = next[key]
+    if (after === undefined || before.error !== after.error) return false
+    if (before.error !== undefined) continue
+    if (before.counts.total !== after.counts.total) return false
+    if (before.counts.conflicted !== after.counts.conflicted) return false
+    if (before.adds !== after.adds || before.dels !== after.dels || before.binary !== after.binary) return false
+  }
+  return true
 }
 
 export function Panel(props) {
@@ -65,9 +90,20 @@ export function Panel(props) {
   const tRef = useRef(t)
   tRef.current = t
   /** loadAccounts 定义在 openSettings 之后，这里留一个最新引用供打开设置时调用。 */
-  const loadAccountsRef = useRef(null)
 
   const sessionId = props.sessionId
+
+  /**
+   * 首屏快照的键。
+   *
+   * 切走再切回来时组件会重新挂载：先拿上次的成功结果渲染，再后台刷新。
+   * 项目根按会话分键（不同会话可能是不同项目），status 按仓库路径分键
+   * （同一仓库被多个会话打开时共用一份快照）。
+   */
+  const projectKey = 'project:' + String(sessionId)
+  const statusKeyOf = (rootPath) => 'status:' + rootPath
+  const selectionKeyOf = (rootPath) => 'changes-selection:' + rootPath
+  const fileSelectionKeyOf = (rootPath) => 'file-selection:' + rootPath
 
   /* ------------------------------- 偏好 ------------------------------- */
   const [mode, setMode] = usePref('mode')
@@ -81,6 +117,8 @@ export function Panel(props) {
   const [repositoriesOpen, setRepositoriesOpen] = usePref('repositoriesOpen')
   const [changesView, setChangesView] = usePref('changesView')
   const [untrackedMode, setUntrackedMode] = usePref('untrackedMode')
+  /** 提交成功后自动推送（默认开；对应 VS Code 的 git.postCommitCommand）。 */
+  const [postCommitPush, setPostCommitPush] = usePref('postCommitPush')
 
   /* ------------------------------ 远端账号 ------------------------------ */
   const [accounts, setAccounts] = useState([])
@@ -96,20 +134,14 @@ export function Panel(props) {
   const [providers, setProviders] = useState([])
   // 每个远端仓库未合并 PR 数：{ 'owner/name': n }
   const [prCounts, setPrCounts] = useState({})
-  // 右侧详情：选中的仓库与它的数据
+  // 右侧详情：选中的仓库
   const [remoteSelection, setRemoteSelection] = useState(null)
-  const [remoteDetail, setRemoteDetail] = useState(null)
-  // 选中仓库的分支全貌：{ loading, error, data }（data 来自 remote/branches）
-  const [remoteBranches, setRemoteBranches] = useState(null)
-  const remoteBranchesRef = useRef(null)
-  remoteBranchesRef.current = remoteBranches
-  // 分支数据是「按仓库」的：记住上次拉的是哪个 fullName，避免切页签/关 PR 时重复请求
+  // 分支数据是「按账号+仓库」的：记住上次拉的是哪一份，避免切页签/关 PR 时重复请求
   const branchSelectionRef = useRef(null)
   const remoteReposRef = useRef([])
   remoteReposRef.current = remoteRepos
-  // 面板内打开的 PR：{ number } + 它的详情
+  // 面板内打开的 PR
   const [openPull, setOpenPull] = useState(null)
-  const [pullDetail, setPullDetail] = useState(null)
   const [accountsBusy, setAccountsBusy] = useState(false)
   const [accountsError, setAccountsError] = useState(null)
   const [accountsNotice, setAccountsNotice] = useState(null)
@@ -117,9 +149,10 @@ export function Panel(props) {
   const [remoteNotice, setRemoteNotice] = useState(null)
 
   /* ------------------------------- 根 ------------------------------- */
-  const [project, setProject] = useState({ projectRoot: null, roots: [], warnings: [] })
+  // 挂载时先吃上次的快照：有就零延迟出画面，没有才骨架屏
+  const [project, setProject] = useState(() => readSnapshot(projectKey) ?? NO_ROOTS)
   const [activeRootId, setActiveRootId] = useState(null)
-  const [rootsLoading, setRootsLoading] = useState(true)
+  const [rootsLoading, setRootsLoading] = useState(() => readSnapshot(projectKey) === undefined)
   const [rootsError, setRootsError] = useState(null)
 
   const roots = project.roots
@@ -142,18 +175,108 @@ export function Panel(props) {
   const projectRef = useRef(project)
   projectRef.current = project
 
+  /* ------------------------- 远端资源（快照 + 守护） ------------------------- */
+  /**
+   * 四个「按选中项取数」的资源共用同一套语义，差别只在三个开关：
+   *  · 仓库详情 / PR 详情：失败就清空，让错误态独自占屏；
+   *  · 分支全貌 / 当前分支 PR 卡片：刷新与失败都保留上一份数据，列表与卡片不闪。
+   */
+  const remoteDetailResource = useSnapshotResource({
+    keyOf: (selection) => 'remote-detail:' + selection.accountId + ':' + selection.fullName,
+    // 带上账号 id：同名仓库在不同账号下不能共用一份详情
+    load: (selection) => api.remoteDetail({ accountId: selection.accountId, fullName: selection.fullName })
+      .then((value) => ({ ...value, accountId: selection.accountId })),
+    t
+  })
+  const remoteBranchesResource = useSnapshotResource({
+    keyOf: (selection) => 'remote-branches:' + selection.accountId + ':' + selection.fullName,
+    load: (selection) => api.remoteBranches({
+      accountId: selection.accountId,
+      fullName: selection.fullName,
+      rootPaths: allGitRoots.map((root) => root.path)
+    }),
+    keepPrevious: true,
+    keepOnError: true,
+    t
+  })
+  const pullDetailResource = useSnapshotResource({
+    keyOf: (selection) => 'pull:' + selection.accountId + ':#' + String(selection.number),
+    load: (selection) => api.remotePull({
+      accountId: selection.accountId,
+      fullName: selection.fullName,
+      number: selection.number
+    }),
+    onLoaded: (selection, data) => {
+      // 详情里能看到评论 = 用户已读：记水位供状态卡算未读
+      writePref('pullSeen', {
+        ...(readPrefs().pullSeen ?? {}),
+        [selection.accountId + '#' + selection.number]: data.comments.length
+      })
+    },
+    t
+  })
+  const linkedPullResource = useSnapshotResource({
+    snapshot: false,
+    keepPrevious: true,
+    keepOnError: true,
+    // 带上发起请求时的仓库 id：切根后在途的旧结果不会挂到新仓库的卡片上
+    load: () => api.prLinked({ rootPath: activeRoot.path }).then((value) => ({ ...value, rootId: activeRoot.id })),
+    t
+  })
+
+  const remoteDetail = remoteDetailResource.state
+  const remoteBranches = remoteBranchesResource.state
+  const pullDetail = pullDetailResource.state
+  const linkedPull = linkedPullResource.state
+  const loadRemoteDetail = remoteDetailResource.reload
+  const loadRemoteBranches = remoteBranchesResource.reload
+  const loadPullDetail = pullDetailResource.reload
+  const loadLinkedPull = linkedPullResource.reload
+  const clearRemoteBranches = remoteBranchesResource.clear
+  const clearPullDetail = pullDetailResource.clear
+  const remoteBranchesRef = useRef(remoteBranches)
+  remoteBranchesRef.current = remoteBranches
+
+  /** 打开某个 PR 时清掉上次合并的提示。 */
+  const openPullWith = useCallback((selection) => {
+    setRemoteNotice(null)
+    setOpenPull(selection)
+  }, [])
+
   /* ------------------------------ status ------------------------------ */
   const [status, setStatus] = useState(null)
+  /** 最新 status 的同步引用：判断「要不要显示骨架屏」时不用把它塞进 useCallback 依赖。 */
+  const statusRef = useRef(status)
+  statusRef.current = status
   const [statusLoading, setStatusLoading] = useState(false)
   const [statusError, setStatusError] = useState(null)
+  /** 上一次 status 的内容指纹：没变就不落状态（否则每 8 秒重渲染整张列表并重取 diff）。 */
+  const statusSignatureRef = useRef(null)
+  /** 储存库列表每行的改动规模：path -> { counts, adds, dels, binary } | { error } */
+  const [rootStats, setRootStats] = useState({})
+  const rootStatsRef = useRef(rootStats)
+  rootStatsRef.current = rootStats
   /** 正在暂存/取消暂存的文件路径；同时只允许一个，避免连点打乱索引。 */
   const [stagePending, setStagePending] = useState(null)
   const stagePendingRef = useRef(null)
   const statusSeq = useLatestGuard()
   const statusAbortRef = useRef(null)
+  const statsSeq = useLatestGuard()
+  const statsAbortRef = useRef(null)
 
   /* ----------------------------- 选中状态 ----------------------------- */
-  const [selection, setSelection] = useState(null) // { path, entry, side }
+  /**
+   * 两个页签各有一份选中项，互不迁移。
+   *
+   * 「变更」里的路径是仓库相对（活动仓库可能是项目里的子仓库），「文件」里的路径是
+   * 项目浏览根相对。共用一份状态时，切页签会把一个根下的相对路径套到另一个根上 ——
+   * 在单仓库项目里碰巧对，多仓库项目里打开的是另一个同名文件。
+   *
+   * changesSelection: { rootPath, path, entry, side }
+   * fileSelection:    { rootPath, path }
+   */
+  const [changesSelection, setChangesSelection] = useState(null)
+  const [fileSelection, setFileSelection] = useState(null)
   const [filter, setFilter] = useState('')
   const filterRef = useRef(null)
 
@@ -169,6 +292,18 @@ export function Panel(props) {
   const [fileError, setFileError] = useState(null)
   const [fileNonce, setFileNonce] = useState(0)
   const fileSeq = useLatestGuard()
+  /** 文件树的手动刷新序号：+1 时清空目录缓存并重读（否则外部新建的文件永远看不到）。 */
+  const [treeNonce, setTreeNonce] = useState(0)
+
+  /**
+   * 远端仓库列表 / 账号列表的序号守护。
+   *
+   * 它们都「先 setLoading 再 await」：切账号时旧账号的列表不能覆盖新账号的。
+   * 详情 / 分支 / PR 详情各自有序号守护，见 useSnapshotResource。
+   */
+  const remoteReposGuard = useLatestGuard()
+  const pullCountsGuard = useLatestGuard()
+  const accountsGuard = useLatestGuard()
 
   /**
    * 编辑器草稿表：path -> { text, savedText, hash, eol, bom }。
@@ -178,18 +313,20 @@ export function Panel(props) {
    *  静默丢弃按键是最不能接受的失败方式，所以草稿的生命周期 = 面板实例的生命周期。
    */
   const [drafts, setDrafts] = useState(() => new Map())
+  const draftsRef = useRef(drafts)
+  draftsRef.current = drafts
+  /** 草稿缓存按「仓库根」分桶：切到别的根再切回来，未保存的改动仍在。 */
+  const draftsRootRef = useRef(null)
   const [saveState, setSaveState] = useState({ busy: false, savedAt: 0, error: null, conflict: null })
   const saveSeq = useLatestGuard()
   /**
-   * 检测更新（git fetch）的状态。
-   * fetchedAt 为 0 表示还没检测过；checkSeq 保证只有最新一次结果落地。
+   * 插件自身版本与更新检查（与本仓库的 git 状态无关）。
    */
-  /** 插件自身版本与更新检查（与本仓库的 git 状态无关）。 */
   const [pluginState, setPluginState] = useState({
     version: null, busy: false, latestVersion: null, url: '', publishedAt: '', newer: false, checkedAt: 0, error: null
   })
   /** 工具条提示：插件检查结果与上游检查结果共用一条，谁最后动作显示谁。 */
-  const [toolbarNote, setToolbarNote] = useState(null)
+  const [toolbarNote, setToolbarNote] = useTimedNotice(NOTE_TTL_MS)
   const checkSeq = useLatestGuard()
 
   // 派生值只依赖 state，放在动作之前：checkUpdates/openRemote 要用到它们
@@ -197,8 +334,6 @@ export function Panel(props) {
   const remoteWebUrl = webUrlOf(status === null ? null : status.remoteUrl)
   const versionTitle = buildVersionTitle(pluginState, t)
   const updateNote = toolbarNote
-  const draftsRef = useRef(drafts)
-  draftsRef.current = drafts
 
   /* --------------------------- 提交 / 设置 --------------------------- */
   const [commitMessage, setCommitMessage] = useState('')
@@ -206,26 +341,25 @@ export function Panel(props) {
   const [commitGenerating, setCommitGenerating] = useState(false)
   /** 生成中的已等待毫秒数：每 200ms 刷新一次，让用户看得见它在跑。 */
   const [generateElapsed, setGenerateElapsed] = useState(0)
-  const [commitNote, setCommitNote] = useState(null)
-  /** 推送当前分支的状态：{ busy, error }。error 直接显示在「还只在你电脑上」提示块里。 */
-  const [pushState, setPushState] = useState({ busy: false, error: null })
-  const pushStateRef = useRef(pushState)
-  pushStateRef.current = pushState
+  const [commitNote, setCommitNote] = useTimedNotice(NOTE_TTL_MS)
+  /**
+   * 「推送 / 收尾」这类远端动作的状态：{ busy, error }。
+   * error 直接显示在提示块里，不弹窗；推送与收尾共用这一份（同一时刻只会做一个）。
+   */
+  const [remoteAction, setRemoteAction] = useState({ busy: false, error: null })
+  const remoteActionRef = useRef(remoteAction)
+  remoteActionRef.current = remoteAction
   const [showSettings, setShowSettings] = useState(false)
   /**
    * 创建 PR 表单（右侧面板）：
-   * { loading, error, repo, head, bases, accounts, accountId, base, title, body, bodyHeight,
+   * { loading, error, repo, head, bases, accounts, accountId, base, title, body,
    *   generating, creating, created, notice }
    *
-   * 这里没有 pushed：「分支推没推上去」属于仓库状态，唯一来源是 status.pushed。
+   * 这里没有推送状态：「分支与远端的关系」属于仓库状态，唯一来源是 `status.sync`。
    * 表单另存一份快照只会有两个后果 —— 同一屏出现两块同样的提示、以及推送后两边对不上。
    */
   const [pullForm, setPullForm] = useState(null)
-  /** 当前分支的 PR 状态卡：{ loading, error, data } */
-  const [linkedPull, setLinkedPull] = useState(null)
-  // 状态卡的刷新函数：createPull 等更早定义的回调用它，避免依赖顺序（TDZ）
-  const refreshLinkedRef = useRef(null)
-  const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
+  const [settingsState, setSettingsState] = useState({ loading: false, models: [], commitModel: null, reviewModel: null, commitThinking: false, commitReasoningEffort: null, error: null, saved: false })
 
   const [moreOpen, setMoreOpen] = useState(false)
   const moreAnchorRef = useRef(null)
@@ -233,16 +367,18 @@ export function Panel(props) {
 
   const rootRef = useRef(null)
   const bodyRef = useRef(null)
-  const [dragging, setDragging] = useState(false)
+  const dividerRef = useRef(null)
 
   /* ============================ 解析项目根 ============================ */
   const resolveProject = useCallback(async (signal) => {
-    setRootsLoading(true)
+    // 有快照时这是「后台重新验证」：不把画面切回骨架屏
+    if (readSnapshot(projectKey) === undefined) setRootsLoading(true)
     setRootsError(null)
     try {
       const value = await api.resolveProject({ sessionId }, { signal })
       if (signal !== undefined && signal.aborted) return
       const next = { projectRoot: value.projectRoot, roots: value.roots, warnings: value.warnings }
+      writeSnapshot(projectKey, next)
       setProject(next)
       setActiveRootId((previous) => {
         if (typeof previous === 'string' && next.roots.some((root) => root.id === previous)) return previous
@@ -258,7 +394,7 @@ export function Panel(props) {
     } finally {
       if (!(signal !== undefined && signal.aborted)) setRootsLoading(false)
     }
-  }, [sessionId])
+  }, [sessionId, projectKey])
 
   useEffect(() => {
 
@@ -268,7 +404,7 @@ export function Panel(props) {
   }, [resolveProject, sessionId])
 
   /* ============================== 刷新 status ============================== */
-  const refreshStatus = useCallback(async () => {
+  const refreshActiveStatus = useCallback(async () => {
     const root = activeRootRef.current
     if (root === null || root.isGit === false) {
       setStatus(null)
@@ -279,79 +415,162 @@ export function Panel(props) {
     const token = statusSeq.begin()
     // 每次刷新都换一个 AbortController：新请求打断旧请求，切根/卸载时也能真正取消
     const controller = new AbortController()
-    const previousController = statusAbortRef.current
+    statusAbortRef.current?.abort()
     statusAbortRef.current = controller
-    if (previousController !== null && typeof previousController.abort === 'function') {
-      try {
-        previousController.abort()
-      } catch {
-        /* ignore */
-      }
-    }
-    setStatusLoading(true)
+    // 已经有画面时不再显示加载态：轮询每 8 秒一次，闪一下骨架屏比不刷新还糟。
+    const showLoading = statusRef.current === null
+    if (showLoading) setStatusLoading(true)
     setStatusError(null)
     try {
       const value = await api.readStatus({ rootPath: root.path }, { signal: controller.signal })
       if (!statusSeq.isLatest(token)) return
+      // 内容没变就不落状态：否则每一轮轮询都会重渲染整张列表、把选中项换成新对象、
+      // 再连带把 diff 重新取一遍 —— 什么都没有变，只是又跑了一圈。
+      const signature = statusSignature(value)
+      if (signature === statusSignatureRef.current) return
+      statusSignatureRef.current = signature
       setStatus(value)
-      setSelection((previous) => reconcileSelection(previous, value.files))
+      writeSnapshot(statusKeyOf(root.path), value)
+      setChangesSelection((previous) => reconcileSelection(previous, value.files))
     } catch (error) {
-      if (!statusSeq.isLatest(token)) return
-      if (error !== null && error !== undefined && error.code === 'aborted') return
+      if (!statusSeq.isLatest(token) || error.code === 'aborted') return
       setStatusError(api.describeError(error, tRef.current))
     } finally {
       if (statusAbortRef.current === controller) statusAbortRef.current = null
-      if (statusSeq.isLatest(token)) setStatusLoading(false)
+      if (showLoading && statusSeq.isLatest(token)) setStatusLoading(false)
     }
   }, [statusSeq])
 
+  /* ============================ 刷新储存库汇总 ============================ */
   /**
-   * 用户主动刷新（工具条按钮 / R 键）：除了 status，还要重读"当前正在看的内容"。
-   *
-   * - 变更模式：status 刷新后 `reconcileSelection` 会给出**新的** selection 对象，
-   *   diff 的 effect 依赖 selection 身份，所以 diff 自动重取 —— 这里不需要额外动作。
-   * - 文件模式：选中项代表一个路径，`reconcileSelection` 原样返回同一个对象（这是对的，
-   *   否则未修改的文件会被清空），因此文件内容必须靠 fileNonce 显式重读。
+   * 储存库列表每行要显示「改动文件数 + 增删行数」：一次请求把所有仓库查完，
+   * 宿主那边还能命中 status 缓存。内容没变就不落状态（否则列表会跟着轮询重渲染）。
    */
+  const refreshRootStats = useCallback(async () => {
+    const paths = projectRef.current.roots.filter((root) => root.isGit === true).map((root) => root.path)
+    if (paths.length === 0) {
+      if (Object.keys(rootStatsRef.current).length > 0) setRootStats({})
+      return
+    }
+    const token = statsSeq.begin()
+    const controller = new AbortController()
+    statsAbortRef.current?.abort()
+    statsAbortRef.current = controller
+    try {
+      const value = await api.rootStats({ paths }, { signal: controller.signal })
+      if (!statsSeq.isLatest(token)) return
+      const next = {}
+      for (const summary of value.summaries) next[summary.path] = summary
+      if (sameRootStats(rootStatsRef.current, next)) return
+      setRootStats(next)
+    } catch (error) {
+      if (!statsSeq.isLatest(token) || error.code === 'aborted') return
+      setStatusError(api.describeError(error, tRef.current))
+    } finally {
+      if (statsAbortRef.current === controller) statsAbortRef.current = null
+    }
+  }, [statsSeq])
+
+  /** 一次仓库操作之后要同时跟上的两件事：活动仓库的 status、所有仓库的改动规模。 */
+  const refreshRepository = useCallback(async () => {
+    await Promise.all([refreshActiveStatus(), refreshRootStats()])
+  }, [refreshActiveStatus, refreshRootStats])
+
+  /** 根集合本身变了（新增 / 隐藏 / 取消隐藏 / 移除）：汇总数字要跟着换一批。 */
+  const gitRootPathsKey = useMemo(
+    () => project.roots.filter((root) => root.isGit === true).map((root) => root.path).join('\u0000'),
+    [project.roots]
+  )
+  useEffect(() => {
+    refreshRootStats()
+  }, [gitRootPathsKey, refreshRootStats])
+
+  /**
+   * 用户主动刷新（工具条 / R 键）：重读 status、储存库汇总、当前 diff、文件内容与文件树。
+   *
+   * 轮询不碰 diff / 文件树：那两样只有内容真的变了才需要重来，而 status 指纹
+   * 已经负责判断「变没变」；手动刷新是用户的显式意图，一律重读。
+   */
+  // 卸载时取消还在跑的汇总请求（status 由根 effect 负责）。
+  useEffect(() => () => {
+    statsAbortRef.current?.abort()
+    statsAbortRef.current = null
+  }, [])
+
   const refreshAll = useCallback(() => {
     setFileNonce((count) => count + 1)
-    refreshStatus()
-  }, [refreshStatus])
+    setDiffNonce((count) => count + 1)
+    setTreeNonce((count) => count + 1)
+    refreshRepository()
+  }, [refreshRepository])
 
   useEffect(() => {
-    setStatus(null)
-    setSelection(null)
+    // 换根：先把上次看过的快照摆上来，再后台刷新 —— 切回来不再白屏
+    const rootPath = activeRoot === null || activeRoot.isGit !== true ? null : activeRoot.path
+    const cachedStatus = rootPath === null ? undefined : readSnapshot(statusKeyOf(rootPath))
+    const cachedSelection = rootPath === null ? undefined : readSnapshot(selectionKeyOf(rootPath))
+    statusSignatureRef.current = cachedStatus === undefined ? null : statusSignature(cachedStatus)
+    setStatus(cachedStatus ?? null)
+    setChangesSelection(reconcileSelection(cachedSelection ?? null, cachedStatus === undefined ? [] : cachedStatus.files))
     setDiff(null)
-    setFileData(null)
-    // 换根 = 换了一批文件：草稿（按相对路径存）不再有意义
-    setDrafts(new Map())
-    setSaveState({ busy: false, savedAt: 0, error: null, conflict: null })
-    // 推送错误属于上一个仓库：换根就清掉，别让它挂在另一个仓库的提示块里
-    setPushState({ busy: false, error: null })
+    // 换仓库 = 换了一份上下文：提交说明、创建 PR 表单、操作结果都不属于新仓库
+    setRemoteAction({ busy: false, error: null })
+    setCommitMessage('')
+    setCommitNote(null)
+    setPullForm(null)
     if (activeRoot === null || activeRoot.isGit === false) {
       setStatusLoading(false)
       return undefined
     }
-    refreshStatus()
+    refreshActiveStatus()
     // 切根/卸载：取消这个根还没回来的 status 请求
     return () => {
-      const controller = statusAbortRef.current
-      if (controller !== null && typeof controller.abort === 'function') {
-        try {
-          controller.abort()
-        } catch {
-          /* ignore */
-        }
-      }
+      statusAbortRef.current?.abort()
       statusAbortRef.current = null
     }
-  }, [activeRootId, activeRoot === null ? null : activeRoot.isGit, refreshStatus])
+  }, [activeRootId, activeRoot === null ? null : activeRoot.isGit, refreshActiveStatus])
+
+  /* ---------------------------- 选中项快照 ---------------------------- */
+  // 切走再切回来时要回到「上次看的那个文件」，否则每次都要重新点一遍
+  useEffect(() => {
+    if (changesSelection === null) return
+    writeSnapshot(selectionKeyOf(changesSelection.rootPath), changesSelection)
+  }, [changesSelection])
+
+  useEffect(() => {
+    if (fileSelection === null) return
+    writeSnapshot(fileSelectionKeyOf(fileSelection.rootPath), fileSelection)
+  }, [fileSelection])
+
+  /**
+   * 文件页签的根与草稿。
+   *
+   * 草稿按「浏览根 + 相对路径」存进模块级缓存：切右侧栏页签会卸载组件，
+   * 只放在组件 state 里的话，一次 unmount 就把没保存的改动丢光。
+   */
+  useEffect(() => {
+    const browsePath = browseRoot === null ? null : browseRoot.path
+    draftsRootRef.current = browsePath
+    setDrafts(browsePath === null ? new Map() : readDrafts(browsePath))
+    setFileData(null)
+    setFileError(null)
+    setSaveState({ busy: false, savedAt: 0, error: null, conflict: null })
+    if (browsePath !== null) setFileSelection(readSnapshot(fileSelectionKeyOf(browsePath)) ?? null)
+  }, [browseRoot === null ? null : browseRoot.path])
 
   /* ---------------------------- 自适应 refresh ---------------------------- */
   useEffect(() => {
-    const onFocus = () => refreshStatus()
+    // 切回窗口/页签时，只有快照已经凉了才真的发请求：
+    // 刚挂载时的 refreshRepository 已经发过一次，这里再发就是同一份数据的第二次往返。
+    const shouldRefresh = () => {
+      const root = activeRootRef.current
+      return root === null ? true : snapshotAge(statusKeyOf(root.path)) > 500
+    }
+    const onFocus = () => {
+      if (shouldRefresh()) refreshRepository()
+    }
     const onVisibility = () => {
-      if (documentVisible()) refreshStatus()
+      if (documentVisible() && shouldRefresh()) refreshRepository()
     }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisibility)
@@ -359,15 +578,15 @@ export function Panel(props) {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [refreshStatus])
+  }, [refreshRepository])
 
   useEffect(() => {
     if (autoRefresh !== true || mode !== MODE.changes) return undefined
     const timer = setInterval(() => {
-      if (documentVisible() && documentFocused()) refreshStatus()
+      if (documentVisible() && documentFocused()) refreshRepository()
     }, POLL_INTERVAL_MS)
     return () => clearInterval(timer)
-  }, [autoRefresh, mode, refreshStatus])
+  }, [autoRefresh, mode, refreshRepository])
 
   /**
    * 「储存库」行上的分支名是 project/resolve 的快照，而 status 是活动仓库的实时状态。
@@ -387,9 +606,17 @@ export function Panel(props) {
   }, [status, resolveProject])
 
   /* ============================== 取 diff ============================== */
+  /**
+   * 依赖是「请求的身份」而不是 selection 对象：决定 diff 的只有
+   * `rootPath + path + side + 上下文设置`。轮询换掉了 selection 对象但内容没变时，
+   * 这里不会重取（这是把 8 秒一次的 diff 请求彻底关掉的关键）。
+   */
+  const diffRootPath = changesSelection === null ? '' : changesSelection.rootPath
+  const diffPath = changesSelection === null ? '' : changesSelection.path
+  const diffSide = changesSelection === null ? '' : changesSelection.side
   useEffect(() => {
     if (mode !== MODE.changes) return undefined
-    if (selection === null || activeRoot === null) {
+    if (diffPath === '') {
       setDiff(null)
       setDiffLoading(false)
       setDiffError(null)
@@ -397,13 +624,15 @@ export function Panel(props) {
     }
     const controller = new AbortController()
     const token = diffSeq.begin()
+    // 换文件/换侧立刻清空：否则新标题会和上一个文件的 diff 同屏一小会儿
+    setDiff(null)
     setDiffLoading(true)
     setDiffError(null)
     api.readDiff({
-      rootPath: activeRoot.path,
-      path: selection.path,
-      staged: selection.side === 'staged',
-      untracked: selection.side === 'untracked',
+      rootPath: diffRootPath,
+      path: diffPath,
+      staged: diffSide === 'staged',
+      untracked: diffSide === 'untracked',
       contextLines,
       ignoreWhitespace
     }, { signal: controller.signal })
@@ -412,17 +641,29 @@ export function Panel(props) {
         setDiff(value)
       })
       .catch((error) => {
-        if (!diffSeq.isLatest(token)) return
-        if (error && error.code === 'aborted') return
+        if (!diffSeq.isLatest(token) || error.code === 'aborted') return
         setDiffError(api.describeError(error, tRef.current))
       })
       .finally(() => {
         if (diffSeq.isLatest(token)) setDiffLoading(false)
       })
     return () => controller.abort()
-  }, [mode, selection, activeRootId, contextLines, ignoreWhitespace, diffSeq, diffNonce])
+  }, [mode, diffRootPath, diffPath, diffSide, contextLines, ignoreWhitespace, diffSeq, diffNonce])
 
   /* ====================== 编辑器草稿 / 保存（文件模式） ====================== */
+
+  /** 更新一个草稿并同步写进模块级缓存（null = 丢掉这个文件的草稿）。 */
+  const patchDraft = useCallback((path, draft) => {
+    setDrafts((previous) => {
+      const next = new Map(previous)
+      if (draft === null) next.delete(path)
+      else next.set(path, draft)
+      return next
+    })
+    const root = draftsRootRef.current
+    if (draft === null) dropDraft(root, path)
+    else writeDraft(root, path, draft)
+  }, [])
 
   /**
    * 读取结果与草稿对账。
@@ -435,14 +676,9 @@ export function Panel(props) {
    *  · 读到的不是可编辑文本 → 丢掉该 path 的草稿
    */
   const adoptRead = useCallback((path, value) => {
-    const editable = value !== null && typeof value === 'object'
-      && value.kind === 'text' && typeof value.text === 'string'
     const existing = draftsRef.current.get(path)
-    if (editable !== true) {
-      if (existing === undefined) return
-      const cleaned = new Map(draftsRef.current)
-      cleaned.delete(path)
-      setDrafts(cleaned)
+    if (value.kind !== 'text') {
+      if (existing !== undefined) patchDraft(path, null)
       return
     }
     const fresh = {
@@ -450,40 +686,34 @@ export function Panel(props) {
       savedText: value.text,
       hash: value.hash,
       eol: value.eol,
-      bom: value.bom === true
+      bom: value.bom
     }
     if (existing === undefined) {
-      const created = new Map(draftsRef.current)
-      created.set(path, fresh)
-      setDrafts(created)
+      patchDraft(path, fresh)
       return
     }
     if (existing.hash === value.hash) return
-    const dirty = existing.text !== existing.savedText
-    const next = new Map(draftsRef.current)
-    next.set(path, dirty ? existing : fresh)
-    setDrafts(next)
-    if (dirty) setSaveState((previous) => ({ ...previous, conflict: { path } }))
-  }, [])
+    if (existing.text !== existing.savedText) {
+      setSaveState((previous) => ({ ...previous, conflict: { path } }))
+      return
+    }
+    patchDraft(path, fresh)
+  }, [patchDraft])
 
   /** 编辑器输入 → 更新草稿。 */
   const changeDraft = useCallback((path, text) => {
-    setDrafts((previous) => {
-      const draft = previous.get(path)
-      if (draft === undefined || draft.text === text) return previous
-      const next = new Map(previous)
-      next.set(path, { ...draft, text })
-      return next
-    })
-  }, [])
+    const draft = draftsRef.current.get(path)
+    if (draft === undefined || draft.text === text) return
+    patchDraft(path, { ...draft, text })
+  }, [patchDraft])
 
   /**
    * 保存当前文件。
    * `force === true` 只由「覆盖保存」按钮传入 —— 那是用户看过冲突提示后的显式决定。
    */
   const saveDraft = useCallback(async (force) => {
-    if (mode !== MODE.files || browseRoot === null || selection === null) return
-    const path = selection.path
+    if (mode !== MODE.files || browseRoot === null || fileSelection === null) return
+    const path = fileSelection.path
     const draft = draftsRef.current.get(path)
     if (draft === undefined) return
     if (force !== true && draft.text === draft.savedText) return
@@ -496,50 +726,35 @@ export function Panel(props) {
         ? await api.writeFile({ ...body, force: true })
         : await api.writeFile({ ...body, expectedHash: draft.hash })
       if (!saveSeq.isLatest(token)) return
-      setDrafts((previous) => {
-        const current = previous.get(path)
-        if (current === undefined) return previous
-        const next = new Map(previous)
-        next.set(path, { ...current, savedText: current.text, hash: result.hash })
-        return next
-      })
+      const current = draftsRef.current.get(path)
+      if (current !== undefined) patchDraft(path, { ...current, savedText: current.text, hash: result.hash })
       setSaveState({ busy: false, savedAt: Date.now(), error: null, conflict: null })
-      // 保存后工作区变了：刷新 status，让变更列表/计数跟上（选中项是路径型，不会被清掉）
-      refreshStatus()
+      // 保存后工作区变了：变更列表与储存库行的数字都要跟上
+      refreshRepository()
     } catch (error) {
       if (!saveSeq.isLatest(token)) return
-      if (error !== null && error !== undefined && error.code === 'conflict') {
+      if (error.code === 'conflict') {
         setSaveState({ busy: false, savedAt: 0, error: null, conflict: { path } })
         return
       }
-      if (error !== null && error !== undefined && error.code === 'aborted') {
+      if (error.code === 'aborted') {
         setSaveState((previous) => ({ ...previous, busy: false }))
         return
       }
       setSaveState({ busy: false, savedAt: 0, error: api.describeError(error, tRef.current), conflict: null })
     }
-  }, [mode, browseRoot, selection, saveSeq, refreshStatus])
+  }, [mode, browseRoot, fileSelection, saveSeq, patchDraft, refreshRepository])
 
   /** 冲突条的「重新加载」：丢掉本地改动，重新从磁盘读。 */
   const reloadDraft = useCallback(() => {
-    if (selection === null) return
-    const path = selection.path
-    setDrafts((previous) => {
-      if (!previous.has(path)) return previous
-      const next = new Map(previous)
-      next.delete(path)
-      return next
-    })
+    if (fileSelection === null) return
+    patchDraft(fileSelection.path, null)
     setSaveState({ busy: false, savedAt: 0, error: null, conflict: null })
     setFileNonce((count) => count + 1)
-  }, [selection])
+  }, [fileSelection, patchDraft])
 
   /* -------------------------- 检测更新 / 打开仓库 -------------------------- */
 
-  /**
-   * 检测更新 = 让宿主执行一次 git fetch，再回来看 ahead/behind。
-   * 这是只读操作（只更新远端跟踪引用），所以不需要二次确认。
-   */
   /** 检查插件是否最新（当前安装版本 vs GitHub 最新 release）。 */
   const checkUpdates = useCallback(async () => {
     const token = checkSeq.begin()
@@ -553,11 +768,11 @@ export function Panel(props) {
         latestVersion: value.latestVersion,
         url: value.url,
         publishedAt: value.publishedAt,
-        newer: value.newer === true,
+        newer: value.newer,
         checkedAt: Date.now(),
         error: null
       })
-      setToolbarNote(value.newer === true
+      setToolbarNote(value.newer
         ? {
           tone: 'warn',
           text: tRef.current('update.pluginNewer', { version: value.latestVersion, current: value.currentVersion }),
@@ -580,7 +795,7 @@ export function Panel(props) {
     api.pluginInfo().then((value) => {
       if (!alive) return
       setPluginState((previous) => ({ ...previous, version: value.version }))
-    }).catch((error) => {
+    }, (error) => {
       if (!alive) return
       setPluginState((previous) => ({ ...previous, error: api.describeError(error, tRef.current) }))
     })
@@ -591,10 +806,11 @@ export function Panel(props) {
 
   /** 打开远端仓库网页（本地路径类远端没有网页，按钮此时是禁用的）。 */
   const openRemote = useCallback(() => {
-    if (remoteWebUrl === null) return
-    window.open(remoteWebUrl, '_blank', 'noopener,noreferrer')
-  }, [remoteWebUrl])
-
+    const result = openExternalUrl(remoteWebUrl)
+    if (result.opened !== true) {
+      setToolbarNote({ tone: 'error', text: tRef.current('error.openFailed', { url: remoteWebUrl }) })
+    }
+  }, [remoteWebUrl, setToolbarNote])
 
   /** 有未保存改动的文件（给文件树画脏点）。 */
   const dirtyPaths = useMemo(() => {
@@ -602,10 +818,12 @@ export function Panel(props) {
     for (const [path, draft] of drafts) if (draft.text !== draft.savedText) set.add(path)
     return set
   }, [drafts])
+
   /* ============================ 取文件内容 ============================ */
+  const filePath = fileSelection === null ? null : fileSelection.path
   useEffect(() => {
     if (mode !== MODE.files) return undefined
-    if (selection === null || activeRoot === null) {
+    if (filePath === null) {
       setFileData(null)
       setFileLoading(false)
       setFileError(null)
@@ -615,44 +833,36 @@ export function Panel(props) {
     const token = fileSeq.begin()
     setFileLoading(true)
     setFileError(null)
-    const path = selection.path
-    api.readFile({ rootPath: browseRoot.path, path }, { signal: controller.signal })
+    api.readFile({ rootPath: browseRoot.path, path: filePath }, { signal: controller.signal })
       .then((value) => {
         if (!fileSeq.isLatest(token)) return
         setFileData(value)
-        adoptRead(path, value)
+        adoptRead(filePath, value)
       })
       .catch((error) => {
-        if (!fileSeq.isLatest(token)) return
-        if (error && error.code === 'aborted') return
+        if (!fileSeq.isLatest(token) || error.code === 'aborted') return
         setFileError(api.describeError(error, tRef.current))
       })
       .finally(() => {
         if (fileSeq.isLatest(token)) setFileLoading(false)
       })
     return () => controller.abort()
-  }, [mode, selection, browseRoot === null ? null : browseRoot.id, fileSeq, fileNonce])
+  }, [mode, filePath, browseRoot === null ? null : browseRoot.path, fileSeq, fileNonce])
 
   /* ============================== 交互 ============================== */
   const selectEntry = useCallback((entry, groupKey) => {
-    if (entry === null || entry === undefined) return
-    const side = groupKey === 'staged' && entry.staged === true
-      ? 'staged'
-      : groupKey === 'unstaged' && entry.unstaged === true
-        ? 'unstaged'
-        : groupKey === 'untracked'
-          ? 'untracked'
-          : initialSide(entry)
-    setSelection({ path: entry.path, entry, side })
+    const side = groupKey === 'untracked'
+      ? 'untracked'
+      : (groupKey === 'staged' && entry.staged === true ? 'staged' : 'unstaged')
+    setChangesSelection({ rootPath: activeRootRef.current.path, path: entry.path, entry, side })
   }, [])
 
   const selectFile = useCallback((relPath) => {
-    if (typeof relPath !== 'string' || relPath === '') return
-    setSelection({ path: relPath, entry: null, side: 'unstaged' })
+    setFileSelection({ rootPath: browseRootRef.current.path, path: relPath })
   }, [])
 
   const switchSide = useCallback((side) => {
-    setSelection((previous) => (previous === null ? previous : { ...previous, side }))
+    setChangesSelection((previous) => (previous === null ? null : { ...previous, side }))
   }, [])
 
   /**
@@ -662,49 +872,91 @@ export function Panel(props) {
    */
   const stageEntry = useCallback(async (relPath, action) => {
     if (activeRoot === null || activeRoot.isGit === false) return
-    if (typeof relPath !== 'string' || relPath === '') return
-    if (action !== 'stage' && action !== 'unstage') return
     if (stagePendingRef.current !== null) return
     stagePendingRef.current = relPath
     setStagePending(relPath)
     setStatusError(null)
     try {
       await api.stageFile({ rootPath: activeRoot.path, path: relPath, action })
-      await refreshStatus()
+      await refreshRepository()
       setDiffNonce((previous) => previous + 1)
     } catch (error) {
-      if (error === null || error === undefined || error.code !== 'aborted') {
+      if (error.code !== 'aborted') {
         setStatusError(api.describeError(error, tRef.current))
       }
     } finally {
       stagePendingRef.current = null
       setStagePending(null)
     }
-  }, [activeRoot, refreshStatus])
+  }, [activeRoot, refreshRepository])
 
   /** 分组头的批量按钮：一次暂存或取消暂存整组。 */
   const stageGroup = useCallback(async (scope) => {
     if (activeRoot === null || activeRoot.isGit === false) return
-    if (scope !== 'stage-unstaged' && scope !== 'stage-untracked' && scope !== 'stage-all' && scope !== 'unstage') return
     if (stagePendingRef.current !== null) return
     stagePendingRef.current = scope
     setStagePending(scope)
     setStatusError(null)
     try {
       await api.stageGroup({ rootPath: activeRoot.path, scope })
-      await refreshStatus()
+      await refreshRepository()
       setDiffNonce((previous) => previous + 1)
     } catch (error) {
-      if (error === null || error === undefined || error.code !== 'aborted') {
+      if (error.code !== 'aborted') {
         setStatusError(api.describeError(error, tRef.current))
       }
     } finally {
       stagePendingRef.current = null
       setStagePending(null)
     }
-  }, [activeRoot, refreshStatus])
+  }, [activeRoot, refreshRepository])
 
-  /** 提交已暂存内容。未暂存的改动不参与。 */
+  /**
+   * 推送当前分支（`branch/push`）。成功就刷新仓库状态 —— 提示条由 `status.sync` 驱动，
+   * 刷新后自己消失/换成别的状态；失败把原因留在提示条里，不弹窗。
+   * 正在执行时用 ref 挡住重复点击（state 要等下一遍渲染才生效）。
+   */
+  const pushBranchNow = useCallback(async () => {
+    const root = activeRootRef.current
+    if (root === null || root.isGit !== true || remoteActionRef.current.busy === true) return null
+    setRemoteAction({ busy: true, error: null })
+    try {
+      const value = await api.pushBranch({ rootPath: root.path })
+      setRemoteAction({ busy: false, error: null })
+      setToolbarNote({ tone: 'info', text: tRef.current('sync.pushed', { branch: value.branch }) })
+      await refreshRepository()
+      return value
+    } catch (error) {
+      setRemoteAction({ busy: false, error: api.describeError(error, tRef.current) })
+      return null
+    }
+  }, [refreshRepository])
+
+  /**
+   * 收尾「远端分支已被删除」的本地分支（`branch/cleanup`）：宿主一次做完
+   * 取远程更新 → 切回默认分支 → 快进 → 删本地分支。
+   * 成功会切换分支，所以要重新解析根（行尾分支名）并重读 status。
+   */
+  const cleanupBranchNow = useCallback(async () => {
+    const root = activeRootRef.current
+    if (root === null || root.isGit !== true || remoteActionRef.current.busy === true) return null
+    setRemoteAction({ busy: true, error: null })
+    try {
+      const value = await api.cleanupBranch({ rootPath: root.path })
+      setRemoteAction({ busy: false, error: null })
+      setToolbarNote({
+        tone: 'info',
+        text: tRef.current('sync.cleaned', { branch: value.branch, base: value.base })
+      })
+      await resolveProject()
+      await refreshRepository()
+      return value
+    } catch (error) {
+      setRemoteAction({ busy: false, error: api.describeError(error, tRef.current) })
+      return null
+    }
+  }, [resolveProject, refreshRepository])
+
   const commitStaged = useCallback(async () => {
     if (activeRoot === null || activeRoot.isGit === false) return
     const message = commitMessage.trim()
@@ -714,36 +966,30 @@ export function Panel(props) {
     try {
       const result = await api.commitChanges({ rootPath: activeRoot.path, message })
       setCommitMessage('')
-      const subject = typeof result.subject === 'string' ? result.subject.trim() : ''
+      const subject = result.subject.trim()
       setCommitNote({
         tone: 'info',
         text: subject === ''
           ? tRef.current('commit.done', { head: result.head })
           : tRef.current('commit.doneSubject', { head: result.head, subject })
       })
-      await refreshStatus()
       setDiffNonce((previous) => previous + 1)
+      // 提交成功后按偏好自动推送；推送成功时它自己会刷新 status（提示条随之消失/换状态）。
+      // 没推或推失败时补一次刷新，让提示条按新的 ahead 状态出现（失败原因会显示在里面）。
+      const pushedAfterCommit = postCommitPush === true ? await pushBranchNow() : null
+      if (pushedAfterCommit === null) await refreshRepository()
     } catch (error) {
       setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current) })
     } finally {
       setCommitBusy(false)
     }
-  }, [activeRoot, commitMessage, commitBusy, refreshStatus])
+  }, [activeRoot, commitMessage, commitBusy, refreshRepository, postCommitPush, pushBranchNow])
 
   /** 改输入就清掉上一次的结果提示：用户已经在写新的说明了。 */
   const changeCommitMessage = useCallback((text) => {
     setCommitMessage(text)
     setCommitNote(null)
   }, [])
-
-  /**
-   * 提交成功的提示会自己消失（8s）；错误提示留着，用户读完自己动手再试。
-   */
-  useEffect(() => {
-    if (commitNote === null || commitNote.tone === 'error') return undefined
-    const timer = setTimeout(() => setCommitNote(null), COMMIT_NOTE_TTL_MS)
-    return () => clearTimeout(timer)
-  }, [commitNote])
 
   // 生成期间每 200ms 刷新一次已等待时间；结束（成功或失败）立刻归零。
   useEffect(() => {
@@ -766,7 +1012,7 @@ export function Panel(props) {
       const result = await api.commitMessage({ rootPath: activeRoot.path })
       setCommitMessage(result.message)
     } catch (error) {
-      setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current) })
+      setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current), code: error?.code ?? null })
     } finally {
       setCommitGenerating(false)
     }
@@ -782,11 +1028,11 @@ export function Panel(props) {
   /** 打开创建 PR 表单：先向宿主要仓库/账号/分支信息。 */
   const openCreatePull = useCallback(async () => {
     if (activeRoot === null || activeRoot.isGit !== true) return
-    setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', generating: false, creating: false, created: null, notice: null })
+    setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', generating: false, creating: false, created: null, notice: null })
     try {
       const prepared = await api.prPrepare({ rootPath: activeRoot.path })
       const remembered = readPrefs().pullTargets?.[pullTargetKey(prepared.repo)] ?? ''
-      const base = prepared.bases.includes(remembered) ? remembered : prepared.bases[0]
+      const base = prepared.bases.includes(remembered) ? remembered : (prepared.bases[0] ?? '')
       setPullForm({
         loading: false,
         error: null,
@@ -798,14 +1044,13 @@ export function Panel(props) {
         base,
         title: '',
         body: '',
-        bodyHeight: '160px',
         generating: false,
         creating: false,
         created: null,
         notice: null
       })
     } catch (error) {
-      setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', bodyHeight: '160px', generating: false, creating: false, created: null, notice: null })
+      setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', generating: false, creating: false, created: null, notice: null })
     }
   }, [activeRoot])
 
@@ -814,10 +1059,6 @@ export function Panel(props) {
   const changePullField = useCallback((field, value) => {
     setPullForm((previous) => {
       if (previous === null || previous.created !== null) return previous
-      if (field === 'body') {
-        const lines = String(value).split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)), 0)
-        return { ...previous, body: value, bodyHeight: Math.min(Math.max(lines, 6), 30) * 19 + 24 + 'px' }
-      }
       return { ...previous, [field]: value, notice: null }
     })
   }, [])
@@ -827,7 +1068,7 @@ export function Panel(props) {
     if (pullForm === null || activeRoot === null) return
     // 没有目标分支就不发请求：`{ base: undefined }` 序列化后字段会整个消失，
     // 宿主只会回一句「缺少参数 base」，看起来像生成功能坏了，其实模型根本没被调用。
-    if (typeof pullForm.base !== 'string' || pullForm.base === '') return
+    if (pullForm.base === '') return
     setPullForm({ ...pullForm, generating: true, error: null, notice: null })
     try {
       const generated = await api.prGenerate({ rootPath: activeRoot.path, base: pullForm.base })
@@ -849,7 +1090,7 @@ export function Panel(props) {
   const createPull = useCallback(async () => {
     if (pullForm === null || activeRoot === null) return
     // 同 generatePullText：没有目标分支（或还没准备出 repo）时不发这个注定被拒的请求
-    if (typeof pullForm.base !== 'string' || pullForm.base === '') return
+    if (pullForm.base === '') return
     if (pullForm.repo === null) return
     setPullForm({ ...pullForm, creating: true, error: null, notice: null })
     try {
@@ -862,21 +1103,37 @@ export function Panel(props) {
         body: pullForm.body
       })
       writePref('pullTargets', { ...(readPrefs().pullTargets ?? {}), [pullTargetKey(pullForm.repo)]: pullForm.base })
-      await refreshLinkedRef.current?.()
-      await refreshStatus()
+      await loadLinkedPull()
+      await refreshRepository()
       setPullForm((previous) => (previous === null ? previous : { ...previous, creating: false, created }))
     } catch (error) {
       setPullForm((previous) => (previous === null ? previous : {
         ...previous, creating: false, error: api.describeError(error, tRef.current)
       }))
     }
-  }, [pullForm, activeRoot, refreshStatus])
+  }, [pullForm, activeRoot, refreshRepository])
+
+  /** 读账号列表（token 不会下发到客户端，只有 id/login/label）。 */
+  const loadAccounts = useCallback(async () => {
+    const token = accountsGuard.begin()
+    try {
+      const value = await api.listAccounts({})
+      if (!accountsGuard.isLatest(token)) return
+      setAccounts(value.accounts)
+      setProviders(value.providers)
+      setAccountsLoaded(true)
+    } catch (error) {
+      if (!accountsGuard.isLatest(token)) return
+      setAccountsLoaded(true)
+      setRemoteError(api.describeError(error, tRef.current))
+    }
+  }, [accountsGuard])
 
   const openSettings = useCallback(async () => {
     setShowSettings(true)
-    setSettingsState({ loading: true, models: [], commitModel: null, reviewModel: null, error: null, saved: false })
+    setSettingsState({ loading: true, models: [], commitModel: null, reviewModel: null, commitThinking: false, commitReasoningEffort: null, error: null, saved: false })
     // 设置页也管理账号：进来就确保账号列表是最新的（只读列表接口，很便宜）
-    loadAccountsRef.current?.()
+    loadAccounts()
     try {
       const [catalog, settings] = await Promise.all([api.listModels({}), api.readSettings({})])
       const modelError = Array.isArray(catalog.failed) && catalog.failed.length > 0
@@ -887,22 +1144,39 @@ export function Panel(props) {
         models: catalog.models,
         commitModel: refOfPair(settings.commitModel),
         reviewModel: refOfPair(settings.reviewModel),
+        commitThinking: settings.commitThinking === true,
+        commitReasoningEffort: settings.commitReasoningEffort ?? null,
         error: modelError,
         saved: false
       })
     } catch (error) {
-      setSettingsState({ loading: false, models: [], commitModel: null, reviewModel: null, error: api.describeError(error, tRef.current), saved: false })
+      setSettingsState({ loading: false, models: [], commitModel: null, reviewModel: null, commitThinking: false, commitReasoningEffort: null, error: api.describeError(error, tRef.current), saved: false })
     }
   }, [])
 
   /** 选择模型即保存。空值表示清除。 */
   const changeCommitModel = useCallback(async (ref) => {
     const commitModel = ref === '' ? null : ref
-    setSettingsState((previous) => ({ ...previous, commitModel, saved: false, error: null }))
+    setSettingsState((previous) => ({ ...previous, commitModel, commitThinking: false, commitReasoningEffort: null, saved: false, error: null }))
     try {
-      const saved = await api.writeSettings({ commitModel })
-      setSettingsState((previous) => ({ ...previous, commitModel: refOfPair(saved.commitModel), saved: true }))
+      const saved = await api.writeSettings({ commitModel, commitThinking: false, commitReasoningEffort: null })
+      setSettingsState((previous) => ({ ...previous, commitModel: refOfPair(saved.commitModel), commitThinking: saved.commitThinking === true, commitReasoningEffort: saved.commitReasoningEffort ?? null, saved: true }))
     } catch (error) {
+      setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
+    }
+  }, [])
+
+  /** 思考模式与档位单独保存；失败时恢复服务器上的值。 */
+  const changeCommitThinking = useCallback(async (patch) => {
+    setSettingsState((previous) => ({ ...previous, ...patch, saved: false, error: null }))
+    try {
+      const saved = await api.writeSettings(patch)
+      setSettingsState((previous) => ({ ...previous, commitThinking: saved.commitThinking === true, commitReasoningEffort: saved.commitReasoningEffort ?? null, saved: true }))
+    } catch (error) {
+      try {
+        const settings = await api.readSettings({})
+        setSettingsState((previous) => ({ ...previous, commitThinking: settings.commitThinking === true, commitReasoningEffort: settings.commitReasoningEffort ?? null }))
+      } catch { /* 保留原始保存错误 */ }
       setSettingsState((previous) => ({ ...previous, error: api.describeError(error, tRef.current), saved: false }))
     }
   }, [])
@@ -932,7 +1206,7 @@ export function Panel(props) {
 
   const toggleGroup = useCallback((groupKey) => {
     setCollapsedGroups((previous) => {
-      const next = { ...(previous && typeof previous === 'object' ? previous : {}) }
+      const next = { ...previous }
       if (next[groupKey] === true) delete next[groupKey]
       else next[groupKey] = true
       return next
@@ -940,20 +1214,20 @@ export function Panel(props) {
   }, [setCollapsedGroups])
 
   const selectRoot = useCallback((root) => {
-    if (root === null || root === undefined) return
+    if (root === null) return
     setActiveRootId(root.id)
   }, [])
 
   const addExternalRoot = useCallback(async (dir) => {
     const projectRoot = projectRef.current.projectRoot
-    if (typeof projectRoot !== 'string' || projectRoot === '') {
+    if (projectRoot === null || projectRoot === '') {
       throw new Error(tRef.current('status.noCwd'))
     }
     try {
       const value = await api.addRoot({ projectRoot, path: dir })
       const nextRoots = value.roots
       setProject({ projectRoot: value.projectRoot, roots: nextRoots, warnings: value.warnings })
-      const added = nextRoots.find((root) => typeof root.path === 'string' && root.path.toLowerCase() === dir.replace(/\\/g, '/').toLowerCase())
+      const added = nextRoots.find((root) => root.path.toLowerCase() === dir.replace(/\\/g, '/').toLowerCase())
       if (added !== undefined) setActiveRootId(added.id)
       else if (nextRoots.length > 0) setActiveRootId(nextRoots[nextRoots.length - 1].id)
       return value
@@ -964,7 +1238,7 @@ export function Panel(props) {
 
   const removeExternalRoot = useCallback(async (root) => {
     const projectRoot = projectRef.current.projectRoot
-    if (root === null || typeof projectRoot !== 'string') return
+    if (root === null || projectRoot === null) return
     try {
       const value = await api.removeRoot({ projectRoot, path: root.path })
       const nextRoots = value.roots
@@ -990,7 +1264,7 @@ export function Panel(props) {
 
   const hideRoot = useCallback(async (root) => {
     const projectRoot = projectRef.current.projectRoot
-    if (root === null || typeof projectRoot !== 'string') return
+    if (root === null || projectRoot === null) return
     try {
       applyRootsChange(await api.hideRoot({ projectRoot, path: root.path }), root)
     } catch (error) {
@@ -1000,7 +1274,7 @@ export function Panel(props) {
 
   const unhideRoot = useCallback(async (root) => {
     const projectRoot = projectRef.current.projectRoot
-    if (root === null || typeof projectRoot !== 'string') return
+    if (root === null || projectRoot === null) return
     try {
       applyRootsChange(await api.unhideRoot({ projectRoot, path: root.path }), root)
     } catch (error) {
@@ -1019,8 +1293,8 @@ export function Panel(props) {
       throw new Error(api.describeError(error, tRef.current))
     }
     await resolveProject()
-    await refreshStatus()
-  }, [resolveProject, refreshStatus])
+    await refreshRepository()
+  }, [resolveProject, refreshRepository])
 
   /** 分支菜单里的「获取远程更新」：git fetch 后重读分支列表。 */
   /** 拉取该仓库当前分支的最新代码（fetch + 只允许快进，不做自动合并）。 */
@@ -1049,9 +1323,9 @@ export function Panel(props) {
     }
     // fetch 只更新远端跟踪引用：把 ahead/behind 报出来，用户才知道要不要真的拉取
     setToolbarNote(buildUpstreamNote(fetched, tRef.current))
-    if (activeRoot !== null && activeRoot.id === root.id) refreshStatus()
+    if (activeRoot !== null && activeRoot.id === root.id) refreshRepository()
     return api.listBranches({ rootPath: root.path })
-  }, [activeRoot, refreshStatus])
+  }, [activeRoot, refreshRepository])
 
   const switchBranch = useCallback(async (root, name) => {
     try {
@@ -1061,8 +1335,8 @@ export function Panel(props) {
     }
     // 切分支会改 HEAD 与工作区：重新解析根（分支名要更新）并重读状态
     await resolveProject()
-    await refreshStatus()
-  }, [resolveProject, refreshStatus])
+    await refreshRepository()
+  }, [resolveProject, refreshRepository])
 
   /**
    * 创建分支（可携带未提交改动）。
@@ -1078,164 +1352,63 @@ export function Panel(props) {
       value = await api.createBranch({ rootPath: root.path, ...request })
     } catch (error) {
       const wrapped = new Error(api.describeError(error, tRef.current))
-      wrapped.code = error === null || error === undefined ? 'internal' : error.code
-      wrapped.details = error === null || error === undefined ? {} : error.details
+      wrapped.code = error.code
+      wrapped.details = error.details
       throw wrapped
     }
     setToolbarNote(buildBranchCreatedNote(value, tRef.current))
     // 建/切分支会改 HEAD（可能还改了工作区）：行尾分支名与 status 都要重读
     await resolveProject()
-    await refreshStatus()
+    await refreshRepository()
     return value
-  }, [resolveProject, refreshStatus])
+  }, [resolveProject, refreshRepository])
 
-  /**
-   * 推送当前分支（`branch/push`）。成功就刷新 status —— 「还只在你电脑上」那条提示
-   * 由 `status.pushed` 驱动，刷新后自己消失；失败把原因留在提示块里，不弹窗。
-   * 正在推送时用 ref 挡住重复点击（state 要等下一遍渲染才生效）。
-   */
-  const pushBranchNow = useCallback(async () => {
-    const root = activeRootRef.current
-    if (root === null || root.isGit !== true || pushStateRef.current.busy === true) return null
-    setPushState({ busy: true, error: null })
-    try {
-      const value = await api.pushBranch({ rootPath: root.path })
-      setPushState({ busy: false, error: null })
-      setToolbarNote({ tone: 'info', text: tRef.current('push.done', { branch: value.branch }) })
-      await refreshStatus()
-      return value
-    } catch (error) {
-      setPushState({ busy: false, error: api.describeError(error, tRef.current) })
-      return null
-    }
-  }, [refreshStatus])
-
-  const loadDir = useCallback(async (relPath, signal) => {
-    const root = browseRootRef.current
-    if (root === null) return { entries: [], truncated: false }
-    return api.listDirectory({ rootPath: root.path, path: relPath ?? '' }, { signal })
-  }, [])
+  const loadDir = useCallback(async (relPath, signal) => (
+    api.listDirectory({ rootPath: browseRootRef.current.path, path: relPath }, { signal })
+  ), [])
 
   /* ------------------------------ 远端账号 ------------------------------ */
 
-  /** 读账号列表（token 不会下发到客户端，只有 id/login/label）。 */
-  const loadAccounts = useCallback(async () => {
-    try {
-      const value = await api.listAccounts({})
-      setAccounts(value.accounts)
-      setProviders(value.providers)
-      setAccountsLoaded(true)
-    } catch (error) {
-      setAccountsLoaded(true)
-      setRemoteError(api.describeError(error, tRef.current))
-    }
-  }, [])
-  loadAccountsRef.current = loadAccounts
 
   /** 读某个账号的仓库；append 用于「加载更多」。 */
   const loadRepos = useCallback(async (accountId, page, append) => {
-    if (typeof accountId !== 'string') return
+    if (accountId === null) return
+    const token = remoteReposGuard.begin()
     setRemoteLoading(true)
     if (append !== true) setRemoteError(null)
     try {
       const value = await api.listRemoteRepos({ accountId, page })
+      if (!remoteReposGuard.isLatest(token)) return
       setRemoteRepos((previous) => (append === true ? [...previous, ...value.repos] : value.repos))
       setRemoteHasMore(value.hasMore === true)
     } catch (error) {
+      if (!remoteReposGuard.isLatest(token)) return
       setRemoteError(api.describeError(error, tRef.current))
       if (append !== true) setRemoteRepos([])
     } finally {
-      setRemoteLoading(false)
+      if (remoteReposGuard.isLatest(token)) setRemoteLoading(false)
     }
-  }, [])
+  }, [remoteReposGuard])
 
   /** 批量取当前列表的未合并 PR 数（宿主限制 50 个/次）。 */
   const loadPullCounts = useCallback(async (accountId, repos) => {
-    if (typeof accountId !== 'string' || repos.length === 0) {
+    if (accountId === null || repos.length === 0) {
       setPrCounts({})
       return
     }
+    const token = pullCountsGuard.begin()
     try {
       const value = await api.remotePullCounts({
         accountId,
         fullNames: repos.map((repo) => repo.fullName)
       })
-      setPrCounts(value.counts ?? {})
+      if (!pullCountsGuard.isLatest(token)) return
+      setPrCounts(value.counts)
     } catch {
       // 计数只是角标：失败就不显示，不打断列表（详情接口会暴露真实错误）
-      setPrCounts({})
+      if (pullCountsGuard.isLatest(token)) setPrCounts({})
     }
-  }, [])
-
-  /** 读选中仓库的详情（代码 / issues / PR）。 */
-  const loadRemoteDetail = useCallback(async (selection) => {
-    if (selection === null) {
-      setRemoteDetail(null)
-      return
-    }
-    setRemoteDetail({ loading: true, error: null, data: null })
-    try {
-      const data = await api.remoteDetail({ accountId: selection.accountId, fullName: selection.fullName })
-      setRemoteDetail({ loading: false, error: null, data })
-    } catch (error) {
-      setRemoteDetail({ loading: false, error: api.describeError(error, tRef.current), data: null })
-    }
-  }, [])
-
-  /**
-   * 读选中远端仓库的分支全貌：远端分支走平台 API，本地同名分支状态由宿主在
-   * rootPaths 里按 origin 匹配到本地仓库后读出来，合成一条列表返回。
-   * 刷新时保留上一份数据：列表不会先消失再出现。
-   */
-  const loadRemoteBranches = useCallback(async (selection) => {
-    if (selection === null) {
-      setRemoteBranches(null)
-      return
-    }
-    setRemoteBranches((previous) => ({
-      loading: true,
-      error: null,
-      data: previous === null ? null : previous.data
-    }))
-    try {
-      const data = await api.remoteBranches({
-        accountId: selection.accountId,
-        fullName: selection.fullName,
-        rootPaths: allGitRoots.map((root) => root.path)
-      })
-      setRemoteBranches({ loading: false, error: null, data })
-    } catch (error) {
-      setRemoteBranches((previous) => ({
-        loading: false,
-        error: error instanceof Error ? error.message : String(error),
-        data: previous === null ? null : previous.data
-      }))
-    }
-  }, [allGitRoots])
-
-  /** 读一个 PR 的详情（含平台能力与审查记录）。 */
-  const loadPullDetail = useCallback(async (selection) => {    if (selection === null) {
-      setPullDetail(null)
-      return
-    }
-    setPullDetail({ loading: true, error: null, data: null })
-    try {
-      const data = await api.remotePull({
-        accountId: selection.accountId,
-        fullName: selection.fullName,
-        number: selection.number
-      })
-      setPullDetail({ loading: false, error: null, data })
-      // 详情里能看到评论 = 用户已读：记水位供状态卡算未读
-      const count = Array.isArray(data.comments) ? data.comments.length : 0
-      writePref('pullSeen', {
-        ...(readPrefs().pullSeen ?? {}),
-        [selection.accountId + '#' + selection.number]: count
-      })
-    } catch (error) {
-      setPullDetail({ loading: false, error: api.describeError(error, tRef.current), data: null })
-    }
-  }, [])
+  }, [pullCountsGuard])
 
   /** 从仓库详情点开某个 PR。 */
   const openPullNumber = useCallback((number) => {
@@ -1247,44 +1420,12 @@ export function Panel(props) {
     }
     openPullWith(selection)
     loadPullDetail(selection)
-  }, [remoteSelection, loadPullDetail])
+  }, [remoteSelection, loadPullDetail, openPullWith])
 
   const closePull = useCallback(() => {
     setOpenPull(null)
-    setPullDetail(null)
-  }, [])
-
-  /** 打开某个 PR 时清掉上次合并的提示。 */
-  const openPullWith = useCallback((selection) => {
-    setRemoteNotice(null)
-    setOpenPull(selection)
-  }, [])
-
-  /** 读当前分支的 PR 状态（变更页签顶部卡片）。 */
-  const loadLinkedPull = useCallback(async () => {
-    if (activeRoot === null || activeRoot.isGit !== true) {
-      setLinkedPull(null)
-      return
-    }
-    // 刷新时保留上一份数据：卡片不会先消失再出现
-    setLinkedPull((previous) => ({
-      loading: true,
-      error: null,
-      data: previous === null ? null : previous.data
-    }))
-    try {
-      const data = await api.prLinked({ rootPath: activeRoot.path })
-      setLinkedPull({ loading: false, error: null, data })
-    } catch (error) {
-      setLinkedPull((previous) => ({
-        loading: false,
-        error: api.describeError(error, tRef.current),
-        data: previous === null ? null : previous.data
-      }))
-    }
-  }, [activeRoot])
-
-  refreshLinkedRef.current = loadLinkedPull
+    clearPullDetail()
+  }, [clearPullDetail])
 
   // 切到变更页签或分支变化时刷新；不轮询（面板没有后台任务）
   useEffect(() => {
@@ -1303,6 +1444,19 @@ export function Panel(props) {
     await loadPullDetail(selection)
   }, [linkedPull, setMode, loadPullDetail, openPullWith])
 
+  /**
+   * 从 PR 卡片跳进远端页签 / 关掉 PR 回到仓库详情时，补一次仓库详情请求。
+   * 只按「账号+仓库」比较，避免同一个仓库名在两个账号下共用一份详情。
+   */
+  useEffect(() => {
+    if (mode !== MODE.remote || openPull !== null || remoteSelection === null) return
+    const data = remoteDetail === null ? null : remoteDetail.data
+    if (data !== null && data.accountId === remoteSelection.accountId && data.repo.fullName === remoteSelection.fullName) return
+    loadRemoteDetail(remoteSelection)
+    // 故意不依赖 remoteDetail：失败后等用户点重试，不自动循环请求
+    // eslint-disable-next-line -- 只跟随选中项
+  }, [mode, openPull, remoteSelection, loadRemoteDetail])
+
   /* --------------------------- 远端仓库详情 · 分支 --------------------------- */
 
   /**
@@ -1315,22 +1469,23 @@ export function Panel(props) {
     if (mode !== MODE.remote) return
     if (remoteSelection === null) {
       branchSelectionRef.current = null
-      setRemoteBranches(null)
+      clearRemoteBranches()
       return
     }
     if (openPull !== null) return
-    if (branchSelectionRef.current === remoteSelection.fullName) return
-    branchSelectionRef.current = remoteSelection.fullName
+    const key = branchKeyOf(remoteSelection)
+    if (branchSelectionRef.current === key) return
+    branchSelectionRef.current = key
     // 换了仓库：先把上一个仓库的分支清掉，避免新数据回来前右侧挂着别人的分支
-    setRemoteBranches(null)
+    clearRemoteBranches()
     loadRemoteBranches(remoteSelection)
-  }, [mode, openPull, remoteSelection, loadRemoteBranches])
+  }, [mode, openPull, remoteSelection, loadRemoteBranches, clearRemoteBranches])
 
   /** 分支操作统一返回 { ok, error, code }：组件据 code 判断要不要露出「强制删除」。 */
   const branchFailure = useCallback((error) => ({
     ok: false,
     error: api.describeError(error, tRef.current),
-    code: error !== null && error !== undefined && typeof error.code === 'string' ? error.code : null
+    code: error.code ?? null
   }), [])
 
   /** 本地没有克隆时，本地分支操作明确报出来，不做无声失败。 */
@@ -1350,10 +1505,10 @@ export function Panel(props) {
       return branchFailure(error)
     }
     await resolveProject()
-    await refreshStatus()
+    await refreshRepository()
     if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
     return { ok: true }
-  }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+  }, [resolveProject, refreshRepository, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
 
   /** 远端独有的分支：在本地建跟踪分支并切过去（与储存库分支菜单里的行为一致）。 */
   const trackRemoteBranch = useCallback(async (branch) => {
@@ -1365,10 +1520,10 @@ export function Panel(props) {
       return branchFailure(error)
     }
     await resolveProject()
-    await refreshStatus()
+    await refreshRepository()
     if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
     return { ok: true }
-  }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+  }, [resolveProject, refreshRepository, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
 
   /** 删除本地分支（force 只会在用户点「强制删除」时传 true）。 */
   const deleteLocalBranchAt = useCallback(async (branch, force) => {
@@ -1380,10 +1535,10 @@ export function Panel(props) {
       return branchFailure(error)
     }
     await resolveProject()
-    await refreshStatus()
+    await refreshRepository()
     if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
     return { ok: true }
-  }, [resolveProject, refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+  }, [resolveProject, refreshRepository, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
 
   /** 删除远端分支：它是破坏性操作，界面已二次确认过；成功后只重读分支列表。 */
   const deleteRemoteBranchAt = useCallback(async (branch) => {
@@ -1410,20 +1565,30 @@ export function Panel(props) {
     } catch (error) {
       return branchFailure(error)
     }
-    await refreshStatus()
+    await refreshRepository()
     if (remoteSelection !== null) await loadRemoteBranches(remoteSelection)
     return { ok: true }
-  }, [refreshStatus, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
+  }, [refreshRepository, loadRemoteBranches, remoteSelection, branchFailure, noLocalRepoFailure])
 
 
-  /** 审查：统一把失败包成 { ok:false, error }，界面就地显示。 */
+  /** PR 里单个文件的 diff：点开文件行时才读，失败就地给 PullDetail 显示。 */
+  const pullFile = useCallback(async (input) => {
+    try {
+      const result = await api.remotePullFile(input)
+      return { ok: true, ...result }
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current) }
+    }
+  }, [])
+
+  /** 审查：统一把失败包成 { ok:false, error, code }，界面就地显示。 */
   const reviewPull = useCallback(async (input) => {
     try {
       const result = await api.remotePullReview(input)
       await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
       return { ok: true, message: tRef.current('pull.reviewDone', { verdict: input.verdict }) }
     } catch (error) {
-      return { ok: false, error: api.describeError(error, tRef.current) }
+      return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
     }
   }, [loadPullDetail])
 
@@ -1456,7 +1621,7 @@ export function Panel(props) {
       if (prepared.mode === 'local') {
         // 切了分支：储存库行的分支名与 status 都要跟着刷新
         await resolveProject()
-        await refreshStatus()
+        await refreshRepository()
       }
       return { ok: true, ...prepared }
     } catch (error) {
@@ -1467,25 +1632,7 @@ export function Panel(props) {
         details: error?.details ?? null
       }
     }
-  }, [resolveProject, refreshStatus])
-
-  const deepReviewPull = useCallback(async (input) => {
-    try {
-      const review = await api.remotePullDeepReview(input)
-      if (review.deep === true) {
-        await resolveProject()
-        await refreshStatus()
-      }
-      return { ok: true, ...review }
-    } catch (error) {
-      return {
-        ok: false,
-        error: api.describeError(error, tRef.current),
-        code: error?.code ?? null,
-        details: error?.details ?? null
-      }
-    }
-  }, [resolveProject, refreshStatus])
+  }, [resolveProject, refreshRepository])
 
   /** 会话级深度审阅：主工作区切分支后新建会话，把审阅指令发过去并自动打开。 */
   const sessionReviewPull = useCallback(async (input) => {
@@ -1494,7 +1641,7 @@ export function Panel(props) {
       const started = await api.remotePullSessionReview({ ...input, sessionId })
       if (started?.sessionId) {
         await resolveProject()
-        await refreshStatus()
+        await refreshRepository()
         getPluginContext()?.uiWorkspace?.openSession?.(started.sessionId)
       }
       return { ok: true, ...started }
@@ -1506,7 +1653,7 @@ export function Panel(props) {
         details: error?.details ?? null
       }
     }
-  }, [resolveProject, refreshStatus])
+  }, [resolveProject, refreshRepository])
 
   /** 把 PR 克隆到用户选的目录（深度审阅前的准备步骤）。 */
   const cloneForReviewPull = useCallback(async (input) => {
@@ -1552,9 +1699,17 @@ export function Panel(props) {
     try {
       const result = await api.remotePullPass(input)
       await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
-      return { ok: true, message: tRef.current('pull.passDone', { steps: result.completed.join(' / ') }) }
+      // 部分成功也要说清哪一步没做成：只报「已通过：review」会让人以为测试也过了
+      const failed = Array.isArray(result.failures) ? result.failures : []
+      const message = failed.length === 0
+        ? tRef.current('pull.passDone', { steps: result.completed.join(' / ') })
+        : tRef.current('pull.passPartial', {
+          steps: result.completed.join(' / '),
+          failures: failed.map((item) => item.message).join('；')
+        })
+      return { ok: true, message }
     } catch (error) {
-      return { ok: false, error: api.describeError(error, tRef.current) }
+      return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
     }
   }, [loadPullDetail])
 
@@ -1565,7 +1720,7 @@ export function Panel(props) {
       await loadPullDetail({ accountId: input.accountId, fullName: input.fullName, number: input.number })
       return { ok: true, message: tRef.current('pull.testDone') }
     } catch (error) {
-      return { ok: false, error: api.describeError(error, tRef.current) }
+      return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
     }
   }, [loadPullDetail])
 
@@ -1581,15 +1736,21 @@ export function Panel(props) {
       await loadRemoteDetail({ accountId: input.accountId, fullName: input.fullName })
       // 合并可以顺带删掉源分支：回到详情时分支区要重读，不能留着已删除的那一行
       branchSelectionRef.current = null
-      setRemoteBranches(null)
+      clearRemoteBranches()
       // 合并后未合并数量会变，角标要跟着刷新
       await loadPullCounts(input.accountId, remoteReposRef.current)
       // closed:true 让 PullDetail 不要在被卸载后再写自己的提示
-    return { ok: true, closed: true, message: tRef.current('pull.mergedDone', { branch: result.headBranch }) }
-    } catch (error) {
-      return { ok: false, error: api.describeError(error, tRef.current) }
+    return {
+      ok: true,
+      closed: true,
+      message: result.branchDeleteError === null || result.branchDeleteError === undefined
+        ? tRef.current('pull.mergedDone', { branch: result.headBranch })
+        : tRef.current('pull.mergedButBranchKept', { branch: result.headBranch, message: result.branchDeleteError })
     }
-  }, [loadPullDetail, loadRemoteDetail])
+    } catch (error) {
+      return { ok: false, error: api.describeError(error, tRef.current), code: error?.code ?? null }
+    }
+  }, [loadPullDetail, loadRemoteDetail, closePull, clearRemoteBranches, loadPullCounts])
 
   /** 选中账号：记到当前工作区（切到别的工作区再回来仍是它）。账号 chip 只在面板内容渲染后才会出现，那时 projectRoot 一定有值。 */
   const selectRemoteAccount = useCallback((accountId) => {
@@ -1601,15 +1762,22 @@ export function Panel(props) {
   const selectRemoteRepo = useCallback((repo) => {
     const selection = { accountId: repo.accountId, fullName: repo.fullName, name: repo.name }
     setRemoteSelection(selection)
+    // 切仓库时关掉上一个仓库里打开的 PR：右栏优先渲染 openPull，
+    // 不清的话会出现「左边选 B、右边显示 A 的 PR」。
+    setOpenPull(null)
+    clearPullDetail()
+    setRemoteNotice(null)
     loadRemoteDetail(selection)
-    // 点的是已经选中的仓库 = 手动刷新：分支数据按 fullName 去重，这里显式再读一次
-    if (branchSelectionRef.current === selection.fullName) loadRemoteBranches(selection)
-  }, [loadRemoteDetail, loadRemoteBranches])
+    // 点的是已经选中的仓库 = 手动刷新：分支数据按账号+仓库去重，这里显式再读一次
+    if (branchSelectionRef.current === branchKeyOf(selection)) loadRemoteBranches(selection)
+  }, [loadRemoteDetail, loadRemoteBranches, clearPullDetail])
 
   const openExternal = useCallback((url) => {
     const result = openExternalUrl(url)
-    if (result.opened !== true) setStatusError(tRef.current('error.openFailed', { url }))
-  }, [])
+    if (result.opened !== true) {
+      setToolbarNote({ tone: 'error', text: tRef.current('error.openFailed', { url }) })
+    }
+  }, [setToolbarNote])
 
   /** 进「远端」页签且还没读过账号时读一次。 */
   useEffect(() => {
@@ -1625,11 +1793,14 @@ export function Panel(props) {
 
   /** 仓库列表刷新后：当前选中不在列表里就选第一个，右侧不留空。 */
   useEffect(() => {
-    if (mode !== MODE.remote || remoteRepos.length === 0) return
-    const exists = remoteSelection !== null && remoteRepos.some((repo) => repo.fullName === remoteSelection.fullName)
+    // 正在看某个 PR 时不要因为列表刷新把左栏选中项改掉（右栏仍是那个 PR）
+    if (mode !== MODE.remote || openPull !== null || remoteRepos.length === 0) return
+    const exists = remoteSelection !== null && remoteRepos.some((repo) => (
+      repo.accountId === remoteSelection.accountId && repo.fullName === remoteSelection.fullName
+    ))
     if (exists) return
     selectRemoteRepo(remoteRepos[0])
-  }, [mode, remoteRepos, remoteSelection, selectRemoteRepo])
+  }, [mode, openPull, remoteRepos, remoteSelection, selectRemoteRepo])
 
   /** 切账号或首次进入时读第一页。 */
   useEffect(() => {
@@ -1686,14 +1857,14 @@ export function Panel(props) {
       setCloneState(null)
       // 项目里多了这个仓库：下次回到远端页签时分支区要重新判断「本地有没有克隆」
       branchSelectionRef.current = null
-      setRemoteBranches(null)
+      clearRemoteBranches()
       await resolveProject()
-      await refreshStatus()
+      await refreshRepository()
       setMode(MODE.changes)
     } catch (error) {
       setCloneState({ fullName: repo.fullName, startedAt: 0, error: api.describeError(error, tRef.current) })
     }
-  }, [resolveProject, refreshStatus, setMode])
+  }, [resolveProject, refreshRepository, setMode, clearRemoteBranches])
 
   /** 设置页里新增/移除账号后刷新列表。 */
   const reloadAccounts = useCallback(async () => {
@@ -1759,57 +1930,80 @@ export function Panel(props) {
   }, [reloadAccounts])
 
   /* ------------------------------ 分栏拖拽 ------------------------------ */
-  const beginDrag = useCallback((event) => {
-    if (event.button !== undefined && event.button !== 0) return
-    event.preventDefault()
-    setDragging(true)
-  }, [])
+  /**
+   * 拖拽只把一个 CSS 变量写到 DOM 上，pointerup 才落一次 state（并持久化）。
+   *
+   * 原先每次 pointermove 都 setLeftWidth：整面板重渲染（最多 5000 行 diff）
+   * 加同步写 localStorage，拖起来会抖。拖拽是视觉变换，不是应用状态。
+   */
+  const dragCleanupRef = useRef(null)
+  const dragWidthRef = useRef(leftWidth)
 
-  useEffect(() => {
-    if (!dragging) return undefined
-    const onMove = (event) => {
-      const body = bodyRef.current
-      if (body === null) return
-      const rect = body.getBoundingClientRect()
-      const raw = event.clientX - rect.left
-      const max = Math.max(MIN_LEFT, rect.width - MIN_RIGHT)
-      const next = Math.min(max, Math.max(MIN_LEFT, Math.round(raw)))
-      setLeftWidth(next)
-    }
-    const onUp = () => setDragging(false)
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onUp)
-    const previousCursor = document.body.style.cursor
-    const previousSelect = document.body.style.userSelect
+  const beginDrag = useCallback((event) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const body = bodyRef.current
+    const divider = dividerRef.current
+    dragWidthRef.current = leftWidth
+    divider.setAttribute('data-dragging', 'true')
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
-    return () => {
+
+    const onMove = (moveEvent) => {
+      const rect = body.getBoundingClientRect()
+      const max = Math.max(MIN_LEFT, rect.width - MIN_RIGHT)
+      const raw = moveEvent.clientX - rect.left
+      const next = Math.min(max, Math.max(MIN_LEFT, Math.round(raw)))
+      dragWidthRef.current = next
+      body.style.setProperty('--dgp-left-width', next + 'px')
+    }
+    const cleanup = () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onUp)
-      document.body.style.cursor = previousCursor
-      document.body.style.userSelect = previousSelect
+      divider.removeAttribute('data-dragging')
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      dragCleanupRef.current = null
     }
-  }, [dragging, setLeftWidth])
+    const onUp = () => {
+      cleanup()
+      setLeftWidth(dragWidthRef.current)
+    }
+    dragCleanupRef.current = cleanup
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+  }, [leftWidth, setLeftWidth])
+
+  // 卸载时把可能还挂着的拖拽监听收掉（不落 state）。
+  useEffect(() => () => {
+    dragCleanupRef.current?.()
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }, [])
+
+  /** 键盘调宽：同样受「右侧至少 MIN_RIGHT」约束。 */
+  const resizeBy = useCallback((delta) => {
+    const rect = bodyRef.current.getBoundingClientRect()
+    const max = Math.max(MIN_LEFT, rect.width - MIN_RIGHT)
+    setLeftWidth(Math.min(max, Math.max(MIN_LEFT, leftWidth + delta)))
+  }, [leftWidth, setLeftWidth])
 
   /* ------------------------------ 键盘 ------------------------------ */
   const onKeyDown = useCallback((event) => {
     const target = event.target
-    const inField = target !== null && (
-      target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true
-    )
+    const inField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true
     if (event.key === '/' && !inField) {
       event.preventDefault()
-      const node = filterRef.current
-      if (node !== null && node.focus !== undefined) node.focus()
+      filterRef.current.focus()
       return
     }
     if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key === 's' || event.key === 'S')) {
-      // 焦点在编辑器里时由 FileEditor 处理（它能拿到光标位置）；这里管"焦点在文件树/工具条"的情况
-      if (inField || mode !== MODE.files) return
+      // 文件页签的保存：焦点在编辑器里时由 FileEditor 处理（它能拿到光标位置），
+      // 这里负责焦点在文件树 / 工具条的情况。任何模式下都不让浏览器弹「保存网页」。
       event.preventDefault()
-      if (selection !== null) saveDraft(false)
+      if (!inField && mode === MODE.files && fileSelection !== null) saveDraft(false)
       return
     }
     if (inField) return
@@ -1817,70 +2011,25 @@ export function Panel(props) {
       event.preventDefault()
       refreshAll()
     }
-  }, [refreshAll, mode])
-
-
-/** 版本号按钮的 tooltip：插件版本 · 最新版本 · 检测时间（与仓库状态无关）。 */
-function buildVersionTitle(pluginState, t) {
-  const parts = [t('toolbar.checkUpdates')]
-  if (pluginState.version !== null) parts.push(t('update.currentVersion', { version: pluginState.version }))
-  if (pluginState.checkedAt > 0 && pluginState.error === null) {
-    parts.push(pluginState.newer
-      ? t('update.latestVersion', { version: pluginState.latestVersion })
-      : t('update.pluginUpToDate', { version: pluginState.version }))
-    parts.push(t('update.checkedAt', { time: formatClock(pluginState.checkedAt) }))
-  }
-  return parts.join(' \u00b7 ')
-}
-
-/**
- * 上游检查的一句话结果。
- * 落后优先于领先：同时有分叉时更重要的是"你落后了"。
- */
-function buildUpstreamNote(value, t) {
-  const upstream = value.upstream === null || value.upstream === undefined ? '' : value.upstream
-  if (value.behind > 0) return { tone: 'warn', text: t('update.behind', { count: value.behind, upstream }) }
-  if (value.ahead > 0) return { tone: 'info', text: t('update.ahead', { count: value.ahead, upstream }) }
-  return { tone: 'info', text: t('update.upToDate', { upstream }) }
-}
-
-/**
- * 创建分支后的那句话。
- *
- * 用户最不确定的就是「我的改动去哪了」，所以这里必须把三种结局分开说：
- * 切过去并带走了改动 / 切过去但本来就没有改动 / 只建了分支没切换（改动留在原处）。
- */
-function buildBranchCreatedNote(value, t) {
-  if (value.switched !== true) return { tone: 'info', text: t('branch.createdOnly', { name: value.branch }) }
-  if (value.carried.total > 0) {
-    return { tone: 'info', text: t('branch.createdFollow', { name: value.branch, total: value.carried.total }) }
-  }
-  return { tone: 'info', text: t('branch.created', { name: value.branch }) }
-}
-
+  }, [refreshAll, mode, fileSelection, saveDraft])
 
   /* ------------------------------ 派生 ------------------------------ */
-  const selectedPath = selection === null ? null : selection.path
-  const selectedEntry = selection === null ? null : selection.entry
-  const entryHasBothSides = selectedEntry !== null
-    && selectedEntry.staged === true
-    && selectedEntry.unstaged === true
+  const selectedChangePath = changesSelection === null ? null : changesSelection.path
+  const selectedChangeEntry = changesSelection === null ? null : changesSelection.entry
+  const entryHasBothSides = selectedChangeEntry !== null
+    && selectedChangeEntry.staged === true
+    && selectedChangeEntry.unstaged === true
   const counts = status === null ? null : status.counts
-  const isNarrow = typeof leftWidth === 'number' && leftWidth < 220
   const warnings = useMemo(() => {
     const list = []
     for (const warning of project.warnings) {
       if (warning !== '') list.push(warning)
     }
-    if (activeRoot !== null && typeof activeRoot.error === 'string' && activeRoot.error !== '') {
-      list.push(activeRoot.error)
-    }
+    if (activeRoot !== null && activeRoot.error !== null) list.push(activeRoot.error)
     return list
   }, [project.warnings, activeRoot])
 
   /* ------------------------------ 渲染 ------------------------------ */
-  const noSession = typeof sessionId !== 'string'
-
   // 仓库切换只发生在变更模式的「储存库」列表里；文件模式固定浏览项目根，不放选择器。
   const toolbar = h('div', { className: 'dgp-toolbar' },
     h('div', { className: 'dgp-tbar-row' },
@@ -1892,6 +2041,7 @@ function buildBranchCreatedNote(value, t) {
           'data-active': mode === MODE.changes ? 'true' : undefined,
           'aria-selected': mode === MODE.changes ? 'true' : 'false',
           title: t('mode.changesHint'),
+          disabled: showSettings,
           onClick: () => setMode(MODE.changes)
         }, t('mode.changes'), counts !== null && counts.total > 0
           ? h('span', { className: 'dgp-pill-count', style: { marginLeft: 4 } }, String(counts.total))
@@ -1903,6 +2053,7 @@ function buildBranchCreatedNote(value, t) {
           'data-active': mode === MODE.files ? 'true' : undefined,
           'aria-selected': mode === MODE.files ? 'true' : 'false',
           title: t('mode.filesHint'),
+          disabled: showSettings,
           onClick: () => setMode(MODE.files)
         }, t('mode.files')),
         h('button', {
@@ -1913,6 +2064,7 @@ function buildBranchCreatedNote(value, t) {
           'aria-selected': mode === MODE.remote ? 'true' : 'false',
           'data-dgp-tab': 'remote',
           title: t('mode.remoteHint'),
+          disabled: showSettings,
           onClick: () => setMode(MODE.remote)
         }, t('mode.remote'))),
       h('div', { className: 'dgp-spacer' }),
@@ -1977,7 +2129,9 @@ function buildBranchCreatedNote(value, t) {
         ref: moreAnchorRef
       }, h(Icon, { name: 'more', size: 15 }))))
 
-  const filterRow = h('div', { className: 'dgp-filter' },
+  const filterRow = showSettings || mode === MODE.remote
+    ? null
+    : h('div', { className: 'dgp-filter' },
     h('div', { className: 'dgp-search' },
       h(Icon, { name: 'search', size: 13 }),
       h('input', {
@@ -1992,7 +2146,7 @@ function buildBranchCreatedNote(value, t) {
           if (event.key === 'Escape') {
             event.preventDefault()
             setFilter('')
-            if (event.target && event.target.blur) event.target.blur()
+            event.target.blur()
           }
         }
       }),
@@ -2009,26 +2163,22 @@ function buildBranchCreatedNote(value, t) {
         h('button', {
           type: 'button',
           className: 'dgp-seg-btn',
-          'data-active': selection.side === 'unstaged' ? 'true' : undefined,
+          'data-active': changesSelection.side === 'unstaged' ? 'true' : undefined,
           title: t('group.unstaged'),
           onClick: () => switchSide('unstaged')
         }, t('group.unstaged')),
         h('button', {
           type: 'button',
           className: 'dgp-seg-btn',
-          'data-active': selection.side === 'staged' ? 'true' : undefined,
+          'data-active': changesSelection.side === 'staged' ? 'true' : undefined,
           title: t('group.staged'),
           onClick: () => switchSide('staged')
         }, t('group.staged')))
       : null)
 
-  const stagedCount = status !== null && status.counts !== null && status.counts !== undefined
-    ? status.counts.staged
-    : 0
+  const stagedCount = status === null ? 0 : status.counts.staged
   /** 只要有改动就能提交（没有暂存时提交会先把全部改动暂存）。 */
-  const changeCount = status !== null && status.counts !== null && status.counts !== undefined
-    ? status.counts.total
-    : 0
+  const changeCount = status === null ? 0 : status.counts.total
 
   /** 远端页签的仓库列表：本地筛选只作用在已拉取的那几页上。 */
   const visibleRemoteRepos = remoteFilter.trim() === ''
@@ -2081,8 +2231,7 @@ function buildBranchCreatedNote(value, t) {
           className: 'dgp-btn',
           'data-size': 'sm',
           onClick: () => setMode(MODE.files)
-        }, t('mode.files'))],
-        t
+        }, t('mode.files'))]
       })
     } else {
       // VS Code 的排布：上面「储存库」，下面「变更」（提交框 + 分组）。
@@ -2103,9 +2252,10 @@ function buildBranchCreatedNote(value, t) {
           onPullBranch: pullBranchNow,
           onTrackBranch: trackBranchAt,
           onCreateBranch: createBranch,
+          stats: rootStats,
           t
         }),
-        mode === MODE.changes && linkedPull !== null
+        linkedPull !== null && (linkedPull.data === null || linkedPull.data.rootId === (activeRoot === null ? null : activeRoot.id))
           ? h(PullStatusCard, {
             card: linkedPull,
             unread: linkedPull.data !== null && linkedPull.data.linked === true
@@ -2118,17 +2268,21 @@ function buildBranchCreatedNote(value, t) {
           })
           : null,
         /**
-         * 当前分支的最新提交不在远端时，常驻一行「要不要推送」的提示 —— 带按钮，点了就推。
-         * 只认 `pushed === false`：没有 origin / 游离 HEAD 时宿主给的是 null（无从判断），不提示。
-         * 推完之后 status 刷新（这里点了按钮就刷、也会轮询），`pushed` 变 true，提示自己消失。
+         * 本地分支与远端不同步时的常驻提示。三种状态各自下一步不同：
+         *   never-pushed / ahead → 推送（带按钮）
+         *   remote-deleted       → 收尾（切回默认分支并删除本地分支，绝不普通推送重建已合并分支）
+         *   behind / diverged    → 不提示推送（那是该拉取/处理分叉），交给分支菜单的「拉取」。
+         * synced / unknown 什么都不显示。
          */
-        status !== null && status.pushed === false
+        status !== null && SYNC_HINT_STATES.includes(status.sync.state)
           ? h(PushHint, {
             branch: status.branch,
+            sync: status.sync,
             t,
             onPush: pushBranchNow,
-            busy: pushState.busy,
-            error: pushState.error
+            onCleanup: cleanupBranchNow,
+            busy: remoteAction.busy,
+            error: remoteAction.error
           })
           : null,
         h(CommitBox, {
@@ -2142,21 +2296,18 @@ function buildBranchCreatedNote(value, t) {
           onChange: changeCommitMessage,
           onCommit: commitStaged,
           onGenerate: generateMessage,
-          onCreatePull: mode === MODE.changes && activeRoot !== null && activeRoot.isGit === true
-            ? openCreatePull
-            : undefined,
+          onOpenSettings: openSettings,
+          onCreatePull: activeRoot.isGit === true ? openCreatePull : undefined,
           t
         }),
         h(ChangesList, {
           status,
           loading: statusLoading && status === null,
-          error: null,
           view: changesView,
           untrackedMode,
-          selectedPath,
+          selectedPath: selectedChangePath,
           onSelect: selectEntry,
           filter,
-          onFilterChange: setFilter,
           collapsedGroups,
           onToggleGroup: toggleGroup,
           onStage: stageEntry,
@@ -2169,12 +2320,12 @@ function buildBranchCreatedNote(value, t) {
   } else {
     leftPane = h(FileTree, {
       rootPath: browseRoot === null ? null : browseRoot.path,
-      selectedPath,
+      selectedPath: fileSelection === null ? null : fileSelection.path,
       onSelectFile: selectFile,
       filter,
-      onFilterChange: setFilter,
       loadDir,
       dirtyPaths,
+      reloadNonce: treeNonce,
       t
     })
   }
@@ -2191,9 +2342,9 @@ function buildBranchCreatedNote(value, t) {
       onGenerate: generatePullText,
       onCreate: createPull,
       onOpenUrl: openExternal,
-      // 推没推上去只认 status.pushed：推完 refreshStatus 一刷新，创建按钮自己就亮了，
-      // 不需要「表单里再推一次」这条独立通路
-      pushed: status !== null && status.pushed === true,
+      // 创建 PR 只认「本地与远端一致」：不一致时表单说明原因，左侧提示条给下一步动作
+      synced: status !== null && status.sync.state === 'synced',
+      syncState: status === null ? 'unknown' : status.sync.state,
       t
     })
   } else if (mode === MODE.remote && openPull !== null) {
@@ -2208,8 +2359,8 @@ function buildBranchCreatedNote(value, t) {
       onTest: testPull,
       onPass: passPull,
       onAiReview: aiReviewPull,
+      onPullFile: pullFile,
       onPrepareReview: prepareReviewPull,
-      onDeepReview: deepReviewPull,
       onSessionReview: sessionReviewPull,
       onCommentSession: sessionReviewPull,
       onCloneForReview: cloneForReviewPull,
@@ -2247,42 +2398,38 @@ function buildBranchCreatedNote(value, t) {
       t
     })
   } else if (mode === MODE.changes) {
-    if (selection === null) {
+    if (changesSelection === null) {
       // 和 DiffView 用同一个容器壳，空态与有内容时的几何完全一致（居中，不贴左上角）
       rightPane = h('div', { className: 'dgp-viewer' },
         h(EmptyState, {
           icon: 'file-diff',
           title: t('viewer.placeholderDiff'),
-          description: activeRoot === null ? t('status.noRootsHint') : undefined,
-          t
+          description: activeRoot === null ? t('status.noRootsHint') : undefined
         }))
     } else {
       rightPane = h(DiffView, {
         diff,
         loading: diffLoading,
         error: diffError,
-        path: selection.path,
-        entry: selection.entry,
+        path: changesSelection.path,
+        entry: changesSelection.entry,
         view: diffView,
         wrap: wrap === true && diffView === 'unified',
         onRetry: () => setDiffNonce((previous) => previous + 1),
         t
       })
     }
-  } else if (selection === null) {
+  } else if (fileSelection === null) {
     rightPane = h('div', { className: 'dgp-viewer' },
       h(EmptyState, {
         icon: 'file',
         title: t('viewer.placeholder'),
-        description: activeRoot === null ? t('status.noRootsHint') : undefined,
-        t
+        description: activeRoot === null ? t('status.noRootsHint') : undefined
       }))
   } else {
-    const path = selection.path
+    const path = fileSelection.path
     const draft = drafts.get(path)
-    const conflict = saveState.conflict !== null && saveState.conflict !== undefined && saveState.conflict.path === path
-      ? saveState.conflict
-      : null
+    const conflict = saveState.conflict !== null && saveState.conflict.path === path ? saveState.conflict : null
     rightPane = h(FileEditor, {
       record: fileData,
       // 编辑器显示的是草稿内容；草稿还没有时退回磁盘内容
@@ -2322,7 +2469,6 @@ function buildBranchCreatedNote(value, t) {
   h(MenuSeparator),
   h(MenuLabel, null, t('mode.changes')),
   h(MenuItem, {
-    icon: 'unified',
     label: t('toolbar.unified'),
     checked: diffView === 'unified',
     onClick: () => {
@@ -2331,7 +2477,6 @@ function buildBranchCreatedNote(value, t) {
     }
   }),
   h(MenuItem, {
-    icon: 'split',
     label: t('toolbar.split'),
     checked: diffView === 'split',
     onClick: () => {
@@ -2340,7 +2485,6 @@ function buildBranchCreatedNote(value, t) {
     }
   }),
   h(MenuItem, {
-    icon: 'wrap',
     label: t('toolbar.wrap'),
     // 并排视图下两列各自堆叠，折行长度不同会导致行错位；宿主自己也是统一视图才允许换行。
     sub: diffView === 'split' ? t('toolbar.wrapUnavailable') : undefined,
@@ -2361,7 +2505,6 @@ function buildBranchCreatedNote(value, t) {
   })),
   h(MenuSeparator),
   h(MenuItem, {
-    icon: 'filter',
     label: t('toolbar.ignoreWhitespace'),
     checked: ignoreWhitespace === true,
     onClick: () => setIgnoreWhitespace(!ignoreWhitespace)
@@ -2398,20 +2541,21 @@ function buildBranchCreatedNote(value, t) {
   h('div', { className: 'dgp-pane-left' }, leftPane),
   h('div', {
     className: 'dgp-divider',
+    ref: dividerRef,
     role: 'separator',
     'aria-orientation': 'vertical',
     'aria-valuenow': leftWidth,
-    'data-dragging': dragging ? 'true' : undefined,
+    'aria-valuemin': MIN_LEFT,
     tabIndex: 0,
-    title: 'Drag to resize',
+    title: t('toolbar.resize'),
     onPointerDown: beginDrag,
     onKeyDown: (event) => {
       if (event.key === 'ArrowLeft') {
         event.preventDefault()
-        setLeftWidth(Math.max(MIN_LEFT, leftWidth - 16))
+        resizeBy(-16)
       } else if (event.key === 'ArrowRight') {
         event.preventDefault()
-        setLeftWidth(leftWidth + 16)
+        resizeBy(16)
       }
     }
   }),
@@ -2430,9 +2574,7 @@ function buildBranchCreatedNote(value, t) {
     rightPane))
 
   let content
-  if (noSession) {
-    content = h(EmptyState, { icon: 'warning', title: t('status.noSession'), t })
-  } else if (rootsLoading && roots.length === 0) {
+  if (rootsLoading && roots.length === 0) {
     content = h(LoadingState, { label: t('status.discovering'), t })
   } else if (rootsError !== null && roots.length === 0) {
     content = h(EmptyState, {
@@ -2444,8 +2586,7 @@ function buildBranchCreatedNote(value, t) {
         type: 'button',
         className: 'dgp-btn',
         onClick: () => resolveProject(undefined)
-      }, t('action.retry'))],
-      t
+      }, t('action.retry'))]
     })
   } else if (roots.length === 0) {
     content = h(EmptyState, {
@@ -2457,8 +2598,7 @@ function buildBranchCreatedNote(value, t) {
         type: 'button',
         className: 'dgp-btn',
         onClick: () => resolveProject(undefined)
-      }, t('action.retry'))],
-      t
+      }, t('action.retry'))]
     })
   } else {
     content = body
@@ -2468,6 +2608,9 @@ function buildBranchCreatedNote(value, t) {
     content = h(SettingsView, {
       models: settingsState.models,
       commitModel: settingsState.commitModel,
+      commitThinking: settingsState.commitThinking === true,
+      commitReasoningEffort: settingsState.commitReasoningEffort,
+      onChangeCommitThinking: changeCommitThinking,
       reviewModel: settingsState.reviewModel,
       onChangeReviewModel: changeReviewModel,
       loading: settingsState.loading,
@@ -2478,6 +2621,8 @@ function buildBranchCreatedNote(value, t) {
       onChangeChangesView: setChangesView,
       untrackedMode,
       onChangeUntrackedMode: setUntrackedMode,
+      postCommitPush,
+      onChangePostCommitPush: setPostCommitPush,
       accounts,
       providers,
       accountsBusy,
@@ -2495,7 +2640,6 @@ function buildBranchCreatedNote(value, t) {
   return h('div', {
     className: 'dgp-root',
     ref: rootRef,
-    'data-narrow': isNarrow ? 'true' : undefined,
     'data-mode': mode,
     onKeyDown
   },
@@ -2511,11 +2655,54 @@ function buildBranchCreatedNote(value, t) {
         type: 'button',
         className: 'dgp-btn',
         'data-size': 'sm',
-        onClick: () => refreshStatus()
+        onClick: () => refreshRepository()
       }, t('action.retry')))
     : null,
   content,
   moreMenu)
+}
+
+/** 版本号按钮的 tooltip：插件版本 · 最新版本 · 检测时间（与仓库状态无关）。 */
+function buildVersionTitle(pluginState, t) {
+  const parts = [t('toolbar.checkUpdates')]
+  if (pluginState.version !== null) parts.push(t('update.currentVersion', { version: pluginState.version }))
+  if (pluginState.checkedAt > 0 && pluginState.error === null) {
+    parts.push(pluginState.newer
+      ? t('update.latestVersion', { version: pluginState.latestVersion })
+      : t('update.pluginUpToDate', { version: pluginState.version }))
+    parts.push(t('update.checkedAt', { time: formatClock(pluginState.checkedAt) }))
+  }
+  return parts.join(' \u00b7 ')
+}
+
+/**
+ * 上游检查的一句话结果。
+ * 落后优先于领先：同时有分叉时更重要的是"你落后了"。
+ */
+function buildUpstreamNote(value, t) {
+  const upstream = value.upstream === null ? '' : value.upstream
+  if (value.behind > 0) return { tone: 'warn', text: t('update.behind', { count: value.behind, upstream }) }
+  if (value.ahead > 0) return { tone: 'info', text: t('update.ahead', { count: value.ahead, upstream }) }
+  return { tone: 'info', text: t('update.upToDate', { upstream }) }
+}
+
+/**
+ * 创建分支后的那句话。
+ *
+ * 用户最不确定的就是「我的改动去哪了」，所以这里必须把三种结局分开说：
+ * 切过去并带走了改动 / 切过去但本来就没有改动 / 只建了分支没切换（改动留在原处）。
+ */
+function buildBranchCreatedNote(value, t) {
+  if (value.switched !== true) return { tone: 'info', text: t('branch.createdOnly', { name: value.branch }) }
+  if (value.carried.total > 0) {
+    return { tone: 'info', text: t('branch.createdFollow', { name: value.branch, total: value.carried.total }) }
+  }
+  return { tone: 'info', text: t('branch.created', { name: value.branch }) }
+}
+
+/** 分支数据的去重键：同一个仓库名在不同账号下是两份数据。 */
+function branchKeyOf(selection) {
+  return selection.accountId + '#' + selection.fullName
 }
 
 /**
@@ -2523,9 +2710,9 @@ function buildBranchCreatedNote(value, t) {
  * 没有本地克隆（或还没读到）时返回 null：分支区的本地操作一律以它为前提。
  */
 function localRootPathOfBranches(state) {
-  if (state === null || state === undefined) return null
-  if (state.data === null || state.data === undefined) return null
+  if (state === null) return null
+  if (state.data === null) return null
   const local = state.data.local
-  if (local === null || local === undefined) return null
+  if (local === null) return null
   return typeof local.rootPath === 'string' && local.rootPath !== '' ? local.rootPath : null
 }

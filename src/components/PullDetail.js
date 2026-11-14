@@ -4,8 +4,9 @@
  * 能力来自宿主返回的 capabilities：Gitee 只有「通过」一种结论、合并方式两种，
  * GitHub 三种都有。界面只渲染平台真正支持的动作，不做「点了才发现不支持」。
  */
-import { h, useState } from '../platform.js'
-import { Icon } from '../ui/Icon.js'
+import { h, useState, useRef } from '../platform.js'
+import { Icon, StatusLetter } from '../ui/Icon.js'
+import { DiffView } from './DiffView.js'
 import { formatDateTime } from '../util/time.js'
 
 const VERDICT_LABEL = {
@@ -14,14 +15,46 @@ const VERDICT_LABEL = {
   comment: 'pull.comment'
 }
 
+/** 平台给的是 added / modified / removed / renamed 这类词，界面要单个字母。 */
+const FILE_LETTER = {
+  added: 'A',
+  copied: 'C',
+  changed: 'M',
+  deleted: 'D',
+  modified: 'M',
+  removed: 'D',
+  renamed: 'R',
+  unchanged: 'M'
+}
+
+const fileLetter = (status) => {
+  if (typeof status !== 'string' || status === '') return '?'
+  return FILE_LETTER[status] ?? status.slice(0, 1).toUpperCase()
+}
+
+/** PR 状态 → 文案 key。平台给了没见过的状态就原样显示，不拼一个不存在的 key。 */
+const PULL_STATE_KEYS = {
+  open: 'pull.state.open',
+  closed: 'pull.state.closed',
+  merged: 'pull.state.merged'
+}
+
+const pullStateLabel = (t, state) => {
+  const key = PULL_STATE_KEYS[state]
+  if (key !== undefined) return t(key)
+  return typeof state === 'string' && state !== '' ? state : t('pull.state.unknown')
+}
+
 export function PullDetail(props) {
   const source = props
   const t = source.t
-  const selection = source.selection === null || source.selection === undefined ? null : source.selection
-  const detail = source.detail === null || source.detail === undefined ? null : source.detail
+  const selection = source.selection
+  const detail = source.detail
   const [note, setNote] = useState('')
   const [mergeMethod, setMergeMethod] = useState('merge')
   const [deleteBranch, setDeleteBranch] = useState(true)
+  // 合并是破坏性操作（可能连源分支一起删）：两步确认，与关闭 PR 同口径
+  const [mergeConfirm, setMergeConfirm] = useState(false)
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -40,11 +73,17 @@ export function PullDetail(props) {
   // 关闭 PR 是两步操作：先确认再发，避免误点
   const [closeConfirm, setCloseConfirm] = useState(false)
   const [stateBusy, setStateBusy] = useState(false)
+  // 变动文件：当前展开的文件、每个文件按需读到的 diff（filename -> { status, diff, error }）
+  const [openFile, setOpenFile] = useState(null)
+  const [fileLoads, setFileLoads] = useState({})
+  // 已读到的 diff 与正在读的文件：折叠再展开不重复请求，连点也不会发两次
+  const fileCache = useRef(new Map())
+  const filePending = useRef(new Set())
 
   if (selection === null) return null
 
   const back = () => {
-    if (typeof source.onBack === 'function') source.onBack()
+    source.onBack()
   }
 
   if (detail === null || detail.loading === true) {
@@ -66,7 +105,7 @@ export function PullDetail(props) {
             className: 'dgp-btn',
             'data-size': 'sm',
             onClick: () => {
-              if (typeof source.onRetry === 'function') source.onRetry()
+              source.onRetry()
             }
           }, t('action.retry')),
           h('button', {
@@ -102,15 +141,104 @@ export function PullDetail(props) {
   // 平台不一定给增删行/文件数，缺了显示 —— 而不是 0
   const statText = (value) => (pull.statsComplete === true ? String(value) : '—')
 
+  /* ---------------------- 变动文件：按需读单个文件的 diff ---------------------- */
+
+  /** 读一个文件的 diff（已读过就用缓存；同一文件正在读时不重复发请求）。 */
+  const loadFileDiff = async (file) => {
+    const name = file.filename
+    const cached = fileCache.current.get(name)
+    if (cached !== undefined) {
+      setFileLoads((previous) => ({ ...previous, [name]: cached }))
+      return
+    }
+    if (filePending.current.has(name)) return
+    filePending.current.add(name)
+    setFileLoads((previous) => ({ ...previous, [name]: { status: 'loading' } }))
+    let result
+    try {
+      result = await source.onPullFile({
+        accountId: selection.accountId,
+        fullName: selection.fullName,
+        number: pull.number,
+        filename: name
+      })
+    } catch (caught) {
+      result = { ok: false, error: caught instanceof Error ? caught.message : String(caught) }
+    } finally {
+      filePending.current.delete(name)
+    }
+    if (result.ok === true) {
+      const entry = { status: 'done', diff: result.diff }
+      fileCache.current.set(name, entry)
+      setFileLoads((previous) => ({ ...previous, [name]: entry }))
+      return
+    }
+    setFileLoads((previous) => ({
+      ...previous,
+      [name]: {
+        status: 'error',
+        error: result.error
+      }
+    }))
+  }
+
+  /** 点一行：展开 / 收起；第一次展开时读 diff。 */
+  const toggleFile = (file) => {
+    const name = file.filename
+    if (openFile === name) {
+      setOpenFile(null)
+      return
+    }
+    setOpenFile(name)
+    void loadFileDiff(file)
+  }
+
+  /** 读失败后重试：先丢掉缓存（错误结果本来也不进缓存）。 */
+  const retryFile = (file) => {
+    fileCache.current.delete(file.filename)
+    setFileLoads((previous) => ({ ...previous, [file.filename]: { status: 'loading' } }))
+    void loadFileDiff(file)
+  }
+
+  /** 展开区的内容：加载中 / 失败 + 重试 / DiffView。 */
+  const renderFileDiff = (file) => {
+    const load = fileLoads[file.filename]
+    if (load === undefined || load.status === 'loading') {
+      return h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'file-loading' }, t('pull.fileDiffLoading'))
+    }
+    if (load.status === 'error') {
+      return h('div', { className: 'dgp-pull-file-error' },
+        h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'file-error' }, load.error),
+        h('button', {
+          type: 'button',
+          className: 'dgp-btn',
+          'data-size': 'sm',
+          'data-variant': 'ghost',
+          'data-dgp-pull': 'file-retry',
+          onClick: () => retryFile(file)
+        }, t('action.retry')))
+    }
+    return h(DiffView, {
+      diff: load.diff,
+      loading: false,
+      error: null,
+      path: file.filename,
+      entry: {
+        status: fileLetter(file.status),
+        adds: file.additions,
+        dels: file.deletions
+      },
+      view: 'unified',
+      wrap: false,
+      onRetry: () => retryFile(file),
+      t
+    })
+  }
+
   /**
    * 评论草稿的可见行数：按换行切分，长行按每行约 80 字符折算。
    * 最少 6 行、最多 30 行 —— 内容多时输入框自己长高，不用手动拉。
    */
-  const draftLines = draft.split('\n').reduce(
-    (sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)),
-    0
-  )
-  const draftHeight = Math.min(Math.max(draftLines, 6), 30) * 19 + 24 + 'px'
   const commentLines = commentDraft.split('\n').reduce(
     (sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)),
     0
@@ -124,13 +252,12 @@ export function PullDetail(props) {
     const result = await action()
     setBusy(null)
     // 合并成功时宿主已经把详情关掉了（closed:true），这里不再写任何提示
-    if (result !== null && result !== undefined && result.ok === true && result.closed === true) return
-    if (result !== null && result !== undefined && result.ok === true) {
+    if (result.ok === true && result.closed === true) return
+    if (result.ok === true) {
       setNotice(result.message ?? null)
-      if (typeof source.onChanged === 'function') source.onChanged()
       return
     }
-    setError(result === null || result === undefined ? '操作失败' : result.error)
+    setError({ text: result.error, code: result.code ?? null })
   }
 
   /** 执行步骤列表（宿主回传）：每一步做了什么、耗时、是否失败。 */
@@ -148,7 +275,7 @@ export function PullDetail(props) {
         h('span', { className: 'dgp-step-time' }, '+' + String(step.at ?? 0) + 'ms'),
         h('span', { className: 'dgp-step-name' }, step.step),
         step.detail === '' ? null : h('span', { className: 'dgp-step-detail' }, step.detail)))),
-      logPath === null || logPath === undefined
+      logPath === null
         ? null
         : h('p', { className: 'dgp-settings-hint' }, t('pull.aiLogHint', { path: logPath })))
   }
@@ -157,27 +284,26 @@ export function PullDetail(props) {
   const runAi = async (mode, prepared = null) => {
     setCommentNotice(null)
     setClonePrompt(null)
-    if (mode === 'deep') setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null, phase: 'prepare' })
+    if (mode === 'session') setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null, phase: 'prepare' })
     else setAi({ status: 'loading', mode, result: null, error: null, steps: [], logPath: null, phase: null })
 
     const base = { accountId: selection.accountId, fullName: selection.fullName, number: pull.number }
     let result
 
-    if (mode === 'deep') {
+    if (mode === 'session') {
       let target = prepared
       if (target === null) {
-        if (typeof source.onPrepareReview !== 'function') return
         const prep = await source.onPrepareReview({
           ...base,
-          rootPaths: Array.isArray(source.localRepoRoots) ? source.localRepoRoots : []
+          rootPaths: source.localRepoRoots
         })
-        if (prep === null || prep === undefined || prep.ok !== true) {
+        if (prep.ok !== true) {
           setAi({
             status: 'error', mode, result: null,
-            error: prep === null || prep === undefined ? '准备失败' : prep.error,
-            code: prep?.code ?? null,
-            steps: prep?.details?.steps ?? [],
-            logPath: prep?.details?.logPath ?? null,
+            error: prep.error,
+            code: prep.code ?? null,
+            steps: prep.details?.steps ?? [],
+            logPath: prep.details?.logPath ?? null,
             phase: null
           })
           return
@@ -196,52 +322,33 @@ export function PullDetail(props) {
         }
         target = { rootPath: prep.rootPath, branch: prep.branch, steps: prep.steps ?? [], logPath: prep.logPath ?? null }
       }
-      // 阶段二：优先走会话级审阅（新开会话 + Agent 工具）；没有该能力时退回本地深度。
-      if (typeof source.onSessionReview === 'function') {
-        setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
-        const started = await source.onSessionReview({ ...base, rootPath: target.rootPath, branch: target.branch })
-        if (started !== null && started !== undefined && started.ok === true && typeof started.sessionId === 'string') {
-          setAi({ status: 'done', mode: 'session', result: started, error: null, steps: [], logPath: started.logPath ?? null, phase: null })
-          setCommentNotice(t('pull.sessionReviewStarted', { id: started.sessionId }))
-          return
-        }
-        setAi({
-          status: 'error',
-          mode: 'deep',
-          result: null,
-          error: started === null || started === undefined ? '启动会话审阅失败' : started.error,
-          code: started?.code ?? null,
-          steps: started?.details?.steps ?? target.steps ?? [],
-          logPath: started?.details?.logPath ?? target.logPath ?? null,
-          phase: null
-        })
+      // 阶段二：会话级审阅（新开会话 + Agent 工具）。这是唯一实现，没有本地退路。
+      setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
+      const started = await source.onSessionReview({ ...base, rootPath: target.rootPath, branch: target.branch })
+      if (started.ok === true && typeof started.sessionId === 'string') {
+        setAi({ status: 'done', mode: 'session', result: started, error: null, steps: [], logPath: started.logPath ?? null, phase: null })
+        setCommentNotice(t('pull.sessionReviewStarted', { id: started.sessionId }))
         return
       }
-      setAi({ status: 'loading', mode, result: null, error: null, steps: target.steps ?? [], logPath: target.logPath ?? null, phase: 'review' })
-      if (typeof source.onDeepReview !== 'function') return
-      const reviewed = await source.onDeepReview({ ...base, rootPath: target.rootPath, branch: target.branch })
-      const mergedSteps = [...(target.steps ?? []), ...((reviewed?.steps) ?? [])]
-      result = reviewed === null || reviewed === undefined
-        ? reviewed
-        : reviewed.ok === true
-          ? { ...reviewed, steps: mergedSteps, logPath: reviewed.logPath ?? target.logPath ?? null }
-          : {
-              ...reviewed,
-              details: {
-                ...(reviewed.details ?? {}),
-                steps: mergedSteps,
-                logPath: reviewed.details?.logPath ?? target.logPath ?? null
-              }
-            }
+      setAi({
+        status: 'error',
+        mode: 'session',
+        result: null,
+        error: started.error,
+        code: started.code ?? null,
+        steps: started.details?.steps ?? target.steps,
+        logPath: started.details?.logPath ?? target.logPath,
+        phase: null
+      })
+      return
     } else {
-      if (typeof source.onAiReview !== 'function') return
       result = await source.onAiReview({ ...base })
     }
 
-    if (result !== null && result !== undefined && result.ok === true) {
+    if (result.ok === true) {
       setAi({
         status: 'done', mode, result, error: null,
-        steps: Array.isArray(result.steps) ? result.steps : [],
+        steps: result.steps ?? [],
         logPath: result.logPath ?? null,
         phase: null
       })
@@ -252,12 +359,10 @@ export function PullDetail(props) {
       status: 'error',
       mode,
       result: null,
-      error: result === null || result === undefined ? '审阅失败' : result.error,
-      code: result === null || result === undefined ? null : (result.code ?? null),
-      steps: result !== null && result !== undefined && result.details !== null && result.details !== undefined
-        && Array.isArray(result.details.steps) ? result.details.steps : [],
-      logPath: result !== null && result !== undefined && result.details !== null && result.details !== undefined
-        ? result.details.logPath ?? null : null,
+      error: result.error,
+      code: result.code ?? null,
+      steps: result.details?.steps ?? [],
+      logPath: result.details?.logPath ?? null,
       phase: null
     })
   }
@@ -268,13 +373,13 @@ export function PullDetail(props) {
    * 本地没有仓库时复用克隆确认框，克隆完继续处理同一条评论。
    */
   const runCommentAi = async (comment) => {
-    if (typeof source.onCommentSession !== 'function' || commentAi.busyId !== null) return
+    if (commentAi.busyId !== null) return
     setCommentAi({ busyId: comment.id ?? 0, error: null, notice: null })
     const result = await source.onCommentSession({
       accountId: selection.accountId,
       fullName: selection.fullName,
       number: pull.number,
-      rootPaths: Array.isArray(source.localRepoRoots) ? source.localRepoRoots : [],
+      rootPaths: source.localRepoRoots,
       comment: {
         id: comment.id,
         author: comment.author,
@@ -282,7 +387,7 @@ export function PullDetail(props) {
         createdAt: comment.createdAt
       }
     })
-    if (result !== null && result !== undefined && result.ok === true && result.needsClone === true) {
+    if (result.ok === true && result.needsClone === true) {
       setCommentAi({ busyId: null, error: null, notice: null })
       setClonePrompt({
         repoUsed: result.repoUsed,
@@ -296,19 +401,19 @@ export function PullDetail(props) {
       })
       return
     }
-    if (result !== null && result !== undefined && result.ok === true) {
+    if (result.ok === true) {
       setCommentAi({ busyId: null, error: null, notice: t('pull.commentAiStarted', { id: result.sessionId }) })
       return
     }
-    setCommentAi({ busyId: null, error: result === null || result === undefined ? '处理失败' : result.error, notice: null })
+    setCommentAi({ busyId: null, error: result.error, notice: null })
   }
 
   const startClone = async (target) => {
-    if (typeof source.onCloneForReview !== 'function' || clonePrompt === null) return
+    if (clonePrompt === null) return
     const targetDir = target === 'workspace'
-      ? String(source.projectRoot ?? '') + '/' + clonePrompt.suggestedName
+      ? (source.projectRoot === null ? '' : source.projectRoot + '/' + clonePrompt.suggestedName)
       : clonePrompt.customPath.trim()
-    if (targetDir === '' || targetDir === '/undefined') {
+    if (targetDir === '') {
       setClonePrompt((previous) => (previous === null ? previous : { ...previous, error: t('pull.aiCloneNoPath') }))
       return
     }
@@ -319,10 +424,8 @@ export function PullDetail(props) {
       number: pull.number,
       targetDir
     })
-    if (result === null || result === undefined || result.ok !== true) {
-      setClonePrompt((previous) => (previous === null
-        ? previous
-        : { ...previous, busy: false, error: result === null || result === undefined ? '克隆失败' : result.error }))
+    if (result.ok !== true) {
+      setClonePrompt((previous) => (previous === null ? previous : { ...previous, busy: false, error: result.error }))
       return
     }
     if (clonePrompt.intent === 'comment' && clonePrompt.comment !== undefined) {
@@ -337,19 +440,19 @@ export function PullDetail(props) {
         branch: result.branch,
         comment: { id: comment.id, author: comment.author, body: comment.body, createdAt: comment.createdAt }
       })
-      if (handled !== null && handled !== undefined && handled.ok === true) {
+      if (handled.ok === true) {
         setCommentAi({ busyId: null, error: null, notice: t('pull.commentAiStarted', { id: handled.sessionId }) })
       } else {
-        setCommentAi({ busyId: null, error: handled === null || handled === undefined ? '处理失败' : handled.error, notice: null })
+        setCommentAi({ busyId: null, error: handled.error, notice: null })
       }
       return
     }
-    await runAi('deep', { rootPath: result.rootPath, branch: result.branch })
+    await runAi('session', { rootPath: result.rootPath, branch: result.branch })
   }
 
   /** 关闭 / 重新打开。关闭需要二次确认；重新打开直接执行（无破坏性）。 */
   const changeState = async (nextState) => {
-    if (typeof source.onSetPullState !== 'function' || stateBusy) return
+    if (stateBusy) return
     setStateBusy(true)
     const result = await source.onSetPullState({
       accountId: selection.accountId,
@@ -359,16 +462,15 @@ export function PullDetail(props) {
     })
     setStateBusy(false)
     setCloseConfirm(false)
-    if (result !== null && result !== undefined && result.ok === true) {
-      if (typeof source.onChanged === 'function') source.onChanged()
+    if (result.ok === true) {
       setNotice(t(nextState === 'closed' ? 'pull.closedNotice' : 'pull.reopenedNotice'))
       return
     }
-    setError(result === null || result === undefined ? '操作失败' : result.error)
+    setError({ text: result.error, code: result.code ?? null })
   }
 
   const submitComment = async () => {
-    if (typeof source.onComment !== 'function' || commentBusy) return
+    if (commentBusy) return
     setCommentBusy(true)
     setCommentNotice(null)
     const result = await source.onComment({
@@ -378,13 +480,13 @@ export function PullDetail(props) {
       comment: commentDraft
     })
     setCommentBusy(false)
-    if (result !== null && result !== undefined && result.ok === true) {
+    if (result.ok === true) {
       // 发出去之后清空输入框：否则内容留在框里，用户会以为没发出去
       setCommentDraft('')
       setCommentNotice(result.message ?? t('pull.aiCommentDone'))
       return
     }
-    setCommentNotice(result === null || result === undefined ? '评论失败' : result.error)
+    setCommentNotice(result.error)
   }
 
   const submitReview = (verdict) => run('review', () => source.onReview({
@@ -416,6 +518,61 @@ export function PullDetail(props) {
     deleteBranch
   }))
 
+  /* --------------------------- 变动文件 --------------------------- */
+  // 宿主在 pullDetail 里带回文件清单（不含 patch）：点开某一行时才去读那个文件的 diff。
+  const files = data.files
+  const filesUnavailable = data.filesUnavailable
+  // 数量以平台给的总数为准：文件列表可能读失败或被截断，此时列表条数不是真实改动数。
+  const filesCount = filesUnavailable !== null || data.filesTruncated === true ? statText(pull.changedFiles) : files.length
+  const filesSection =
+    h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'files' },
+      h('div', { className: 'dgp-detail-head' },
+        h('span', { className: 'dgp-detail-title' }, t('pull.filesTitle')),
+        h('span', { className: 'dgp-detail-count' }, t('pull.filesChanged', { count: filesCount }))),
+      filesUnavailable === null
+        ? null
+        : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'files-error' },
+          t('pull.filesUnavailable', { message: filesUnavailable })),
+      files.length === 0
+        ? (filesUnavailable === null
+          ? h('p', { className: 'dgp-detail-empty' }, t('pull.filesEmpty'))
+          : null)
+        : h('ul', { className: 'dgp-pull-files' },
+          files.map((file) => {
+            const open = openFile === file.filename
+            return h('li', {
+              key: file.filename,
+              className: 'dgp-pull-file',
+              'data-dgp-file': file.filename,
+              'data-open': open ? 'true' : undefined
+            },
+            h('button', {
+              type: 'button',
+              className: 'dgp-pull-file-row',
+              'data-dgp-pull': 'file-row',
+              'data-file': file.filename,
+              'aria-expanded': open ? 'true' : 'false',
+              onClick: () => toggleFile(file)
+            },
+            h(StatusLetter, { status: fileLetter(file.status) }),
+            h('span', { className: 'dgp-pull-file-name dgp-oneline', title: file.filename }, file.filename),
+            h('span', { className: 'dgp-pull-file-stat' },
+              h('span', { className: 'dgp-add' }, '+' + String(file.additions)),
+              h('span', { className: 'dgp-del' }, '−' + String(file.deletions))),
+            h(Icon, { name: open ? 'chevron-down' : 'chevron-right', size: 12 })),
+            open
+              ? h('div', {
+                className: 'dgp-pull-file-diff',
+                'data-dgp-pull': 'file-diff',
+                'data-file': file.filename
+              }, renderFileDiff(file))
+              : null)
+          })),
+      data.filesTruncated === true
+        ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'files-truncated' },
+          t('pull.filesTruncated', { count: files.length }))
+        : null)
+
   return h('div', { className: 'dgp-detail dgp-pull', 'data-dgp-pull': 'detail' },
     h('div', { className: 'dgp-detail-top' },
       h('div', { className: 'dgp-detail-name-row' },
@@ -435,7 +592,7 @@ export function PullDetail(props) {
         'data-size': 'sm',
         'data-dgp-pull': 'open-web',
         onClick: () => {
-          if (typeof source.onOpenUrl === 'function') source.onOpenUrl(pull.htmlUrl)
+          source.onOpenUrl(pull.htmlUrl)
         }
       }, t('remote.openWeb'), h(Icon, { name: 'external', size: 12 })),
       pull.state === 'open'
@@ -465,14 +622,16 @@ export function PullDetail(props) {
             disabled: stateBusy,
             onClick: () => setCloseConfirm(true)
           }, t('pull.closeRun')))
-        : h('button', {
-          type: 'button',
-          className: 'dgp-btn',
-          'data-size': 'sm',
-          'data-dgp-pull': 'reopen-pull',
-          disabled: stateBusy,
-          onClick: () => changeState('open')
-        }, t('pull.reopenRun'))),
+        : (pull.merged === true
+          ? null
+          : h('button', {
+            type: 'button',
+            className: 'dgp-btn',
+            'data-size': 'sm',
+            'data-dgp-pull': 'reopen-pull',
+            disabled: stateBusy,
+            onClick: () => changeState('open')
+          }, t('pull.reopenRun')))),
 
     /* 门禁状态：审查与测试并排一行，状态一眼可见 */
     h('div', { className: 'dgp-gate', 'data-dgp-pull': 'gate' },
@@ -484,7 +643,7 @@ export function PullDetail(props) {
         t('pull.gateMergeState'), '：', gate.mergeState)),
 
     h('div', { className: 'dgp-detail-meta' },
-      h('span', { 'data-dgp-pull-state': pull.state }, t('pull.state.' + pull.state === '' ? 'pull.state.unknown' : 'pull.state.' + pull.state)),
+      h('span', { 'data-dgp-pull-state': pull.state }, pullStateLabel(t, pull.state)),
       pull.merged === true ? h('span', null, t('pull.merged')) : null,
       h('span', null, pull.author),
       h('span', null, pull.headBranch + ' → ' + pull.baseBranch),
@@ -501,6 +660,8 @@ export function PullDetail(props) {
     pull.body === ''
       ? null
       : h('pre', { className: 'dgp-pull-body', 'data-dgp-pull': 'body' }, pull.body),
+
+    filesSection,
 
     /* --------------------------- AI 审阅 --------------------------- */
     h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'ai' },
@@ -525,11 +686,11 @@ export function PullDetail(props) {
           'data-dgp-pull': 'ai-deep-run',
           disabled: ai.status === 'loading' || busy !== null,
           title: t('pull.aiDeepHint'),
-          onClick: () => runAi('deep')
-        }, t(ai.status === 'done' && ai.mode === 'deep' ? 'pull.aiDeepRerun' : 'pull.aiDeepRun'))),
+          onClick: () => runAi('session')
+        }, t('pull.aiDeepRun'))),
       ai.status === 'loading'
         ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-loading' },
-          t(ai.mode !== 'deep' ? 'pull.aiRunning' : (ai.phase === 'prepare' ? 'pull.aiPreparing' : 'pull.aiReviewing')))
+          t(ai.mode !== 'session' ? 'pull.aiRunning' : (ai.phase === 'prepare' ? 'pull.aiPreparing' : 'pull.aiReviewing')))
         : null,
       clonePrompt === null ? null : h('div', { className: 'dgp-ai-clone', 'data-dgp-pull': 'clone-prompt' },
         h('p', { className: 'dgp-ai-summary' }, t('pull.aiCloneTitle', { repo: clonePrompt.repoUsed })),
@@ -579,7 +740,7 @@ export function PullDetail(props) {
       ai.status === 'error'
         ? h('div', { className: 'dgp-ai-error' },
           h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'ai-error' }, ai.error),
-          ai.code === 'no-review-model' && typeof source.onOpenSettings === 'function'
+          ai.code === 'no-review-model'
             ? h('button', {
               type: 'button',
               className: 'dgp-btn',
@@ -593,37 +754,13 @@ export function PullDetail(props) {
       ai.status !== 'done' ? null
         : ai.mode === 'session'
           ? h('div', { 'data-dgp-pull': 'ai-session' },
-            h('p', { className: 'dgp-detail-notice' }, t('pull.sessionReviewStarted', { id: String(ai.result.sessionId ?? '') })))
+            h('p', { className: 'dgp-detail-notice' }, t('pull.sessionReviewStarted', { id: ai.result.sessionId })))
           : h('div', { 'data-dgp-pull': 'ai-result' },
-        ai.mode === 'deep'
-          ? h('p', { className: 'dgp-detail-meta', 'data-dgp-pull': 'ai-deep-info' },
-            t('pull.aiDeepInfo', { count: ai.result.filesRead ?? 0 }),
-            ' · ',
-            ai.result.objectSource === 'local'
-              ? t('pull.aiDeepLocal', { repo: String(ai.result.localRootUsed ?? '').split(/[\\/]/).pop() })
-              : t('pull.aiDeepTemp'))
-          : null,
-        Array.isArray(ai.result.fullFilesSkipped) && ai.result.fullFilesSkipped.length > 0
-          ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-deep-skipped' },
-            h('p', { className: 'dgp-detail-notice' },
-              t('pull.aiDeepSkipped', { count: ai.result.fullFilesSkipped.length })),
-            h('ul', { className: 'dgp-skipped-list' },
-              ai.result.fullFilesSkipped.map((file, index) => h('li', {
-                key: String(file.filename) + '#' + String(index),
-                className: 'dgp-skipped-item'
-              },
-              h('span', { className: 'dgp-skipped-name dgp-oneline', title: file.filename }, file.filename),
-              h('span', { className: 'dgp-skipped-size' }, file.reason)))))
-          : null,
         ai.result.truncated === true
           ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-truncated' }, t('pull.aiTruncated'))
           : null,
         ai.result.filesTruncated === true
           ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-files-truncated' }, t('pull.aiFilesTruncated'))
-          : null,
-        typeof ai.result.cleanupError === 'string' && ai.result.cleanupError !== ''
-          ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'ai-cleanup-warn' },
-            t('pull.aiCleanupWarn', { message: ai.result.cleanupError }))
           : null,
         Array.isArray(ai.result.skippedFiles) && ai.result.skippedFiles.length > 0
           ? h('div', { className: 'dgp-ai-skipped', 'data-dgp-pull': 'ai-skipped' },
@@ -677,17 +814,21 @@ export function PullDetail(props) {
         renderSteps(ai.steps, ai.logPath))),
 
     /* ------------------------------ 提交 ------------------------------ */
-    (data.commits ?? []).length === 0 && (data.commitsUnavailable === null || data.commitsUnavailable === undefined)
+    data.commits.length === 0 && data.commitsUnavailable === null
       ? null
       : h('section', { className: 'dgp-detail-section', 'data-dgp-pull': 'commits' },
         h('div', { className: 'dgp-detail-head' },
           h('span', { className: 'dgp-detail-title' }, t('pull.commitsTitle')),
-          h('span', { className: 'dgp-detail-count' }, String((data.commits ?? []).length))),
-        data.commitsUnavailable === null || data.commitsUnavailable === undefined
+          h('span', { className: 'dgp-detail-count' }, data.commitsUnavailable === null ? statText(pull.commits) : '—')),
+        data.commitsUnavailable === null
           ? null
           : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'commits-error' }, data.commitsUnavailable),
+        data.commits.length < pull.commits
+          ? h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'commits-limited' },
+            t('pull.commitsLimited', { shown: data.commits.length, total: pull.commits }))
+          : null,
         h('ul', { className: 'dgp-detail-list' },
-          (data.commits ?? []).map((commit) => h('li', {
+          data.commits.map((commit) => h('li', {
             key: commit.sha,
             className: 'dgp-detail-item',
             'data-dgp-commit-row': commit.sha
@@ -703,11 +844,11 @@ export function PullDetail(props) {
       h('div', { className: 'dgp-detail-head' },
         h('span', { className: 'dgp-detail-title' }, t('pull.commentsTitle')),
         h('span', { className: 'dgp-detail-count' },
-          Array.isArray(data.comments) ? data.comments.length : 0)),
-      data.commentsUnavailable === null || data.commentsUnavailable === undefined
+          data.commentsUnavailable === null ? data.comments.length : '—')),
+      data.commentsUnavailable === null
         ? null
         : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'comments-error' }, data.commentsUnavailable),
-      (data.comments ?? []).length === 0
+      data.comments.length === 0
         ? h('p', { className: 'dgp-detail-empty' }, t('pull.commentsEmpty'))
         : h('ul', { className: 'dgp-detail-list' },
           data.comments.map((comment, index) => h('li', {
@@ -719,17 +860,15 @@ export function PullDetail(props) {
             h('span', { className: 'dgp-detail-meta' },
               h('span', { className: 'dgp-detail-author' }, comment.author),
               comment.createdAt === '' ? null : h('span', null, formatDateTime(Date.parse(comment.createdAt)))),
-            typeof source.onCommentSession === 'function'
-              ? h('button', {
-                type: 'button',
-                className: 'dgp-btn',
-                'data-size': 'sm',
-                'data-variant': 'ghost',
-                'data-dgp-pull': 'comment-ai',
-                disabled: commentAi.busyId !== null,
-                onClick: () => runCommentAi(comment)
-              }, t(commentAi.busyId === (comment.id ?? 0) ? 'pull.commentAiBusy' : 'pull.commentAi'))
-              : null),
+            h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'ghost',
+              'data-dgp-pull': 'comment-ai',
+              disabled: commentAi.busyId !== null,
+              onClick: () => runCommentAi(comment)
+            }, t(commentAi.busyId === (comment.id ?? 0) ? 'pull.commentAiBusy' : 'pull.commentAi'))),
           h('pre', { className: 'dgp-comment-body' }, comment.body)))),
       commentAi.notice === null
         ? null
@@ -766,7 +905,13 @@ export function PullDetail(props) {
       h('div', { className: 'dgp-detail-head' },
         h('span', { className: 'dgp-detail-title' }, t('pull.review')),
         h('span', { className: 'dgp-detail-count' },
-          caps.reviews === true ? t('pull.reviewCount', { count: data.reviews.length }) : t('pull.reviewUnsupported'))),
+          caps.reviews !== true
+            ? t('pull.reviewUnsupported')
+            : (data.reviewsUnavailable === null ? t('pull.reviewCount', { count: data.reviews.length }) : '—'))),
+      data.reviewsUnavailable === null
+        ? null
+        : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'reviews-error' },
+          t('pull.reviewsUnavailable', { message: data.reviewsUnavailable })),
       data.reviews.length === 0
         ? null
         : h('ul', { className: 'dgp-detail-list' },
@@ -828,7 +973,10 @@ export function PullDetail(props) {
             className: 'dgp-select dgp-pull-method',
             'data-dgp-pull': 'merge-method',
             value: mergeMethod,
-            onChange: (event) => setMergeMethod(event.target.value)
+            onChange: (event) => {
+              setMergeMethod(event.target.value)
+              setMergeConfirm(false)
+            }
           },
           caps.mergeMethods.map((method) => h('option', { key: method, value: method }, t('pull.method.' + method)))),
           h('label', { className: 'dgp-pull-check' },
@@ -836,21 +984,63 @@ export function PullDetail(props) {
               type: 'checkbox',
               'data-dgp-pull': 'delete-branch',
               checked: deleteBranch,
-              onChange: (event) => setDeleteBranch(event.target.checked)
+              onChange: (event) => {
+                setDeleteBranch(event.target.checked)
+                setMergeConfirm(false)
+              }
             }),
             t('pull.deleteBranch', { branch: pull.headBranch })),
-          h('button', {
-            type: 'button',
-            className: 'dgp-btn',
-            'data-size': 'sm',
-            'data-variant': 'primary',
-            'data-dgp-pull': 'merge-run',
-            disabled: busy !== null || mergeBlocked,
-            onClick: submitMerge
-          }, t(busy === 'merge' ? 'pull.merging' : 'pull.mergeRun'))))
+          mergeConfirm
+            ? h('span', { className: 'dgp-pull-confirm', 'data-dgp-pull': 'merge-confirm' },
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'ghost',
+                disabled: busy !== null,
+                onClick: () => setMergeConfirm(false)
+              }, t('action.cancel')),
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'primary',
+                'data-dgp-pull': 'merge-confirm-run',
+                disabled: busy !== null || mergeBlocked,
+                onClick: () => run('merge', () => source.onMerge({
+                  accountId: selection.accountId,
+                  fullName: selection.fullName,
+                  number: pull.number,
+                  method: mergeMethod,
+                  deleteBranch
+                }))
+              }, t(busy === 'merge' ? 'pull.merging' : 'pull.mergeConfirm')))
+            : h('button', {
+              type: 'button',
+              className: 'dgp-btn',
+              'data-size': 'sm',
+              'data-variant': 'primary',
+              'data-dgp-pull': 'merge-run',
+              disabled: busy !== null || mergeBlocked,
+              onClick: () => setMergeConfirm(true)
+            }, t('pull.mergeRun'))))
       : null,
 
     busy === null ? null : h('p', { className: 'dgp-detail-meta' }, t('pull.working')),
     notice === null ? null : h('p', { className: 'dgp-detail-notice', 'data-dgp-pull': 'notice' }, notice),
-    error === null ? null : h('p', { className: 'dgp-detail-failure', 'data-dgp-pull': 'error' }, error))
+    error === null ? null : h('div', { className: 'dgp-pull-error', 'data-dgp-pull': 'error' },
+      h('p', { className: 'dgp-detail-failure' }, error.text),
+      // 冲突是「可以去网页上解决」的状态问题，不是一个死胡同：给一条直达 PR 的出口
+      error.code === 'pull-conflict'
+        ? h('button', {
+          type: 'button',
+          className: 'dgp-btn',
+          'data-size': 'sm',
+          'data-variant': 'ghost',
+          'data-dgp-pull': 'conflict-open-web',
+          onClick: () => {
+            source.onOpenUrl(pull.htmlUrl)
+          }
+        }, t('pull.conflictOpenWeb'), h(Icon, { name: 'external', size: 12 }))
+        : null))
 }

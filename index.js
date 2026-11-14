@@ -14,6 +14,7 @@
  *   roots/remove    { projectRoot, path }       -> { projectRoot, roots, warnings }
  *   roots/hide      { projectRoot, path }       -> { projectRoot, roots, warnings }（持久化隐藏，项目本身不可隐藏）
  *   roots/unhide    { projectRoot, path }       -> { projectRoot, roots, warnings }
+ *   roots/stats     { paths: string[] }         -> { summaries: [{path, counts, adds, dels, binary, truncated} | {path, error}] }
  *   status          { rootPath }                -> StatusResult + dirty
  *   diff            { rootPath, path, … }       -> DiffResult
  *   remote/fetch    { rootPath }               -> {url, branch, head, upstream, ahead, behind, fetchedAt}（git fetch，只读）
@@ -40,6 +41,8 @@ import {
   normalizeSlashes,
   readDiff,
   readStatus,
+  readStatusSummary,
+  summarizeFiles,
   readHead,
   readTextFile,
   runGit,
@@ -64,7 +67,8 @@ import {
   headShaOf,
   remoteInfoFor,
   listRemoteBranches,
-  pushedState,
+  remoteSyncState,
+  cleanupDeletedBranch,
   branchCommits,
   branchDiffText,
   pullBranch,
@@ -85,7 +89,6 @@ import {
   generateCommitMessage
 } from './host/models.js'
 import { generateReview } from './host/review.js'
-import { deepReview } from './host/deep-review.js'
 import { buildCommentSessionPrompt, findWorkspaceForSession, startSessionReview } from './host/session-review.js'
 import { resolveRoots, addExtraRoot, removeExtraRoot, hideRoot, unhideRoot } from './host/roots.js'
 
@@ -120,6 +123,7 @@ export const ENDPOINTS = Object.freeze([
   'roots/remove',
   'roots/hide',
   'roots/unhide',
+  'roots/stats',
   'status',
   'remote/fetch',
   'diff',
@@ -133,6 +137,7 @@ export const ENDPOINTS = Object.freeze([
   'branch/pull',
   'branch/create',
   'branch/push',
+  'branch/cleanup',
   'branch/delete',
   'remote/branches',
   'remote/branch/delete',
@@ -145,11 +150,10 @@ export const ENDPOINTS = Object.freeze([
   'remote/detail',
   'remote/pr-counts',
   'remote/pull',
-  'remote/pull/diff',
+  'remote/pull/file',
   'remote/pull/review',
   'remote/pull/ai-review',
   'remote/pull/prepare-review',
-  'remote/pull/deep-review',
   'remote/pull/session-review',
   'remote/pull/clone-for-review',
   'remote/pull/comment',
@@ -176,45 +180,69 @@ export const ENDPOINTS = Object.freeze([
 
 const STATUS_CACHE_TTL_MS = 1200
 const STATUS_CACHE_MAX = 64
+/** 一次「储存库」汇总最多查多少个仓库：再多就该用户自己收敛根列表了。 */
+const STATS_MAX_ROOTS = 32
+/** 汇总时同时跑的 git 数量：够快，又不会在几十个仓库的项目里起一屏进程。 */
+const STATS_CONCURRENCY = 4
 
-/** 进程内小缓存：只有 status 用；file/read 永不缓存（文件可能被编辑）。 */
-const statusCache = new Map()
+/** 进程内小缓存：只缓存 status 与仓库汇总；file/read 永不缓存（文件可能被编辑）。 */
+function createTtlCache() {
+  const entries = new Map()
+  return {
+    read(key) {
+      const entry = entries.get(key)
+      if (entry === undefined) return undefined
+      if (Date.now() - entry.at > STATUS_CACHE_TTL_MS) {
+        entries.delete(key)
+        return undefined
+      }
+      return entry.value
+    },
+    write(key, value) {
+      if (entries.has(key)) entries.delete(key)
+      if (entries.size >= STATUS_CACHE_MAX) {
+        const oldest = entries.keys().next()
+        if (oldest.done !== true) entries.delete(oldest.value)
+      }
+      entries.set(key, { at: Date.now(), value })
+    },
+    clear() {
+      entries.clear()
+    }
+  }
+}
+
+const statusCache = createTtlCache()
+const summaryCache = createTtlCache()
 
 function cacheKeyOf(rootPath) {
   const normalized = normalizeSlashes(path.resolve(rootPath))
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized
 }
 
-function cacheRead(key) {
-  const entry = statusCache.get(key)
-  if (entry === undefined) return undefined
-  if (Date.now() - entry.at > STATUS_CACHE_TTL_MS) {
-    statusCache.delete(key)
-    return undefined
-  }
-  return entry.value
-}
-
-function pruneCache() {
-  const now = Date.now()
-  for (const [key, entry] of statusCache) {
-    if (now - entry.at > STATUS_CACHE_TTL_MS) statusCache.delete(key)
-  }
-  while (statusCache.size > STATUS_CACHE_MAX) {
-    const oldest = statusCache.keys().next()
-    if (oldest.done === true) break
-    statusCache.delete(oldest.value)
-  }
-}
-
-function cacheWrite(key, value) {
-  if (statusCache.size > STATUS_CACHE_MAX) pruneCache()
-  statusCache.set(key, { at: Date.now(), value })
-}
-
-/** 根集合变化 / 测试用：清空 status 缓存。 */
+/** 根集合变化 / 任何写操作后：清空所有读缓存。 */
 export function clearStatusCache() {
   statusCache.clear()
+  summaryCache.clear()
+}
+
+/** 已算过的 status 直接摊平成汇总，避免对同一个仓库再跑一遍 git。 */
+function summarizeStatus(value) {
+  return { counts: value.counts, ...summarizeFiles(value.files), truncated: value.truncated }
+}
+
+/** 小并发池：保持结果顺序，逐个 await 太慢，全并发又可能起几十个 git 进程。 */
+async function mapWithLimit(items, limit, task) {
+  const results = new Array(items.length)
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next
+      next += 1
+      results[index] = await task(items[index], index)
+    }
+  }))
+  return results
 }
 
 /* ----------------------------------------------------------------- 信封 */
@@ -367,6 +395,33 @@ function describe(error) {
   return String(error)
 }
 
+/**
+ * 「本地与远端不一致」时给创建 PR 的那句话。
+ *
+ * 每种状态有自己的下一步：能推的去推、该拉的去拉、被删的先收尾 —— 不合并成一句
+ * 「还没推送」（那样用户永远不知道该点哪里）。
+ */
+function notSyncedMessage(branch, sync) {
+  switch (sync.state) {
+    case 'never-pushed':
+      return '分支 ' + branch + ' 还没有推到 origin：先在变更页签点「推送到远端」，再创建 PR'
+    case 'remote-deleted':
+      return '远端分支 origin/' + branch + ' 已经被删除（多半是合并后删的）：先在变更页签点「收尾」，'
+        + '切回默认分支并删掉本地分支，再从最新代码开新分支'
+    case 'ahead':
+      return '本地还有 ' + sync.ahead + ' 个提交没推到 origin：先推送，再创建 PR'
+    case 'behind':
+      return 'origin/' + branch + ' 上有 ' + sync.behind + ' 个你本地没有的提交：先「拉取当前分支最新代码」，再创建 PR'
+    case 'diverged':
+      return '本地与 origin/' + branch + ' 已经分叉（本地多 ' + sync.ahead + ' 个、远端多 ' + sync.behind + ' 个）：'
+        + '先拉取并处理分叉，再创建 PR'
+    case 'unknown':
+      return '无法判断分支 ' + branch + ' 与远端的关系：先点「获取远程更新」再试'
+    default:
+      throw new Error('notSyncedMessage: 未处理的状态 ' + String(sync.state))
+  }
+}
+
 /* ------------------------------------------------------------- 端点实现 */
 
 function createDispatcher(ctx) {
@@ -422,11 +477,64 @@ function createDispatcher(ctx) {
     return result
   }
 
+  /* roots/stats ------------------------------------------------------- */
+  /**
+   * 「储存库」列表行上的改动规模：每个仓库的改动文件数 + 增删行数。
+   *
+   * 一个请求查完所有仓库（客户端只有一次往返），单个仓库失败只影响它自己那一行 ——
+   * 一个坏仓库不该让整张列表失去数字。能命中 status / summary 缓存时不重复跑 git。
+   */
+  async function rootsStats(request, signal) {
+    const paths = request.paths
+    if (!Array.isArray(paths) || paths.length === 0) {
+      throw new GitError('bad-request', '缺少参数 paths')
+    }
+    if (paths.length > STATS_MAX_ROOTS) {
+      throw new GitError('bad-request', `一次最多查询 ${STATS_MAX_ROOTS} 个仓库`)
+    }
+
+    const targets = []
+    const seen = new Set()
+    for (const raw of paths) {
+      const target = requireAbsolute(raw, 'paths[]')
+      const key = cacheKeyOf(target)
+      if (seen.has(key)) continue
+      seen.add(key)
+      targets.push(target)
+    }
+
+    const summaries = await mapWithLimit(targets, STATS_CONCURRENCY, async (target) => {
+      const displayPath = normalizeSlashes(target)
+      try {
+        const cachedStatus = statusCache.read(cacheKeyOf(target))
+        if (cachedStatus !== undefined) {
+          return { path: displayPath, ...summarizeStatus(cachedStatus) }
+        }
+        const repo = await resolveRepo(target)
+        if (!repo?.repoRoot) throw new GitError('not-a-repository', `不是 Git 仓库：${displayPath}`)
+        if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${displayPath}`)
+
+        const repoRoot = normalizeSlashes(repo.repoRoot)
+        const cached = summaryCache.read(repoRoot)
+        if (cached !== undefined) return { path: displayPath, ...cached }
+
+        const summary = await readStatusSummary(repoRoot, { signal })
+        summaryCache.write(repoRoot, summary)
+        return { path: displayPath, ...summary }
+      } catch (error) {
+        const mapped = mapError(error)
+        return { path: displayPath, error: mapped.message }
+      }
+    })
+
+    return { summaries }
+  }
+
   /* status ------------------------------------------------------------ */
   async function status(request, signal) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
     const key = cacheKeyOf(rootPath)
-    const cached = cacheRead(key)
+    const cached = statusCache.read(key)
     if (cached !== undefined) return cached
 
     const repo = await resolveRepo(rootPath)
@@ -440,7 +548,7 @@ function createDispatcher(ctx) {
       rootPath: normalizeSlashes(rootPath),
       dirty: result.counts?.total ?? result.files.length
     }
-    cacheWrite(key, value)
+    statusCache.write(key, value)
     return value
   }
 
@@ -453,7 +561,10 @@ function createDispatcher(ctx) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
     const repo = await resolveRepo(rootPath)
     if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
-    return fetchRemote(normalizeSlashes(repo.repoRoot), { signal })
+    const result = await fetchRemote(normalizeSlashes(repo.repoRoot), { signal })
+    // fetch 会更新远端跟踪引用：ahead/behind 变了，缓存里的 status 立刻过期
+    clearStatusCache()
+    return result
   }
 
   /* diff -------------------------------------------------------------- */
@@ -571,19 +682,21 @@ function createDispatcher(ctx) {
   }
 
   async function remotePull(request, signal) {
+    // 详情里带上变动文件清单（不含 patch）：界面一打开就能看到改了哪些文件。
     return remotesOf().pullDetail({
       accountId: requireString(request.accountId, 'accountId'),
       fullName: requireString(request.fullName, 'fullName'),
       number: request.number
-    }, { signal })
+    }, { signal, withFiles: true })
   }
 
-  /** PR 的文件与 patch（AI 审阅的输入，也可给界面预览）。 */
-  async function remotePullDiff(request, signal) {
-    return remotesOf().pullDiff({
+  /** PR 里单个文件的 diff：界面点开文件行时按需读，不在详情里预取全部 patch。 */
+  async function remotePullFile(request, signal) {
+    return remotesOf().pullFile({
       accountId: requireString(request.accountId, 'accountId'),
       fullName: requireString(request.fullName, 'fullName'),
-      number: request.number
+      number: request.number,
+      filename: requireString(request.filename, 'filename')
     }, { signal })
   }
 
@@ -712,51 +825,6 @@ function createDispatcher(ctx) {
       }
     } catch (error) {
       log.error('准备本地目录失败', error instanceof Error ? error.message : String(error))
-      if (error instanceof GitError) {
-        error.details = { ...(error.details ?? {}), steps: log.steps, logPath: log.logPath }
-      }
-      throw error
-    }
-  }
-
-  /** 阶段二：读完整文件 + 调模型（不做任何 git 操作）。 */
-  async function remotePullDeepReview(request, signal) {
-    const settings = await readSettings()
-    if (settings.reviewModel === null) {
-      throw new GitError('no-review-model', '还没有配置 AI 审阅模型（设置页里选「审阅模型」）')
-    }
-    const accountId = requireString(request.accountId, 'accountId')
-    const fullName = requireString(request.fullName, 'fullName')
-    const number = request.number
-    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
-    const branch = typeof request.branch === 'string' ? request.branch : null
-    const log = createReviewLog({ logger: ctx.logger }, fullName + '#' + number)
-    log.info('阶段二：读取文件并审阅', '模型 ' + settings.reviewModel.provider + '/' + settings.reviewModel.model
-      + '，目录 ' + rootPath)
-    try {
-      const repo = await resolveRepo(rootPath)
-      if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
-      const localRoot = normalizeSlashes(repo.repoRoot)
-      const source = await log.time('读取 PR 详情', fullName + ' #' + number,
-        () => remotesOf().reviewSource({ accountId, fullName, number }, { signal }))
-      const diff = await log.time('读取 PR 文件列表', '最多 300 个文件',
-        () => remotesOf().pullDiff({ accountId, fullName, number }, { signal }))
-      log.info('文件列表', diff.files.length + ' 个文件' + (diff.truncated ? '（平台只返回部分）' : ''))
-      const review = await log.time('读取完整文件并调用模型', '模型 ' + settings.reviewModel.model,
-        () => deepReview({
-          llm: llmService,
-          pair: settings.reviewModel,
-          pull: source.pull,
-          files: diff.files,
-          filesTruncated: diff.truncated,
-          localRoot,
-          branch,
-          signal
-        }))
-      log.info('完成', '读取完整文件 ' + review.filesRead + ' 个，问题 ' + review.findings.length + ' 条')
-      return { ...review, steps: log.steps, logPath: log.logPath }
-    } catch (error) {
-      log.error('审阅失败', error instanceof Error ? error.message : String(error))
       if (error instanceof GitError) {
         error.details = { ...(error.details ?? {}), steps: log.steps, logPath: log.logPath }
       }
@@ -1023,6 +1091,20 @@ function createDispatcher(ctx) {
     return result
   }
 
+  /**
+   * 收尾「远端分支已被删除」的本地分支：取远程更新 → 切回默认分支 → 快进 → 删本地分支。
+   * 合并后该做的事就这一件，所以做成一个动作，而不是让用户自己按顺序点四步。
+   */
+  async function branchCleanup(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
+    const result = await cleanupDeletedBranch(normalizeSlashes(repo.repoRoot), { signal })
+    clearStatusCache()
+    return result
+  }
+
   /* remote/branches · branch/delete · remote/branch/delete ------------- */
   /**
    * 远端页签的「分支」区：本地状态 + 远端名单合成一张表。
@@ -1145,7 +1227,9 @@ function createDispatcher(ctx) {
     if (settings.commitModel === null) {
       throw new GitError('no-commit-model', '还没有配置生成提交说明的模型')
     }
-    const generated = await generateCommitMessage(llmService, settings.commitModel, diff.text, { signal })
+    const generated = await generateCommitMessage(llmService, settings.commitModel, diff.text, {
+      signal, commitThinking: settings.commitThinking, commitReasoningEffort: settings.commitReasoningEffort
+    })
     return { ...generated, source: diff.source }
   }
 
@@ -1154,7 +1238,10 @@ function createDispatcher(ctx) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
     const repo = await resolveRepo(rootPath)
     if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
-    return pullBranch(normalizeSlashes(repo.repoRoot), { signal })
+    const result = await pullBranch(normalizeSlashes(repo.repoRoot), { signal })
+    // 快进之后 HEAD 与 ahead/behind 都变了
+    clearStatusCache()
+    return result
   }
 
   /* 创建 PR ---------------------------------------------------------- */
@@ -1172,7 +1259,7 @@ function createDispatcher(ctx) {
   /**
    * 准备创建 PR：仓库 / 账号 / 源分支 / 目标分支候选。
    *
-   * 不返回「是否已推送」：那是仓库当前状态，唯一来源是 `status.pushed`。
+   * 不返回「是否已推送」：那是仓库当前状态，唯一来源是 `status.sync`。
    * 在这里再算一遍只会让前端多一份可能过期的快照，同一屏出现两块同样的提示。
    * 真正的推送校验在 `prCreate`（绕过界面直接调接口也拦得住），那才是它该待的地方。
    */
@@ -1307,16 +1394,11 @@ function createDispatcher(ctx) {
     }
     const head = await readHead(repoRoot)
     if (head.branch === null || head.detached === true) throw new GitError('detached-head', '当前不在任何分支上')
-    const push = await pushedState(repoRoot, head.branch, 'origin', { signal })
-    if (!push.pushed) {
-      // 面板身上没有 push 动作，所以说「先去推送」等于让人找一个不存在的按钮：
-      // 这里给的是能直接照抄的命令，并把「远端没有这个分支 / 远端比本地旧」说成人话。
-      const why = push.remoteSha === ''
-        ? 'origin 上还没有这个分支'
-        : 'origin 上的这个分支比你本地旧'
-      throw new GitError('not-pushed',
-        '分支 ' + head.branch + ' 的最新提交还只在你本机（' + why + '）：'
-        + '在终端运行 git push -u origin ' + head.branch + ' 后再创建 PR')
+    const sync = await remoteSyncState(repoRoot, head.branch, 'origin', { signal })
+    if (sync.state !== 'synced') {
+      // 只有「本地与远端完全一致」才允许建 PR：否则平台上看到的代码不是你本地的代码。
+      // 每种不一致都有自己的下一步，不合并成一句「还没推送」。
+      throw new GitError('not-pushed', notSyncedMessage(head.branch, sync))
     }
     const created = await remotesOf().createPull({
       accountId,
@@ -1369,8 +1451,33 @@ function createDispatcher(ctx) {
       await requireModel(llmService, pair)
       patch[field] = pair
     }
+    if ('commitThinking' in request) {
+      if (typeof request.commitThinking !== 'boolean') throw new GitError('bad-request', 'commitThinking 必须是布尔值')
+      patch.commitThinking = request.commitThinking
+    }
+    if ('commitReasoningEffort' in request) {
+      if (request.commitReasoningEffort !== null && (typeof request.commitReasoningEffort !== 'string' || request.commitReasoningEffort === '')) {
+        throw new GitError('bad-request', 'commitReasoningEffort 必须是非空字符串或 null')
+      }
+      patch.commitReasoningEffort = request.commitReasoningEffort
+    }
     if (Object.keys(patch).length === 0) {
       throw new GitError('bad-request', '没有要修改的模型设置')
+    }
+    if ('commitModel' in patch || 'commitThinking' in patch || 'commitReasoningEffort' in patch) {
+      let current
+      try { current = await readSettings() } catch (error) {
+        if (!(error instanceof GitError) || error.code !== 'bad-config') throw error
+        current = { commitModel: null, commitThinking: false, commitReasoningEffort: null }
+      }
+      const pair = patch.commitModel === undefined ? current.commitModel : patch.commitModel
+      const thinking = patch.commitThinking ?? current.commitThinking
+      const effort = patch.commitReasoningEffort === undefined ? current.commitReasoningEffort : patch.commitReasoningEffort
+      const target = pair === null ? null : await requireModel(llmService, pair)
+      if (thinking && !target?.reasoning.supported) throw new GitError('bad-request', '所选模型没有可用的思考档位')
+      if (effort !== null && (effort === 'off' || !target?.reasoning.efforts.some((item) => item.id === effort))) {
+        throw new GitError('bad-request', '所选模型不支持思考档位 ' + effort)
+      }
     }
     return writeSettings(patch)
   }
@@ -1401,13 +1508,16 @@ function createDispatcher(ctx) {
     if (force !== true && typeof request.expectedHash !== 'string') {
       throw new GitError('bad-request', '缺少 expectedHash（覆盖保存请显式传 force: true）')
     }
-    return writeTextFile(resolveInside(rootPath, rawPath), request.text, {
+    const saved = await writeTextFile(resolveInside(rootPath, rawPath), request.text, {
       expectedHash: force ? null : request.expectedHash,
       force,
       eol: request.eol,
       bom: request.bom,
       signal
     })
+    // 保存后文件状态（M/A）会变：不清缓存的话，紧接着的 status 会返回保存前的快照
+    clearStatusCache()
+    return saved
   }
 
   /* tree/list --------------------------------------------------------- */
@@ -1430,6 +1540,7 @@ function createDispatcher(ctx) {
     'roots/remove': (request, signal) => rootsRemove(request),
     'roots/hide': (request, signal) => rootsHide(request),
     'roots/unhide': (request, signal) => rootsUnhide(request),
+    'roots/stats': (request, signal) => rootsStats(request, signal),
     'status': (request, signal) => status(request, signal),
     'remote/fetch': (request, signal) => remoteFetch(request, signal),
     'diff': (request, signal) => diff(request, signal),
@@ -1446,10 +1557,9 @@ function createDispatcher(ctx) {
     'remote/detail': (request, signal) => remoteDetail(request, signal),
     'remote/pr-counts': (request, signal) => remotePullCounts(request, signal),
     'remote/pull': (request, signal) => remotePull(request, signal),
-    'remote/pull/diff': (request, signal) => remotePullDiff(request, signal),
+    'remote/pull/file': (request, signal) => remotePullFile(request, signal),
     'remote/pull/ai-review': (request, signal) => remotePullAiReview(request, signal),
     'remote/pull/prepare-review': (request, signal) => remotePullPrepareReview(request, signal),
-    'remote/pull/deep-review': (request, signal) => remotePullDeepReview(request, signal),
     'remote/pull/session-review': (request, signal) => remotePullSessionReview(request, signal),
     'remote/pull/clone-for-review': (request, signal) => remotePullCloneForReview(request, signal),
     'remote/pull/comment': (request, signal) => remotePullComment(request, signal),
@@ -1465,6 +1575,7 @@ function createDispatcher(ctx) {
     'branch/pull': (request, signal) => branchPull(request, signal),
     'branch/create': (request, signal) => branchCreate(request, signal),
     'branch/push': (request, signal) => branchPush(request, signal),
+    'branch/cleanup': (request, signal) => branchCleanup(request, signal),
     'branch/delete': (request, signal) => branchDelete(request, signal),
     'remote/branches': (request, signal) => remoteBranches(request, signal),
     'remote/branch/delete': (request, signal) => remoteBranchDelete(request, signal),
@@ -1622,8 +1733,10 @@ function createRouteFetch(endpoint, handle) {
     if (body.method !== method) {
       return respondEnvelope(body.rpcId, fail('bad-request', `method mismatch: ${body.method}`))
     }
-    // createHandler 内部已 try/catch 并把任何异常映射成错误信封
-    return respondEnvelope(body.rpcId, await handle(endpoint, body.payload))
+    // 把请求的取消信号接到 handler：客户端超时 / 切页签会 abort 这条请求，
+    // 宿主这边的 git / 网络操作要能跟着停（否则客户端已超时，clone / push 还在后台跑）。
+    // createHandler 内部已 try/catch 并把任何异常映射成错误信封。
+    return respondEnvelope(body.rpcId, await handle(endpoint, body.payload, request.signal))
   }
 }
 

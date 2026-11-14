@@ -24,7 +24,7 @@ export function PullStatusCard(props) {
   const t = source.t
   const card = source.card
 
-  if (card === null || card === undefined) return null
+  if (card === null) return null
 
   if (card.error !== null) {
     return h('div', { className: 'dgp-pr-card', 'data-dgp-pr-card': 'error' },

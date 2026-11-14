@@ -9,7 +9,7 @@ import { GitError } from '../git.js'
 const CREDENTIAL_SCOPE = 'dsh-git-panel'
 
 /** 凭据记录 key：`<scope>/<provider>`（凭据服务要求两段都是小写 slug）。 */
-export function credentialKeyFor(providerId) {
+function credentialKeyFor(providerId) {
   return CREDENTIAL_SCOPE + '/' + providerId
 }
 

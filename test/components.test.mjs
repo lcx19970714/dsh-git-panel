@@ -322,6 +322,33 @@ test('FileEditor：wrap 开启时不画行号（避免与折行错位）', () =>
   const plain = renderComponent(FileEditor, { ...props, wrap: false })
   eq(collect(plain, (node) => classOf(node).split(' ').includes('dgp-editor-ln')).length, 3, '不 wrap 时应有三行行号')
 })
+test('SettingsView：思考默认关闭，开启后只展示模型支持的非 off 档位', () => {
+  const { SettingsView } = loadModule('./components/SettingsView.js')
+  const changes = []
+  const base = {
+    models: [{ ref: 'p/m', providerLabel: 'P', modelLabel: 'M', reasoning: {
+      supported: true, toggleable: true, efforts: [{ id: 'off', name: 'Off' }, { id: 'low', name: 'Low' }, { id: 'high', name: 'High' }]
+    } }], commitModel: 'p/m',
+    reviewModel: null, commitThinking: false, commitReasoningEffort: null,
+    accounts: [], providers: [], accountsBusy: false, accountsError: null, accountsNotice: null,
+    loading: false, error: null, saved: false, changesView: 'list', untrackedMode: 'merge', postCommitPush: true,
+    t: tKey, onChangeCommitThinking: (patch) => changes.push(patch)
+  }
+  const control = (tree, key) => collect(tree, (node) => node.props['data-dgp-settings'] === key)[0]
+  const off = renderComponent(SettingsView, base)
+  eq(control(off, 'commit-thinking').props.value, 'off')
+  eq(control(off, 'commit-reasoning-effort'), undefined)
+  control(off, 'commit-thinking').props.onChange({ target: { value: 'on' } })
+  eq(changes[0], { commitThinking: true })
+  const on = renderComponent(SettingsView, { ...base, commitThinking: true, commitReasoningEffort: 'high' })
+  const effort = control(on, 'commit-reasoning-effort')
+  eq(effort.props.value, 'high')
+  eq(collect(effort, (node) => node.type === 'option').map((node) => node.props.value), ['', 'low', 'high'])
+  effort.props.onChange({ target: { value: 'low' } })
+  eq(changes[1], { commitReasoningEffort: 'low' })
+  eq(control(renderComponent(SettingsView, { ...base, models: [] }), 'commit-thinking').props.disabled, true)
+})
+
 test('ChangesList：默认合并未跟踪，分开模式四组齐全 + 数据钩子', () => {
   const { ChangesList } = loadModule('./components/ChangesList.js')
   const base = {
@@ -341,13 +368,27 @@ test('ChangesList：默认合并未跟踪，分开模式四组齐全 + 数据钩
   assert(collect(tree, (node) => node.$$host === true && node.props['data-active'] === 'true').length >= 1, '缺少选中态')
 })
 
+test('ChangesList：分组显示准确增删行数，保留零值和四位数字', () => {
+  const { ChangesList } = loadModule('./components/ChangesList.js')
+  const tree = renderComponent(ChangesList, {
+    status: { files: [{ path: 'both.txt', staged: true, unstaged: true, adds: 1235, dels: 2,
+      stagedStats: { adds: 1234, dels: 2 }, unstagedStats: { adds: 1, dels: 0 } }] },
+    onSelect: () => {}, collapsedGroups: {}, onToggleGroup: () => {},
+    t: (key, values) => (key === 'viewer.adds' ? '+' : key === 'viewer.dels' ? '−' : key) + (values?.count ?? '')
+  })
+  const groups = collect(tree, (node) => node.props['data-dgp-group'] !== undefined)
+  const counts = (group) => collect(group, (node) => ['dgp-add', 'dgp-del'].includes(classOf(node))).map(textOf)
+  eq(counts(groups.find((node) => node.props['data-dgp-group'] === 'staged')), ['+1234', '−2'])
+  eq(counts(groups.find((node) => node.props['data-dgp-group'] === 'unstaged')), ['+1', '−0'])
+})
+
 test('ChangesList：空工作区 / 加载中 / 报错', () => {
   const { ChangesList } = loadModule('./components/ChangesList.js')
   const base = { onSelect: () => {}, filter: '', onFilterChange: () => {}, collapsedGroups: {}, onToggleGroup: () => {}, t: tKey }
-  const clean = renderComponent(ChangesList, { ...base, status: { ...statusFixture, files: [], counts: { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 } }, loading: false, error: null, selectedPath: null })
+  const clean = renderComponent(ChangesList, { ...base, status: { ...statusFixture, files: [], counts: { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 } }, loading: false, selectedPath: null })
   assert(textOf(clean).includes('status.clean'), '空工作区文案缺失')
-  assert(renderComponent(ChangesList, { ...base, status: null, loading: true, error: null, selectedPath: null }) !== null, '加载态渲染为 null')
-  assert(renderComponent(ChangesList, { ...base, status: null, loading: false, error: 'boom', selectedPath: null }) !== null, '错误态渲染为 null')
+  assert(renderComponent(ChangesList, { ...base, status: null, loading: true, selectedPath: null }) !== null, '加载态渲染为 null')
+  assert(textOf(renderComponent(ChangesList, { ...base, status: null, loading: false, selectedPath: null })).includes('status.noRoots'), '没有 status 时给空态')
 })
 
 test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行没有', () => {
@@ -408,14 +449,12 @@ test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行
   eq(busy.props['data-busy'], 'true', '忙状态钩子')
 })
 
-test('CommitBox：输入框高度随内容增长，但夹在两行与上限之间', () => {
-  const { commitInputHeight, COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT } = loadModule('./components/CommitBox.js')
-  eq(commitInputHeight(0), COMMIT_INPUT_MIN_HEIGHT, '空内容按最小高度')
-  eq(commitInputHeight(-5), COMMIT_INPUT_MIN_HEIGHT, '异常小值夹到最小高度')
-  eq(commitInputHeight(72.4), 73, '往上取整，避免最后一行被截')
-  eq(commitInputHeight(COMMIT_INPUT_MAX_HEIGHT + 200), COMMIT_INPUT_MAX_HEIGHT, '超过上限就封顶（改为内部滚动）')
-  eq(commitInputHeight(undefined), COMMIT_INPUT_MIN_HEIGHT, '量不到时回到最小高度')
-  eq(commitInputHeight(Number.NaN), COMMIT_INPUT_MIN_HEIGHT, 'NaN 也要收敛')
+test('输入框自动高度：夹在最小与最大之间，往上取整避免最后一行被截', () => {
+  const { clampHeight } = loadModule('./ui/useAutoGrow.js')
+  const { COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT } = loadModule('./components/CommitBox.js')
+  eq(clampHeight(0, COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT), COMMIT_INPUT_MIN_HEIGHT, '空内容按最小高度')
+  eq(clampHeight(72.4, COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT), 73, '往上取整')
+  eq(clampHeight(COMMIT_INPUT_MAX_HEIGHT + 200, COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT), COMMIT_INPUT_MAX_HEIGHT, '超过上限就封顶（改为内部滚动）')
 })
 
 test('CommitBox：状态只占一行，按 结果 > 生成中 > 提交中 > 原因 取一个显示', () => {
@@ -486,10 +525,19 @@ test('RepoList：列出全部仓库、当前仓库高亮、外部仓库可移除
     roots,
     activeRootId: 'r2',
     open: true,
+    stats: {},
     onToggleOpen: () => {},
     onSelect: (root) => picked.push(root.id),
     onRemove: (root) => removed.push(root.id),
+    onHide: () => Promise.resolve(),
+    onUnhide: () => Promise.resolve(),
     onAdd: () => Promise.resolve(),
+    onLoadBranches: () => Promise.resolve({ branches: [], current: null, state: { head: null, detached: false, unborn: true, inProgress: null, dirty: { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 } } }),
+    onSwitchBranch: () => Promise.resolve(),
+    onTrackBranch: () => Promise.resolve(),
+    onPullBranch: () => Promise.resolve(),
+    onFetchBranches: () => Promise.resolve({ branches: [], current: null, state: { head: null, detached: false, unborn: true, inProgress: null, dirty: { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 } } }),
+    onCreateBranch: () => Promise.resolve(),
     t: tKey
   }
   const tree = renderComponent(RepoList, base)
@@ -536,6 +584,41 @@ test('RepoList：列出全部仓库、当前仓库高亮、外部仓库可移除
   eq(collect(collapsed, (node) => node.$$host === true && node.props['data-dgp-repolist-toggle'] !== undefined).length, 1, '折叠后仍有标题行')
 })
 
+test('RepoList：有改动的仓库显示文件数与增删行数，没改动/失败不占位', () => {
+  const { RepoList } = loadModule('./components/RepoList.js')
+  const roots = [
+    { id: 'r1', name: 'a', path: 'C:/w/a', kind: 'primary', isGit: true, branch: 'main' },
+    { id: 'r2', name: 'b', path: 'C:/w/b', kind: 'discovered', isGit: true, branch: 'dev' },
+    { id: 'r3', name: 'c', path: 'C:/w/c', kind: 'extra', isGit: true, branch: null }
+  ]
+  const stats = {
+    'C:/w/a': { path: 'C:/w/a', counts: { total: 3, conflicted: 0 }, adds: 42, dels: 8, binary: 0 },
+    'C:/w/b': { path: 'C:/w/b', counts: { total: 0, conflicted: 0 }, adds: 0, dels: 0, binary: 0 },
+    'C:/w/c': { path: 'C:/w/c', error: '不是 Git 仓库' }
+  }
+  const tree = renderComponent(RepoList, {
+    roots, activeRootId: 'r1', open: true, stats,
+    onToggleOpen: () => {}, onSelect: () => {}, onAdd: () => Promise.resolve(),
+    onHide: () => Promise.resolve(), onUnhide: () => Promise.resolve(), onRemove: () => Promise.resolve(),
+    onLoadBranches: () => Promise.resolve({ branches: [], current: null, state: { head: null, detached: false, unborn: true, inProgress: null, dirty: { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 } } }),
+    onSwitchBranch: () => Promise.resolve(), onTrackBranch: () => Promise.resolve(),
+    onPullBranch: () => Promise.resolve(),
+    onFetchBranches: () => Promise.resolve({ branches: [], current: null, state: { head: null, detached: false, unborn: true, inProgress: null, dirty: { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 } } }),
+    onCreateBranch: () => Promise.resolve(), t: tKey
+  })
+  const badges = collect(tree, (node) => node.$$host === true && node.props['data-dgp-repo-stats'] !== undefined)
+  eq(badges.length, 2, '只有「有改动」和「读取失败」两种行出现标记')
+  const changed = badges.find((node) => node.props['data-dgp-repo-stats'] === '3')
+  assert(changed !== undefined, '有改动的仓库应显示文件数')
+  assert(textOf(changed).includes('+42'), '应显示新增行数，实际：' + textOf(changed))
+  assert(textOf(changed).includes('−8'), '应显示删除行数，实际：' + textOf(changed))
+  assert(String(changed.props.title).includes('3'), 'title 里给出完整说明')
+  const failed = badges.find((node) => node.props['data-dgp-repo-stats'] === 'error')
+  assert(failed !== undefined, '读取失败的仓库给一个可悬停的标记')
+  eq(failed.props.title, '不是 Git 仓库', '失败原因放在 title 里')
+  eq(badges.some((node) => node.props['data-dgp-repo-stats'] === '0'), false, '没有改动的仓库不占位')
+})
+
 test('ChangesList：筛选无结果给出提示', () => {
   const { ChangesList } = loadModule('./components/ChangesList.js')
   const tree = renderComponent(ChangesList, {
@@ -543,6 +626,27 @@ test('ChangesList：筛选无结果给出提示', () => {
     onSelect: () => {}, filter: 'zzz-not-exist', onFilterChange: () => {}, collapsedGroups: {}, onToggleGroup: () => {}, t: tKey
   })
   assert(textOf(tree).includes('status.emptyFilter'), '缺少筛选无结果提示')
+})
+
+test('ChangesList：筛选命中项不会被折叠的分组/目录藏起来', () => {
+  const { ChangesList } = loadModule('./components/ChangesList.js')
+  const tree = renderComponent(ChangesList, {
+    status: statusFixture,
+    loading: false,
+    view: 'tree',
+    selectedPath: null,
+    onSelect: () => {},
+    filter: 'app',
+    collapsedGroups: { staged: true, unstaged: true, untracked: true },
+    onToggleGroup: () => {},
+    onStage: () => {},
+    pendingPath: null,
+    onStageGroup: () => {},
+    pendingGroup: null,
+    t: tKey
+  })
+  const rows = collect(tree, (node) => node.$$host === true && node.props['data-dgp-row'] !== undefined)
+  assert(rows.length > 0, '筛选命中的行必须可见，哪怕分组原来的折叠状态是收起')
 })
 
 test('FileTree：无 rootPath 给空态，有 rootPath 不崩', () => {
@@ -584,6 +688,7 @@ test('RemoteDetail：有更新时间才显示「更新」，缺失时不出现�
       loading: false,
       error: null,
       data: {
+        accountId: 'github:alice',
         repo: {
           fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
           sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
@@ -600,6 +705,7 @@ test('RemoteDetail：有更新时间才显示「更新」，缺失时不出现�
         failures: []
       }
     },
+    branchState: null,
     onOpenPull: () => {},
     t: tKey
   }
@@ -739,6 +845,7 @@ test('RemoteDetail：分支区在详情里，旧的「代码」块已合并进 m
     detail: {
       loading: false, error: null,
       data: {
+        accountId: 'github:alice',
         repo: {
           fullName: 'alice/app', description: '', language: 'Go', private: false, defaultBranch: 'main',
           sizeKb: 1, stars: 0, forks: 0, updatedAt: '', htmlUrl: 'https://github.com/alice/app',
@@ -755,7 +862,7 @@ test('RemoteDetail：分支区在详情里，旧的「代码」块已合并进 m
   const text = textOf(tree)
   assert(text.includes('branch.sectionTitle'), '详情里应有分支区：' + text)
   assert(!text.includes('detail.code'), '重复的「代码」块应已移除：' + text)
-  assert(text.includes('detail.defaultBranch'), '默认分支信息仍在 meta 行')
+  assert(!text.includes('detail.defaultBranch'), '默认分支只在分支区显示一次（meta 不再重复）')
   eq(collect(tree, (node) => classOf(node).split(' ').includes('dgp-branch-section')).length, 1, '分支区只出现一次')
 })
 

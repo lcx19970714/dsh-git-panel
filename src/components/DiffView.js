@@ -39,21 +39,17 @@ const EMPTY_HUNKS = []
 const SIDE_OLD = 'old'
 const SIDE_NEW = 'new'
 
-/** 宿主或测试没给 t() 时的降级：原样回显 key，绝不抛错。 */
-function missingT(key) {
-  return String(key)
-}
-
 /** 空/加载/错误态用的图标节点（States.EmptyState 的 icon 是 React 节点）。 */
 function stateIcon(name) {
   return h(Icon, { name, size: 16 })
 }
 
-/** 取第一个合法数字（diff.stats > entry > 本地统计）。 */
-function firstNumber(first, second, fallback) {
-  if (typeof first === 'number' && Number.isFinite(first)) return first
-  if (typeof second === 'number' && Number.isFinite(second)) return second
-  return typeof fallback === 'number' && Number.isFinite(fallback) ? fallback : 0
+/** 取第一个「已知」的计数：负数表示宿主没给数字（二进制/统计失败），不能当成 0 也不能显示出来。 */
+function pickCount(...values) {
+  for (const value of values) {
+    if (typeof value === 'number' && value >= 0) return value
+  }
+  return 0
 }
 
 // ---------------------------------------------------------------------------
@@ -233,13 +229,12 @@ function truncatedNode(count, key, t, onExpand) {
  * @param {Function} props.t
  */
 export function DiffView(props) {
-  const { diff, loading, error, path, entry, view, wrap, onRetry, t: tProp } = props ?? {}
-  const t = typeof tProp === 'function' ? tProp : missingT
+  const { diff, loading, error, path, entry, view, wrap, onRetry, t } = props
 
   const split = view === 'split'
-  const filePath = typeof path === 'string' ? path : ''
-  const hasFile = filePath !== '' || (entry !== null && entry !== undefined)
-  const hunks = diff !== null && diff !== undefined && Array.isArray(diff.hunks) ? diff.hunks : EMPTY_HUNKS
+  const filePath = path
+  const hasFile = filePath !== '' || entry !== null
+  const hunks = diff === null ? EMPTY_HUNKS : diff.hunks
 
   const [expanded, setExpanded] = useState(false)
   const scrollRef = useRef(null)
@@ -249,17 +244,15 @@ export function DiffView(props) {
     setExpanded(false)
   }, [filePath, view])
 
+  // 只有真的画出滚动容器时才需要回到顶部（加载 / 空态 / 占位态没有它）。
   useEffect(() => {
-    const element = scrollRef.current
-    if (element === null || element === undefined) return
-    if (typeof element.scrollTo === 'function') element.scrollTo(0, 0)
-    else element.scrollTop = 0
-  }, [filePath, view])
+    if (scrollRef.current === null) return
+    scrollRef.current.scrollTo({ top: 0 })
+  }, [diff, filePath, view])
 
   // 行构建 + 预算 + 词级高亮：只依赖 diff / view（以及本地的展开开关）
   const built = useMemo(() => {
-    const source = diff !== null && diff !== undefined && Array.isArray(diff.hunks) ? diff.hunks : EMPTY_HUNKS
-    const sourceRows = split ? buildSplitRows(source) : buildUnifiedRows(source)
+    const sourceRows = split ? buildSplitRows(hunks) : buildUnifiedRows(hunks)
     const budgeted = expanded
       ? { rows: sourceRows, truncatedCount: 0 }
       : budgetRows(sourceRows, MAX_DIFF_ROWS)
@@ -270,11 +263,10 @@ export function DiffView(props) {
     }
   }, [diff, view, expanded])
 
+  // 头部计数：diff.stats 是宿主给的权威值；没给时才退回文件条目与本地统计。
   const computedStats = diffStats(hunks)
-  const diffAdds = diff !== null && diff !== undefined && diff.stats ? diff.stats.adds : undefined
-  const diffDels = diff !== null && diff !== undefined && diff.stats ? diff.stats.dels : undefined
-  const adds = firstNumber(diffAdds, entry ? entry.adds : undefined, computedStats.adds)
-  const dels = firstNumber(diffDels, entry ? entry.dels : undefined, computedStats.dels)
+  const adds = pickCount(diff === null ? undefined : diff.stats.adds, entry === null ? undefined : entry.adds, computedStats.adds)
+  const dels = pickCount(diff === null ? undefined : diff.stats.dels, entry === null ? undefined : entry.dels, computedStats.dels)
 
   const keyBase = filePath + '|' + (split ? 'split' : 'unified')
   const regionLabel = t(split ? 'toolbar.split' : 'toolbar.unified')
@@ -283,9 +275,7 @@ export function DiffView(props) {
   let headNode = null
   if (hasFile) {
     const headChildren = []
-    if (entry !== null && entry !== undefined && entry.status) {
-      headChildren.push(h(StatusLetter, { key: 'status', status: entry.status }))
-    }
+    if (entry !== null) headChildren.push(h(StatusLetter, { key: 'status', status: entry.status }))
     const titleChildren = [
       h('span', { key: 'name', className: 'dgp-name dgp-oneline' }, basename(filePath))
     ]
@@ -293,7 +283,7 @@ export function DiffView(props) {
     if (parentPath !== '') {
       titleChildren.push(h('span', { key: 'parent', className: 'dgp-viewer-sub dgp-oneline' }, parentPath))
     }
-    if (entry !== null && entry !== undefined && typeof entry.oldPath === 'string' && entry.oldPath !== '') {
+    if (entry !== null && entry.oldPath !== null && entry.oldPath !== undefined) {
       titleChildren.push(h(
         'span',
         { key: 'oldPath', className: 'dgp-viewer-sub dgp-oneline' },
@@ -313,52 +303,44 @@ export function DiffView(props) {
   // ---- 主体：加载 / 错误 / 各种「不能画 diff」的 kind / 正常渲染 ----
   let bodyNode = null
 
-  if (error !== null && error !== undefined && error !== '') {
-    bodyNode = h(ErrorState, { message: String(error), onRetry, t })
-  } else if (loading === true && (diff === null || diff === undefined)) {
+  if (error !== null) {
+    bodyNode = h(ErrorState, { message: error, onRetry, t })
+  } else if (loading === true) {
     bodyNode = h(LoadingState, { label: t('status.loadingDiff'), t })
-  } else if (diff === null || diff === undefined) {
+  } else if (diff === null) {
     bodyNode = h(EmptyState, {
       icon: stateIcon('file-diff'),
-      title: t('viewer.placeholderDiff'),
-      t
+      title: t('viewer.placeholderDiff')
     })
   } else {
-    const kind = typeof diff.kind === 'string' ? diff.kind : 'text'
-    const message = typeof diff.message === 'string' ? diff.message : ''
+    const message = diff.message ?? ''
+    const kind = diff.kind
 
     if (kind === 'binary') {
-      bodyNode = h(EmptyState, { icon: stateIcon('file'), title: t('viewer.binary'), t })
+      bodyNode = h(EmptyState, { icon: stateIcon('file'), title: t('viewer.binary') })
     } else if (kind === 'oversized') {
       bodyNode = h(EmptyState, {
         icon: stateIcon('file'),
         title: t('viewer.oversized'),
-        description: message !== '' ? message : undefined,
-        t
+        description: message === '' ? undefined : message
       })
     } else if (kind === 'directory') {
-      bodyNode = h(EmptyState, { icon: stateIcon('folder'), title: t('viewer.directory'), t })
+      bodyNode = h(EmptyState, { icon: stateIcon('folder'), title: t('viewer.directory') })
     } else if (kind === 'submodule') {
-      bodyNode = h(EmptyState, { icon: stateIcon('git-merge'), title: t('viewer.submodule'), t })
+      bodyNode = h(EmptyState, { icon: stateIcon('git-merge'), title: t('viewer.submodule') })
     } else if (kind === 'error') {
-      bodyNode = h(ErrorState, {
-        message: message !== '' ? message : t('error.generic', { message: '' }),
-        onRetry,
-        t
-      })
+      bodyNode = h(ErrorState, { message, onRetry, t })
     } else if (kind === 'deleted' && hunks.length === 0) {
-      bodyNode = h(EmptyState, { icon: stateIcon('trash'), title: t('viewer.deletedFile'), t })
+      bodyNode = h(EmptyState, { icon: stateIcon('trash'), title: t('viewer.deletedFile') })
     } else if (hunks.length === 0) {
-      const renamed = entry !== null && entry !== undefined
-        && typeof entry.oldPath === 'string' && entry.oldPath !== ''
+      const renamed = entry !== null && entry.oldPath !== null && entry.oldPath !== undefined
       let title = t('viewer.noChanges')
       if (renamed) title = t('viewer.renameOnly')
       else if (diff.newFile === true) title = t('viewer.newFile')
       bodyNode = h(EmptyState, {
         icon: stateIcon(diff.newFile === true ? 'plus' : 'file-diff'),
         title,
-        description: message !== '' ? message : undefined,
-        t
+        description: message === '' ? undefined : message
       })
     } else {
       const rows = built.rows
@@ -394,12 +376,7 @@ export function DiffView(props) {
       }
 
       if (built.truncatedCount > 0) {
-        content.push(truncatedNode(
-          built.truncatedCount,
-          'truncated',
-          t,
-          () => setExpanded(true)
-        ))
+        content.push(truncatedNode(built.truncatedCount, 'truncated', t, () => setExpanded(true)))
       }
 
       bodyNode = h(
@@ -413,7 +390,7 @@ export function DiffView(props) {
           'data-wrap': wrap === true ? 'true' : undefined
         },
         // .dgp-diff 是滚动容器里的内容块（与 FileView 的 .dgp-scroll > .dgp-file 同构）；
-        // data-wrap 同时挂两层，让 `.dgp-diff[data-wrap="true"]` 这类选择器都能命中。
+        // data-wrap 同时挂两层，让 .dgp-diff[data-wrap=\"true\"] 这类选择器都能命中。
         h(
           'div',
           {
@@ -427,7 +404,6 @@ export function DiffView(props) {
     }
   }
 
-  // 两个子节点分开传（而不是塞进数组），避免 React 要求数组 child 带 key
   return h(
     'div',
     { className: 'dgp-viewer', 'data-dgp-path': filePath !== '' ? filePath : undefined },

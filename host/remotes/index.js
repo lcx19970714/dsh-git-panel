@@ -19,7 +19,6 @@ import { createRepos } from './repos.js'
 import { createPulls } from './pulls.js'
 
 export { PROVIDERS, PROVIDER_IDS } from './providers.js'
-export { credentialKeyFor } from './accounts.js'
 export { lastPageOf } from './http.js'
 
 /**
@@ -154,6 +153,7 @@ export function createRemotes(deps) {
     cloneRepo: repos.cloneRepo,
     pullDetail: pulls.pullDetail,
     pullDiff: pulls.pullDiff,
+    pullFile: pulls.pullFile,
     reviewSource: pulls.reviewSource,
     assertRepoAccess: pulls.assertRepoAccess,
     reviewPull: pulls.reviewPull,

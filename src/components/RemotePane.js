@@ -14,7 +14,7 @@
  * 添加账号同样就地完成：没账号时空态里直接给两个平台按钮，有账号时账号行尾是 ＋；
  * 表单里有「打开令牌页面」，提交结果就地显示（设置页那份引导仍然保留）。
  */
-import { h, useState } from '../platform.js'
+import { h, useRef, useState } from '../platform.js'
 import { Icon } from '../ui/Icon.js'
 import { formatDateTime } from '../util/time.js'
 import { openExternalUrl } from '../util/openUrl.js'
@@ -26,53 +26,56 @@ function secondsOf(startedAt, now) {
 }
 
 export function RemotePane(props) {
+  const { accounts, accountId, repos, loading, error, hasMore, filter, selectedFullName, prCounts, clone, now, providers, t } = props
+  /** 回调集中在 props 上：渲染代码里只关心「点了会发生什么」，不重新包装一层。 */
   const source = props
-  const translate = source.t
-  const accounts = Array.isArray(source.accounts) ? source.accounts : []
-  const accountId = typeof source.accountId === 'string' ? source.accountId : null
-  const repos = Array.isArray(source.repos) ? source.repos : []
-  const loading = source.loading === true
-  const error = typeof source.error === 'string' && source.error !== '' ? source.error : null
-  const hasMore = source.hasMore === true
-  const filter = typeof source.filter === 'string' ? source.filter : ''
-  const selectedFullName = typeof source.selectedFullName === 'string' ? source.selectedFullName : null
-  const prCounts = source.prCounts !== null && typeof source.prCounts === 'object' ? source.prCounts : {}
-  const clone = source.clone === null || source.clone === undefined ? null : source.clone
-  const now = typeof source.now === 'number' ? source.now : 0
+  const translate = t
   const [folderFor, setFolderFor] = useState(null)
   const [folderName, setFolderName] = useState('')
   // 添加账号的行内表单：{ provider, label, token, busy, error }
   const [form, setForm] = useState(null)
   // 点过「获取令牌」后的提示：'opened' 或拦截时的地址
   const [tokenHint, setTokenHint] = useState(null)
+  /** 表单的世代号：关闭 / 重新打开后，旧请求的结果不能把表单「复活」。 */
+  const formAttemptRef = useRef(0)
 
-  const providers = Array.isArray(source.providers) ? source.providers : []
-  const providerOf = (id) => providers.find((item) => item.id === id) ?? { id, label: id }
+  /** 账号 id（provider:login）→ 平台 id。 */
+  const providerIdOfAccount = (id) => {
+    const account = accounts.find((item) => item.id === id) ?? accounts[0]
+    return account.provider
+  }
+  /** 平台 id → 平台定义（下拉框里的值一定来自 providers）。 */
+  const providerOf = (id) => providers.find((item) => item.id === id) ?? providers[0]
 
   const openForm = (providerId) => {
-    const id = typeof providerId === 'string' && providerId !== ''
-      ? providerId
-      : (providers.length > 0 ? providers[0].id : 'github')
+    if (providers.length === 0) return
+    formAttemptRef.current += 1
     setTokenHint(null)
-    setForm({ provider: id, label: '', token: '', busy: false, error: null })
+    // null = 从空态「添加账号」进来：默认选第一个平台
+    setForm({ provider: providerId === null ? providers[0].id : providerId, label: '', token: '', busy: false, error: null })
   }
 
-  const closeForm = () => setForm(null)
+  const closeForm = () => {
+    formAttemptRef.current += 1
+    setForm(null)
+  }
 
   const submitForm = async () => {
-    if (form === null || typeof source.onAddAccount !== 'function') return
-    if (form.token.trim() === '') return
-    setForm({ ...form, busy: true, error: null })
+    if (form.token.trim() === '' || form.busy) return
+    const attempt = formAttemptRef.current
+    const submitted = form
+    setForm({ ...submitted, busy: true, error: null })
     const result = await source.onAddAccount({
-      provider: form.provider,
-      label: form.label.trim(),
-      token: form.token.trim()
+      provider: submitted.provider,
+      label: submitted.label.trim(),
+      token: submitted.token.trim()
     })
-    if (result !== null && result !== undefined && result.ok === true) {
+    if (formAttemptRef.current !== attempt) return
+    if (result.ok === true) {
       setForm(null)
       return
     }
-    setForm({ ...form, busy: false, error: result === null || result === undefined ? '添加失败' : result.error })
+    setForm((previous) => (previous === null ? null : { ...previous, busy: false, error: result.error }))
   }
 
   const beginClone = (repo) => {
@@ -86,14 +89,22 @@ export function RemotePane(props) {
   }
 
   const confirmClone = (repo) => {
-    if (typeof source.onClone !== 'function') return
     setFolderFor(null)
     source.onClone(repo, folderName.trim())
   }
 
   const formNode = form === null
     ? null
-    : h('div', { className: 'dgp-account-inline', 'data-dgp-remote': 'account-form' },
+    : h('div', {
+      className: 'dgp-account-inline',
+      'data-dgp-remote': 'account-form',
+      onKeyDown: (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          closeForm()
+        }
+      }
+    },
       h('div', { className: 'dgp-account-inline-head' },
         h('span', { className: 'dgp-account-guide-title' },
           translate('remote.addAccountOn', { provider: providerOf(form.provider).label })),
@@ -114,6 +125,7 @@ export function RemotePane(props) {
           className: 'dgp-select dgp-account-provider',
           'data-dgp-remote': 'account-provider',
           value: form.provider,
+          disabled: form.busy,
           onChange: (event) => setForm({ ...form, provider: event.target.value })
         },
         providers.map((item) => h('option', { key: item.id, value: item.id }, item.label))),
@@ -122,6 +134,7 @@ export function RemotePane(props) {
           'data-dgp-remote': 'account-label',
           placeholder: translate('accounts.label'),
           value: form.label,
+          disabled: form.busy,
           onChange: (event) => setForm({ ...form, label: event.target.value })
         }),
         h('input', {
@@ -130,9 +143,10 @@ export function RemotePane(props) {
           type: 'password',
           placeholder: translate('accounts.tokenPlaceholder'),
           value: form.token,
+          disabled: form.busy,
           onChange: (event) => setForm({ ...form, token: event.target.value }),
           onKeyDown: (event) => {
-            if (event.key === 'Enter') submitForm()
+            if (event.key === 'Enter' && !form.busy) submitForm()
           }
         }),
         h('button', {
@@ -163,7 +177,20 @@ export function RemotePane(props) {
           h('span', null, translate('accounts.failed', { message: form.error }))))
 
   let body = null
-  if (accounts.length === 0) {
+  if (error !== null) {
+    body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'error' },
+      h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+      h('div', { className: 'dgp-state-title' }, translate('remote.failedTitle')),
+      h('div', { className: 'dgp-state-desc' }, error),
+      h('button', {
+        type: 'button',
+        className: 'dgp-btn',
+        'data-size': 'sm',
+        onClick: () => {
+          source.onRefresh()
+        }
+      }, translate('remote.refresh')))
+  } else if (accounts.length === 0) {
     body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'no-accounts' },
       h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'external', size: 22 })),
       h('div', { className: 'dgp-state-title' }, translate('remote.noAccounts')),
@@ -176,28 +203,13 @@ export function RemotePane(props) {
           'data-dgp-remote': 'add-account',
           onClick: () => openForm(null)
         }, translate('remote.addAccount')),
-        typeof source.onOpenSettings === 'function'
-          ? h('button', {
+        h('button', {
             type: 'button',
             className: 'dgp-btn',
             'data-variant': 'ghost',
             'data-dgp-remote': 'open-settings',
             onClick: () => source.onOpenSettings()
-          }, translate('accounts.guideTitle'))
-          : null))
-  } else if (error !== null) {
-    body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'error' },
-      h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
-      h('div', { className: 'dgp-state-title' }, translate('remote.failed', { message: '' })),
-      h('div', { className: 'dgp-state-desc' }, error),
-      h('button', {
-        type: 'button',
-        className: 'dgp-btn',
-        'data-size': 'sm',
-        onClick: () => {
-          if (typeof source.onRefresh === 'function') source.onRefresh()
-        }
-      }, translate('remote.refresh')))
+          }, translate('accounts.guideTitle'))))
   } else if (loading && repos.length === 0) {
     body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'loading' },
       h('div', { className: 'dgp-state-icon' }, h('span', { className: 'dgp-spinner' })),
@@ -209,7 +221,7 @@ export function RemotePane(props) {
   } else {
     body = h('div', { className: 'dgp-list', 'data-dgp-remote': 'list', role: 'list' },
       repos.map((repo) => {
-        const cloning = clone !== null && clone.fullName === repo.fullName
+        const cloning = clone !== null && clone.fullName === repo.fullName && clone.error === null
         return h('div', {
           key: repo.fullName,
           className: 'dgp-remote-item',
@@ -217,12 +229,12 @@ export function RemotePane(props) {
           'data-dgp-remote-item': repo.fullName,
           'data-active': repo.fullName === selectedFullName ? 'true' : undefined,
           onClick: () => {
-            if (typeof source.onSelectRepo === 'function') source.onSelectRepo(repo)
+            source.onSelectRepo(repo)
           }
         },
           h('div', { className: 'dgp-remote-row' },
             h('span', { className: 'dgp-remote-name dgp-oneline', title: repo.fullName }, repo.name),
-            typeof prCounts[repo.fullName] === 'number' && prCounts[repo.fullName] > 0
+            prCounts[repo.fullName] > 0
               ? h('span', {
                 className: 'dgp-remote-prcount',
                 'data-dgp-pr-count': repo.fullName,
@@ -251,14 +263,26 @@ export function RemotePane(props) {
           folderFor === repo.fullName
             ? h('div', {
               className: 'dgp-remote-cloneform',
-              onClick: (event) => event.stopPropagation()
+              onClick: (event) => event.stopPropagation(),
+              onKeyDown: (event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelClone()
+                }
+              }
             },
               h('label', { className: 'dgp-remote-cloneform-label' }, translate('remote.cloneFolder')),
               h('input', {
                 className: 'dgp-input dgp-remote-cloneform-input',
                 'data-dgp-remote-folder': repo.fullName,
                 value: folderName,
-                onChange: (event) => setFolderName(event.target.value)
+                onChange: (event) => setFolderName(event.target.value),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    confirmClone(repo)
+                  }
+                }
               }),
               h('button', {
                 type: 'button',
@@ -282,7 +306,17 @@ export function RemotePane(props) {
             : null,
           clone !== null && clone.error !== null && clone.fullName === repo.fullName
             ? h('div', { className: 'dgp-remote-status', 'data-tone': 'error' },
-              h('span', null, clone.error))
+              h('span', null, clone.error),
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-dgp-remote-retry': repo.fullName,
+                onClick: (event) => {
+                  event.stopPropagation()
+                  beginClone(repo)
+                }
+              }, translate('action.retry')))
             : null)
       }),
       hasMore
@@ -292,7 +326,7 @@ export function RemotePane(props) {
           'data-size': 'sm',
           disabled: loading,
           onClick: () => {
-            if (typeof source.onLoadMore === 'function') source.onLoadMore()
+            source.onLoadMore()
           }
         }, translate('remote.loadMore'))
         : null)
@@ -312,7 +346,7 @@ export function RemotePane(props) {
           'data-active': account.id === accountId ? 'true' : undefined,
           title: account.providerLabel + ' · ' + account.login,
           onClick: () => {
-            if (typeof source.onSelectAccount === 'function') source.onSelectAccount(account)
+            source.onSelectAccount(account)
           }
         }, account.label)),
         h('button', {
@@ -321,7 +355,7 @@ export function RemotePane(props) {
           title: translate('remote.addAccount'),
           'aria-label': translate('remote.addAccount'),
           'data-dgp-remote': 'add-account',
-          onClick: () => openForm(providerOf(accountId).id)
+          onClick: () => openForm(providerIdOfAccount(accountId))
         }, h(Icon, { name: 'plus', size: 13 })),
         h('button', {
           type: 'button',
@@ -329,7 +363,7 @@ export function RemotePane(props) {
           title: translate('remote.refresh'),
           'aria-label': translate('remote.refresh'),
           onClick: () => {
-            if (typeof source.onRefresh === 'function') source.onRefresh()
+            source.onRefresh()
           }
         }, h(Icon, { name: 'refresh', size: 13 }))),
     accounts.length === 0
@@ -340,7 +374,7 @@ export function RemotePane(props) {
         placeholder: translate('remote.filter'),
         value: filter,
         onChange: (event) => {
-          if (typeof source.onFilterChange === 'function') source.onFilterChange(event.target.value)
+          source.onFilterChange(event.target.value)
         }
       }),
     body)

@@ -6,12 +6,13 @@
  *   ctx.sidebarRight.openTab('git')
  * 这里不传 sessionId：openTab 自己解析当前挂载的会话面（require()）。
  *
- * 没有会话面时 openTab 会抛错 —— 那种情况下按钮自己标红并给出原因，
- * 不静默、也不假装打开成功。
+ * 没有会话面时 openTab 会抛错 —— 与标题栏入口共用 `../ui/useOpenPanel.js`：
+ * 失败时按钮标红并给出原因，5 秒后自动复位，不静默、也不假装打开成功。
  */
-import { h, useState } from '../platform.js'
+import { h } from '../platform.js'
+import { useOpenPanel } from '../ui/useOpenPanel.js'
 
-export const TAB_KIND = 'git'
+const TAB_KIND = 'git'
 
 /** 彩色图标：分支线 + 两个提交点 + 一点高光（固定配色，不跟随主题灰度）。 */
 function ColorfulGitDock() {
@@ -48,36 +49,21 @@ function ColorfulGitDock() {
 
 export function SidebarGitEntry(props) {
   const { wide, t, openPanel } = props
-  const [failed, setFailed] = useState(false)
-
-  const activate = () => {
-    try {
-      openPanel()
-      setFailed(false)
-    } catch (error) {
-      setFailed(true)
-      console.error('[dsh-git-panel] 打开代码坞失败: ' + (error && error.message ? error.message : String(error)))
-    }
-  }
+  const { failed, activate } = useOpenPanel(openPanel)
 
   return h('button', {
     type: 'button',
     className: 'dgp-dockbtn',
     'data-dgp-dock': TAB_KIND,
-    'data-wide': wide ? 'true' : undefined,
+    'data-wide': wide ? 'true' : 'false',
     'data-failed': failed ? 'true' : undefined,
     title: failed ? t('entry.failed') : t('entry.hint'),
-    'aria-label': t('entry.title'),
+    'aria-label': failed ? t('entry.failed') : t('entry.title'),
     onClick: activate
   },
-  h(IconSlot, null),
+  h(ColorfulGitDock, null),
   wide ? h('span', { className: 'dgp-dockbtn-label' }, t('entry.title')) : null,
   failed
     ? h('span', { className: 'dgp-dockbtn-failed', 'aria-hidden': 'true' })
     : null)
-}
-
-/** 单独包一层，方便测试按组件名找到图标（也避免把 svg 直接塞进按钮属性里）。 */
-function IconSlot() {
-  return ColorfulGitDock()
 }

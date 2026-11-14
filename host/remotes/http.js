@@ -8,6 +8,16 @@ import { GitError } from '../git.js'
 
 const API_TIMEOUT_MS = 20000
 
+/**
+ * 把 URL 里的令牌打码。
+ *
+ * Gitee 的 token 放在 query 上（`?access_token=…`），而错误信息会原样带回界面与日志；
+ * 一条「访问超时」就把令牌抄进截图里，是实打实的泄漏。所有面向用户的 URL 都先过这里。
+ */
+function redactUrl(url) {
+  return String(url).replace(/([?&](?:access_token|token|api_key|key)=)[^&]*/gi, '$1***')
+}
+
 export function messageOf(error) {
   if (error === null || error === undefined) return '未知错误'
   if (typeof error === 'string') return error
@@ -47,8 +57,9 @@ export async function request(fetchImpl, url, options, signal) {
   try {
     return await fetchImpl(url, { ...options, signal: controller.signal })
   } catch (error) {
-    if (controller.signal.aborted) throw new GitError('timeout', '访问 ' + url + ' 超时')
-    throw new GitError('remote-api-failed', '访问 ' + url + ' 失败：' + messageOf(error))
+    if (controller.signal.aborted) throw new GitError('timeout', '访问 ' + redactUrl(url) + ' 超时')
+    // 底层错误（undici / DNS）有时会把整条 URL 抄进 message，这里一起打码
+    throw new GitError('remote-api-failed', '访问 ' + redactUrl(url) + ' 失败：' + redactUrl(messageOf(error)))
   } finally {
     clearTimeout(timer)
     if (signal !== undefined) signal.removeEventListener('abort', onAbort)
@@ -72,6 +83,33 @@ export async function requestJson(fetchImpl, url, init, signal) {
 }
 
 /**
+ * 平台把「业务规则」也塞进 4xx：Gitee 的「此 Pull Request 存在冲突」返回的就是 403，
+ * 而且和真正的鉴权失败长得一模一样。只看状态码会把它报成「令牌无效或已过期」，
+ * 用户就会去重配令牌 —— 明明要做的只是解决冲突。
+ */
+const CONFLICT_RE = /存在冲突|有冲突|冲突|merge conflict|pull request is not mergeable|can(?:not|'t) be merged|conflicts? with the base branch/i
+const MERGE_GATE_RE = /未通过设置的测试|not passed the configured test/i
+
+/** 从错误响应体里取平台自己写的那句话（两家都是 `{message}`，GitHub 有时是 `{errors:[…]}`）。 */
+function serverMessageOf(text) {
+  if (typeof text !== 'string' || text.trim() === '') return ''
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+    if (typeof parsed.message === 'string' && parsed.message.trim() !== '') return parsed.message.trim()
+    if (Array.isArray(parsed.errors)) {
+      const messages = parsed.errors
+        .map((item) => (item !== null && typeof item === 'object' && typeof item.message === 'string' ? item.message : ''))
+        .filter((item) => item !== '')
+      if (messages.length > 0) return messages.join('；')
+    }
+  } catch {
+    // 不是 JSON：调用方退回原始文本
+  }
+  return ''
+}
+
+/**
  * 读 JSON，并把「失败」说清楚。
  *
  * **空响应是合法的成功**：`204 No Content` / 长度为 0 的 200 在 REST 里表示
@@ -79,21 +117,40 @@ export async function requestJson(fetchImpl, url, init, signal) {
  * 之前把它当成「不是 JSON」直接报错，导致审查明明成功却提示失败。
  * 因此这里返回 null 表示「成功但没有响应体」，调用方按需处理。
  *
- * 404 单独成句：Gitee 对「无权访问的私有仓库」返回 404 而不是 401，
- * 只说「找不到」会让人往错的方向查。
+ * 失败分三类，界面据此给不同的话：
+ *  - `pull-conflict`：PR 有冲突（Gitee 用 403 表达），要先解决冲突；
+ *  - `merge-gate`：合并门禁要求先过测试；
+ *  - `remote-auth-failed`：401 = 令牌无效/过期，403 = 没权限，404 = 找不到或无权访问。
  */
 export async function readJson(response) {
   const text = await response.text()
   if (!response.ok) {
+    const serverMessage = serverMessageOf(text)
+    // 平台自己的话优先：JSON 外壳（{"message":"…"}）对用户没有意义
+    const detail = serverMessage !== '' ? serverMessage : text.trim().slice(0, 300)
+    if (response.status !== 401 && CONFLICT_RE.test(detail)) {
+      throw new GitError('pull-conflict',
+        '平台拒绝了这次操作。解决冲突后再试：把目标分支合进本地分支、解决后推上来，或直接到网页上处理。'
+        + '平台原文：' + detail,
+        { status: response.status, serverMessage: detail })
+    }
+    if (MERGE_GATE_RE.test(detail)) {
+      throw new GitError('merge-gate', detail, { status: response.status, serverMessage: detail })
+    }
     let reason
-    if (response.status === 401 || response.status === 403) {
-      reason = '令牌无效或已过期（HTTP ' + response.status + '）'
+    if (response.status === 401) {
+      reason = '令牌无效或已过期（HTTP 401）'
+    } else if (response.status === 403) {
+      reason = '没有权限执行这个操作（HTTP 403）'
     } else if (response.status === 404) {
       reason = 'HTTP 404：仓库或 PR 不存在、已改名/删除，或令牌没有访问它的权限（私有仓库需要项目读权限）'
     } else {
       reason = 'HTTP ' + response.status
     }
-    throw new GitError('remote-auth-failed', reason + '：' + text.slice(0, 300))
+    throw new GitError('remote-auth-failed', reason + '：' + detail, {
+      status: response.status,
+      serverMessage: detail
+    })
   }
   const trimmed = text.trim()
   if (trimmed === '') return null

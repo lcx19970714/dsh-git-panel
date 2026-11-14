@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from './platform.js
 export const MODE = { changes: 'changes', files: 'files', remote: 'remote' }
 
 /** 三个页签的顺序（工具条与偏好校验共用）。 */
-export const MODES = [MODE.changes, MODE.files, MODE.remote]
+const MODES = [MODE.changes, MODE.files, MODE.remote]
 
 const STORAGE_KEY = 'dsh-git-panel:prefs:v1'
 
@@ -34,6 +34,8 @@ const DEFAULTS = {
   changesView: 'list',
   /** 未跟踪文件：merge = 并进「未暂存」（VS Code 行为），separate = 单列「未跟踪」组。 */
   untrackedMode: 'merge',
+  /** 提交成功后是否自动推送当前分支（对应 VS Code 的 git.postCommitCommand，默认开）。 */
+  postCommitPush: true,
   /** 创建 PR 时上次选的目标分支：{ '<provider>:<owner/repo>': 'dev' } */
   pullTargets: {},
   /** 已读评论水位：{ '<accountId>#<number>': 已读条数 } */
@@ -41,7 +43,7 @@ const DEFAULTS = {
 }
 
 /** 未跟踪文件的两种呈现方式（设置页与分组逻辑共用）。 */
-export const UNTRACKED_MODES = ['merge', 'separate']
+const UNTRACKED_MODES = ['merge', 'separate']
 
 /** 变更列表的两种显示方式（设置页与 ⋯ 菜单共用）。 */
 const CHANGES_VIEWS = ['list', 'tree']
@@ -65,6 +67,7 @@ function sanitize(input) {
   if (typeof input.repositoriesOpen === 'boolean') out.repositoriesOpen = input.repositoriesOpen
   if (CHANGES_VIEWS.includes(input.changesView)) out.changesView = input.changesView
   if (UNTRACKED_MODES.includes(input.untrackedMode)) out.untrackedMode = input.untrackedMode
+  if (typeof input.postCommitPush === 'boolean') out.postCommitPush = input.postCommitPush
   if (input.pullSeen !== null && typeof input.pullSeen === 'object' && !Array.isArray(input.pullSeen)) {
     const seen = {}
     for (const [key, value] of Object.entries(input.pullSeen)) {
@@ -122,18 +125,19 @@ function savePrefs(patch) {
 
 /**
  * 一个会持久化到 localStorage 的 state。
+ *
+ * 持久化放在 effect 里而不是 setter 的 updater 里：updater 必须是纯函数
+ * （并发渲染 / StrictMode 下会被重复执行），而且拖拽分栏时每一次 pointermove
+ * 都写一遍整个偏好 JSON 会直接拖慢拖动。effect 在一次提交后只跑一次。
+ *
  * @param {string} key DEFAULTS 的键
  */
 export function usePref(key) {
   const [value, setValue] = useState(() => loadPrefs()[key])
-  const set = useCallback((next) => {
-    setValue((prev) => {
-      const resolved = typeof next === 'function' ? next(prev) : next
-      savePrefs({ [key]: resolved })
-      return resolved
-    })
-  }, [key])
-  return [value, set]
+  useEffect(() => {
+    savePrefs({ [key]: value })
+  }, [key, value])
+  return [value, setValue]
 }
 
 /* ==================== 每个工作区记住的远端账号 ==================== */

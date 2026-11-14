@@ -143,7 +143,7 @@ if (channel.status === 401 || channel.status === 403) {
 console.log('')
 console.log('结论')
 if (entry !== undefined && (channel.status === 401 || channel.status === 403)) {
-  console.log('  ✅ 插件已经完整加载。打开方式：顶部/左侧面板列表里的「Git 变更」，或 Ctrl+Alt+G')
+  console.log('  ✅ 插件已经完整加载。打开方式：会话标题栏右侧的「变更」按钮、左侧栏底部「代码坞」，或右侧栏「+」→「Git 变更」')
 } else {
   console.log('  ⏳ 客户端已在表里，但宿主还没加载 —— 需要重启 DSH 桌面端（或让 profile 真正重新组合）')
 }

@@ -23,6 +23,8 @@ const DIFF_PROMPT_LIMIT = 60_000
 /** 输出上限：推理型模型会先花 token 思考，给太小就会「没有返回文本」。 */
 const MAX_OUTPUT_TOKENS = 1024
 const DEFAULT_TIMEOUT_MS = 60_000
+const THINKING_MAX_OUTPUT_TOKENS = 16_384
+const THINKING_TIMEOUT_MS = 120_000
 
 const SYSTEM_PROMPT = [
   '你是 Git 提交说明生成器。',
@@ -68,16 +70,36 @@ export async function listModels(llm) {
       continue
     }
     for (const model of listed) {
+      let info
+      try {
+        info = await llm.resolveModelInfo(route.id, model.id)
+      } catch (error) {
+        failed.push({ provider: route.id, message: model.id + ': ' + messageOf(error) })
+        continue
+      }
       models.push({
         ref: route.id + '/' + model.id,
         provider: route.id,
         model: model.id,
         providerLabel: route.name,
-        modelLabel: model.name
+        modelLabel: model.name,
+        reasoning: reasoningMetadata(info.reasoning)
       })
     }
   }
   return { models, failed }
+}
+
+/** DSH 只提供 reasoningEffort；off 是适配器显式声明的关闭档位。 */
+export function reasoningMetadata(reasoning) {
+  const efforts = (reasoning?.efforts ?? []).map((effort) => ({ ...effort }))
+  const supported = efforts.some((effort) => effort.id !== 'off')
+  return {
+    supported,
+    toggleable: supported && efforts.some((effort) => effort.id === 'off'),
+    efforts,
+    ...(reasoning?.defaultEffort === undefined ? {} : { defaultEffort: reasoning.defaultEffort })
+  }
 }
 
 /** 把 `provider/model` 拆回两个参数（provider id 不含 `/`，按第一个斜杠切）。 */
@@ -118,7 +140,7 @@ function messageOf(error) {
  *
  * 两个容易被忽略的失败点：
  *  - 推理型模型会先花 token 思考，输出上限给太小就会「没有返回文本」——
- *    这里显式取该模型最低档 reasoning effort，并把上限放到 1024。
+ *    这里把上限放到 1024；思考开关与档位按用户设置传入实际能力选择回调。
  *  - 有的 provider 会一直挂着不回：这里用一条独立超时把请求掐断，报 timeout 而不是无限等。
  */
 export async function generateCommitMessage(llm, pair, diffText, options = {}) {
@@ -131,7 +153,7 @@ export async function generateCommitMessage(llm, pair, diffText, options = {}) {
     : diffText
   const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
     ? options.timeoutMs
-    : DEFAULT_TIMEOUT_MS
+    : options.commitThinking === true ? THINKING_TIMEOUT_MS : DEFAULT_TIMEOUT_MS
 
   const { text } = await callModel({
     llm,
@@ -139,10 +161,12 @@ export async function generateCommitMessage(llm, pair, diffText, options = {}) {
     system: SYSTEM_PROMPT,
     prompt: input,
     purpose: 'dsh-git-panel/commit-message',
-    maxTokens: MAX_OUTPUT_TOKENS,
+    // 开启思考后，输出预算也包含推理 token，给 high/max 留足正文空间。
+    maxTokens: options.commitThinking === true ? THINKING_MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS,
     timeoutMs,
     signal: options.signal,
-    lowestEffort: true
+    thinking: options.commitThinking === true,
+    reasoningEffort: options.commitReasoningEffort ?? null
   })
 
   const message = text.trim()
@@ -171,7 +195,7 @@ export async function readSettings() {
   try {
     text = await readFile(file, 'utf8')
   } catch (error) {
-    if (error !== null && error.code === 'ENOENT') return { commitModel: null, reviewModel: null }
+    if (error !== null && error.code === 'ENOENT') return { commitModel: null, reviewModel: null, commitThinking: false, commitReasoningEffort: null }
     throw error
   }
   let parsed
@@ -183,9 +207,18 @@ export async function readSettings() {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new GitError('bad-config', '设置文件顶层必须是对象：' + file)
   }
+  if (parsed.commitThinking !== undefined && typeof parsed.commitThinking !== 'boolean') {
+    throw new GitError('bad-config', '设置里的 commitThinking 必须是布尔值：' + file)
+  }
+  if (parsed.commitReasoningEffort !== undefined && parsed.commitReasoningEffort !== null
+    && (typeof parsed.commitReasoningEffort !== 'string' || parsed.commitReasoningEffort === '')) {
+    throw new GitError('bad-config', '设置里的 commitReasoningEffort 必须是非空字符串或 null：' + file)
+  }
   return {
     commitModel: readPair(parsed.commitModel, 'commitModel', file),
-    reviewModel: readPair(parsed.reviewModel, 'reviewModel', file)
+    reviewModel: readPair(parsed.reviewModel, 'reviewModel', file),
+    commitThinking: parsed.commitThinking ?? false,
+    commitReasoningEffort: parsed.commitReasoningEffort ?? null
   }
 }
 
@@ -209,9 +242,16 @@ function readPair(value, field, file) {
  * @param {{commitModel?: {provider: string, model: string}|null, reviewModel?: {provider: string, model: string}|null}} patch
  *   只处理传入的字段：传 null 表示清空该模型，未传表示保持原值。
  */
-export async function writeSettings(patch) {
+let settingsWriteQueue = Promise.resolve()
+export function writeSettings(patch) {
+  const task = settingsWriteQueue.then(() => writeSettingsNow(patch))
+  settingsWriteQueue = task.catch(() => {})
+  return task
+}
+
+async function writeSettingsNow(patch) {
   const target = settingsPath()
-  let current = { commitModel: null, reviewModel: null }
+  let current = { commitModel: null, reviewModel: null, commitThinking: false, commitReasoningEffort: null }
   let corrupt = null
   try {
     current = await readSettings()
@@ -220,9 +260,11 @@ export async function writeSettings(patch) {
     else throw error
   }
   const next = {
-    version: 2,
+    version: 3,
     commitModel: patch.commitModel === undefined ? current.commitModel : patch.commitModel,
-    reviewModel: patch.reviewModel === undefined ? current.reviewModel : patch.reviewModel
+    reviewModel: patch.reviewModel === undefined ? current.reviewModel : patch.reviewModel,
+    commitThinking: patch.commitThinking === undefined ? current.commitThinking : patch.commitThinking,
+    commitReasoningEffort: patch.commitReasoningEffort === undefined ? current.commitReasoningEffort : patch.commitReasoningEffort
   }
   await mkdir(path.dirname(target), { recursive: true })
   if (corrupt !== null) {
@@ -232,5 +274,7 @@ export async function writeSettings(patch) {
   const temp = target + '.tmp-' + randomBytes(6).toString('hex')
   await writeFile(temp, JSON.stringify(next, null, 2), 'utf8')
   await rename(temp, target)
-  return { commitModel: next.commitModel, reviewModel: next.reviewModel, backedUp: corrupt === null ? null : target + '.broken-*' }
+  return { commitModel: next.commitModel, reviewModel: next.reviewModel,
+    commitThinking: next.commitThinking, commitReasoningEffort: next.commitReasoningEffort,
+    backedUp: corrupt === null ? null : target + '.broken-*' }
 }

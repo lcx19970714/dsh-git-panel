@@ -19,7 +19,7 @@ export const GROUP_ORDER = ['conflicted', 'staged', 'unstaged', 'untracked']
  *   merge    —— 并进「未暂存」（VS Code 的默认行为，「Changes」里同时有改动和新文件）
  *   separate —— 单列「未跟踪」组
  */
-export const UNTRACKED_MODES = ['merge', 'separate']
+const UNTRACKED_MODES = ['merge', 'separate']
 
 /** 单个文件归属的分组；冲突文件只进「冲突」组（与 VSCode 的 Merge Changes 一致）。 */
 export function groupsOfFile(file, untrackedMode = 'merge') {
@@ -94,8 +94,7 @@ export function groupActionOf(groupKey, untrackedMode = 'merge') {
 
 /** 分组里只有一个文件时，直接渲染成文件行（不造目录行）：返回那个条目，否则 null。 */
 export function singleFileShortcut(entries) {
-  const list = Array.isArray(entries) ? entries : []
-  return list.length === 1 ? list[0] : null
+  return entries.length === 1 ? entries[0] : null
 }
 
 /** 路径归一化：反斜杠 → 正斜杠、去掉前导 `./`、去掉末尾斜杠。 */
@@ -247,22 +246,76 @@ function nameOf(entry) {
 }
 
 /**
- * status 刷新后校正当前选中项。
+ * status 刷新后校正当前选中项（只针对「变更」页签的选中项）。
  *
- * 选中项有两种语义，不能混为一谈：
- *  · 来自变更列表（`entry !== null`）——代表"某个变更"。文件从 status 里消失（被还原/被提交）
- *    就该清掉选中；还在就换成最新一次 status 里的 entry（diff 会据此重取）。
- *  · 来自文件浏览树（`entry === null`）——代表"某个路径"。它跟 status 无关（未修改的文件本来
- *    就不在 status.files 里），所以刷新时必须原样返回，否则会凭空清空正在浏览的文件。
+ * 选中项的 `side` 是「用户当时点的是哪一组」，但文件本身会移动（暂存、取消暂存、
+ * 提交）。若刷新后还按旧 side 取 diff，宿主的 `git diff` 会返回空 —— 用户刚点完
+ * 「暂存」，右栏却变成「无改动」。所以 side 必须按新条目的实际状态校正：
+ * 原 side 仍成立就保留（MM 文件停在用户选的那一侧），否则落到仍然存在的那一侧。
  *
- * @param {{path: string, entry: object|null, side: string}|null} selection
+ * 「文件」页签的选中项是路径语义，不经过这里（两个页签的状态彼此独立）。
+ *
+ * @param {{rootPath: string, path: string, entry: object, side: string}|null} selection
  * @param {Array<object>} files status.files
- * @returns {object|null} 新的选中项，或 null（该清空）
+ * @returns {{rootPath: string, path: string, entry: object, side: string}|null}
  */
 export function reconcileSelection(selection, files) {
   if (selection === null) return null
-  if (selection.entry === null) return selection
   const entry = files.find((file) => file.path === selection.path)
   if (entry === undefined) return null
-  return { path: entry.path, entry, side: selection.side }
+  return {
+    rootPath: selection.rootPath,
+    path: entry.path,
+    entry,
+    side: sideForEntry(entry, selection.side)
+  }
+}
+
+/** 条目当前仍然成立的一侧；优先保留用户原来选的那一侧。 */
+export function sideForEntry(entry, preferred) {
+  if (preferred === 'staged' && entry.staged === true) return 'staged'
+  if (preferred === 'untracked' && entry.untracked === true) return 'untracked'
+  if (preferred === 'unstaged' && entry.unstaged === true) return 'unstaged'
+  if (entry.unstaged === true) return 'unstaged'
+  if (entry.staged === true) return 'staged'
+  return 'untracked'
+}
+
+/**
+ * status 的内容指纹：只要它没变，就没有任何理由让界面重新渲染、重新取 diff。
+ *
+ * 轮询每 8 秒回来一次，而 `status` 每次都是新对象。直接 `setStatus` 会让整张
+ * 变更列表重渲染、让 selection 换成新对象、连带把 diff 重新取一遍 —— 什么都没变，
+ * 只是又跑了一圈。指纹覆盖所有会被界面读到的事实（分支 / 同步态 / 每个文件的
+ * 状态与行数），变了才落状态。
+ */
+export function statusSignature(status) {
+  const parts = [
+    status.repoRoot,
+    status.branch,
+    status.head,
+    status.detached === true ? 'detached' : 'attached',
+    status.ahead,
+    status.behind,
+    status.sync.state,
+    status.sync.ahead,
+    status.sync.behind,
+    status.truncated === true ? 'truncated' : 'complete',
+    String(status.counts.total)
+  ]
+  for (const file of status.files) {
+    parts.push([
+      file.path,
+      file.status,
+      file.staged === true ? 's' : '',
+      file.unstaged === true ? 'u' : '',
+      file.untracked === true ? '?' : '',
+      file.conflicted === true ? 'c' : '',
+      file.binary === true ? 'b' : '',
+      file.adds,
+      file.dels,
+      file.oldPath ?? ''
+    ].join('\u0001'))
+  }
+  return parts.join('\u0000')
 }

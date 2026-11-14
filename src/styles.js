@@ -645,10 +645,15 @@ export const CSS = `
   overflow-y: auto;
 }
 .dgp-commit-input:focus { outline: none; background: var(--dsw-alias-bg-layer-3); }
-.dgp-commit-generate {
+.dgp-commit-tools {
   position: absolute;
   top: 4px;
   right: 4px;
+  display: flex;
+  gap: 2px;
+}
+.dgp-commit-generate,
+.dgp-commit-run {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -661,9 +666,13 @@ export const CSS = `
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
-.dgp-commit-generate:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dgp-commit-generate:hover,
+.dgp-commit-run:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dgp-commit-generate[data-busy='true'] { opacity: .5; cursor: default; }
-/* 动作行：左边一行状态（提示 / 进度 / 结果），右边提交按钮 */
+.dgp-commit-run:disabled { opacity: .35; cursor: not-allowed; }
+/* 两个图标出现时给输入框右侧留出位置，文字不会被按钮压住 */
+.dgp-commit-input-wrap[data-actions='two'] .dgp-commit-input { padding-right: 58px; }
+/* 动作行：左边一行状态（提示 / 进度 / 结果），右边「创建 PR」 */
 .dgp-commit-actions { display: flex; align-items: center; gap: 8px; min-height: 24px; }
 .dgp-commit-status {
   display: flex;
@@ -690,7 +699,6 @@ export const CSS = `
 }
 .dgp-commit-settings { flex: none; }
 .dgp-commit-status .dgp-spinner { width: 11px; height: 11px; border-width: 1.2px; }
-.dgp-commit-submit { flex: none; min-width: 64px; }
 
 /* 设置页 */
 .dgp-settings { display: flex; flex-direction: column; gap: 14px; padding: 14px 12px; max-width: 520px; }

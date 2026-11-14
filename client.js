@@ -842,10 +842,15 @@ window.__ModuleLoader__.load({
         overflow-y: auto;
       }
       .dgp-commit-input:focus { outline: none; background: var(--dsw-alias-bg-layer-3); }
-      .dgp-commit-generate {
+      .dgp-commit-tools {
         position: absolute;
         top: 4px;
         right: 4px;
+        display: flex;
+        gap: 2px;
+      }
+      .dgp-commit-generate,
+      .dgp-commit-run {
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -858,9 +863,13 @@ window.__ModuleLoader__.load({
         color: var(--dsw-alias-label-tertiary);
         cursor: pointer;
       }
-      .dgp-commit-generate:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+      .dgp-commit-generate:hover,
+      .dgp-commit-run:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
       .dgp-commit-generate[data-busy='true'] { opacity: .5; cursor: default; }
-      /* 动作行：左边一行状态（提示 / 进度 / 结果），右边提交按钮 */
+      .dgp-commit-run:disabled { opacity: .35; cursor: not-allowed; }
+      /* 两个图标出现时给输入框右侧留出位置，文字不会被按钮压住 */
+      .dgp-commit-input-wrap[data-actions='two'] .dgp-commit-input { padding-right: 58px; }
+      /* 动作行：左边一行状态（提示 / 进度 / 结果），右边「创建 PR」 */
       .dgp-commit-actions { display: flex; align-items: center; gap: 8px; min-height: 24px; }
       .dgp-commit-status {
         display: flex;
@@ -887,7 +896,6 @@ window.__ModuleLoader__.load({
       }
       .dgp-commit-settings { flex: none; }
       .dgp-commit-status .dgp-spinner { width: 11px; height: 11px; border-width: 1.2px; }
-      .dgp-commit-submit { flex: none; min-width: 64px; }
 
       /* 设置页 */
       .dgp-settings { display: flex; flex-direction: column; gap: 14px; padding: 14px 12px; max-width: 520px; }
@@ -2366,6 +2374,7 @@ window.__ModuleLoader__.load({
         'commit.submit': '提交',
         'commit.submitting': '正在提交…',
         'commit.generate': '生成提交说明',
+        'commit.regenerate': '重新生成提交说明',
         'commit.generating': '正在生成提交说明…',
         'commit.generatingElapsed': '正在生成… {seconds}s',
         'commit.done': '已提交 {head}',
@@ -2871,6 +2880,7 @@ window.__ModuleLoader__.load({
         'commit.submit': 'Commit',
         'commit.submitting': 'Committing…',
         'commit.generate': 'Generate commit message',
+        'commit.regenerate': 'Regenerate commit message',
         'commit.generating': 'Generating commit message…',
         'commit.generatingElapsed': 'Generating… {seconds}s',
         'commit.done': 'Committed {head}',
@@ -10150,13 +10160,15 @@ window.__ModuleLoader__.load({
        *
        * 布局只有三块，纵向紧凑：
        *
-       *   [ 提交说明（多行）                      ✦ ]
-       *   [ 状态一行（提示 / 进度 / 结果）       提交 ]
+       *   [ 提交说明（多行）                ✦ / ↻ ✓ ]
+       *   [ 状态一行（提示 / 进度 / 结果）              ]
        *
        * 设计要点：
        *  - **状态只有一行**，按「结果 > 生成中 > 提交中 > 无法提交的原因」取一个显示，
        *    所以成功/失败/进度都不会把下面的变更列表顶下去，也不会并排堆三条提示。
-       *  - 提交按钮不可用时，状态行会说清**为什么**（没改动 / 没写说明），不做无声禁用。
+       *  - **生成与提交都在输入框右上角**：没有说明时只有「生成」；有说明后变成「重新生成 + 提交」两个图标，
+       *    用户点完生成不用移动鼠标就能接着提交。说明为空时不渲染提交按钮（没有可提交的内容）。
+       *  - 提交图标不可用时，状态行会说清**为什么**（没改动 / 提交中 / 生成中），不做无声禁用。
        *  - 生成期间输入框禁用：模型结果会直接写进输入框，边等边打字再被覆盖是最糟的体验。
        *  - 输入框随内容长高：高度由实测 scrollHeight 决定（与「创建 PR」描述框共用
        *    `../ui/useAutoGrow.js`），长到上限就停止长高、改为内部滚动。
@@ -10199,6 +10211,8 @@ window.__ModuleLoader__.load({
         const hasChanges = changeCount > 0
         // 有改动 + 有说明就能提交：没有暂存时，提交会先把全部改动暂存（smart commit）
         const canCommit = hasMessage && hasChanges && busy !== true && generating !== true
+        // 说明为空时不渲染提交按钮：用户还没东西可提交，不要给一个永远点不动的图标。
+        const showCommit = hasMessage
 
         // 错误提示要能读：换行显示（最多 5 行），并在「换模型就能解决」时给一个直达设置页的按钮
         const noteIsError = note !== null && note.tone === 'error'
@@ -10228,7 +10242,7 @@ window.__ModuleLoader__.load({
         }
 
         return h('div', { className: 'dgp-commit' },
-          h('div', { className: 'dgp-commit-input-wrap' },
+          h('div', { className: 'dgp-commit-input-wrap', 'data-actions': showCommit ? 'two' : 'one' },
             h('textarea', {
               ref: inputRef,
               className: 'dgp-commit-input',
@@ -10247,20 +10261,38 @@ window.__ModuleLoader__.load({
                 }
               }
             }),
-            h('button', {
-              type: 'button',
-              className: 'dgp-commit-generate',
-              'data-dgp-commit': 'generate',
-              'data-busy': generating ? 'true' : undefined,
-              disabled: generating || busy,
-              title: t(generating ? 'commit.generating' : 'commit.generate'),
-              'aria-label': t('commit.generate'),
-              onClick: () => {
-                onGenerate()
-              }
-            },
-            // 生成中把笔形图标换成转圈：一眼就能看出还在跑
-            generating ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'sparkle', size: 14 }))),
+            h('div', { className: 'dgp-commit-tools', 'data-dgp-commit': 'tools' },
+              h('button', {
+                type: 'button',
+                className: 'dgp-commit-generate',
+                'data-dgp-commit': 'generate',
+                'data-mode': hasMessage ? 'regenerate' : 'generate',
+                'data-busy': generating ? 'true' : undefined,
+                disabled: generating || busy,
+                title: t(generating ? 'commit.generating' : hasMessage ? 'commit.regenerate' : 'commit.generate'),
+                'aria-label': t(hasMessage ? 'commit.regenerate' : 'commit.generate'),
+                onClick: () => {
+                  onGenerate()
+                }
+              },
+              // 生成中把图标换成转圈：一眼就能看出还在跑
+              generating ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: hasMessage ? 'refresh' : 'sparkle', size: 14 })),
+              // 两个图标都在输入框右上角：生成完成后提交就在这里，不需要把鼠标移到底部
+              showCommit
+                ? h('button', {
+                  type: 'button',
+                  className: 'dgp-commit-run',
+                  'data-dgp-commit': 'submit',
+                  disabled: canCommit !== true,
+                  title: canCommit
+                    ? t('commit.submit')
+                    : (busy ? t('commit.submitting') : (generating ? t('commit.generating') : t('commit.hintNoChanges'))),
+                  'aria-label': t('commit.submit'),
+                  onClick: () => {
+                    onCommit()
+                  }
+                }, h(Icon, { name: 'check', size: 14 }))
+                : null)),
 
           h('div', { className: 'dgp-commit-actions' },
             statusKind === null
@@ -10286,18 +10318,6 @@ window.__ModuleLoader__.load({
                   onClick: () => onOpenSettings()
                 }, t('commit.openSettings'))
                 : null),
-            h('button', {
-              type: 'button',
-              className: 'dgp-btn dgp-commit-submit',
-              'data-variant': 'primary',
-              'data-size': 'sm',
-              'data-dgp-commit': 'submit',
-              disabled: canCommit !== true,
-              title: canCommit ? t('commit.submit') : t(hasChanges ? 'commit.hintNoMessage' : 'commit.hintNoChanges'),
-              onClick: () => {
-                onCommit()
-              }
-            }, t(busy ? 'commit.submitting' : 'commit.submit')),
             onCreatePull === undefined
               ? null
               : h('button', {

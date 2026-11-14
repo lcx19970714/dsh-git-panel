@@ -1468,9 +1468,8 @@ test('用例 1t：提交框在有暂存且有说明时可提交，生成按钮�
     }
   }, async (panel) => {
     await panel.flush()
-    const submit = panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit')
-    assert(submit !== null, '应有提交按钮')
-    eq(attr(submit, 'disabled'), true, '没有说明时提交按钮禁用')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit'), null,
+      '没有说明时不渲染提交按钮')
 
     const input = panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input')
     input.props.onChange({ target: { value: 'feat: add panel' } })
@@ -1534,9 +1533,9 @@ test('用例 1z：只有未暂存改动也能提交（按钮可用，提交时�
     const statusEl = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'status')
     const submitEl = () => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit')
 
-    // 有改动但都没暂存：按钮不可用时是因为还没写说明
+    // 有改动但都没暂存：还没写说明，此时没有提交按钮
     eq(textOf(statusEl()), '填写提交说明后提交')
-    eq(attr(submitEl(), 'disabled'), true)
+    eq(submitEl(), null, '没有说明时不渲染提交按钮')
 
     panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input')
       .props.onChange({ target: { value: 'feat: 全部提交' } })
@@ -1548,6 +1547,55 @@ test('用例 1z：只有未暂存改动也能提交（按钮可用，提交时�
     await panel.flush()
     eq(commits.length, 1, '应提交一次')
     eq(commits[0].message, 'feat: 全部提交')
+  })
+})
+
+test('用例 1t2：生成成功后右上角变「重新生成 + 提交」两个图标，说明为空时不渲染提交', async () => {
+  const commits = []
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'commit/message': () => sayOk({ message: 'feat: generated', model: 'p1/m1', source: 'staged' }),
+      commit: (payload) => {
+        commits.push(payload)
+        return sayOk({ head: 'abc1234', subject: payload.message })
+      }
+    }
+  }, async (panel) => {
+    await panel.flush()
+    const mark = (name) => panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === name)
+    const submit = () => mark('submit')
+
+    // 说明为空：右上角只有生成图标
+    eq(submit(), null, '说明为空时没有提交按钮')
+    const generate = mark('generate')
+    assert(generate !== null, '应有生成按钮')
+    eq(attr(generate, 'data-mode'), 'generate', '未生成时是生成态')
+    eq(findAll(generate, (node) => isHost(node) && node.type === 'svg').length, 1, '生成按钮是 SVG')
+
+    // 生成成功：同一个位置变成两个 SVG，重新生成 + 提交
+    click(generate)
+    await panel.flush()
+    eq(attr(mark('input'), 'value'), 'feat: generated', '生成结果写进输入框')
+    const regenerate = mark('generate')
+    eq(attr(regenerate, 'data-mode'), 'regenerate', '有说明后生成按钮变重新生成')
+    assert(attr(regenerate, 'title').includes('重新生成'), '重新生成要有明确 title：' + attr(regenerate, 'title'))
+    const ready = submit()
+    assert(ready !== null, '有说明时应出现提交按钮')
+    eq(attr(ready, 'disabled'), false, '有说明且有改动时可提交')
+    eq(attr(ready, 'title'), '提交', '提交图标 title')
+    eq(findAll(ready, (node) => isHost(node) && node.type === 'svg').length, 1, '提交按钮也是 SVG')
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit').length, 1,
+      '提交按钮只有一个，底部旧按钮已移除')
+
+    // 就在右上角点提交，不需要移动鼠标
+    click(ready)
+    await panel.flush()
+    eq(commits.length, 1, '应提交一次')
+    eq(commits[0].message, 'feat: generated', '提交的是刚生成的说明')
+    eq(attr(mark('input'), 'value'), '', '提交后输入框清空')
+    eq(submit(), null, '说明清空后提交按钮随之消失')
   })
 })
 
@@ -4659,8 +4707,8 @@ test('用例 1y：生成提交说明时显示进度，失败时把真实原因�
     assert(textOf(running).includes('正在生成'), '进度行应带说明文字：' + textOf(running))
     eq(findAll(generate(), (node) => isHost(node) && hasClass(node, 'dgp-spinner')).length, 1,
       '生成按钮里应换成转圈')
-    eq(attr(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit'), 'disabled'), true,
-      '生成中提交按钮应禁用')
+    eq(panel.one((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'submit'), null,
+      '说明为空时生成中没有提交按钮')
 
     // 让它以失败结束：必须显示服务端给的真实原因，而不是字面的 {message}
     assert(pending !== null, '请求没有挂住')

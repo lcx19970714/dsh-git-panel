@@ -485,7 +485,7 @@ test('CommitBox：状态只占一行，按 结果 > 生成中 > 提交中 > 原�
   // 有改动但没写说明
   const noMessage = renderComponent(CommitBox, { ...base, message: '   ' })
   eq(textOf(status(noMessage)), 'commit.hintNoMessage', '缺说明时的提示')
-  eq(byMark(noMessage, 'submit').props.disabled, true)
+  eq(byMark(noMessage, 'submit'), null, '没有说明时不渲染提交按钮')
 
   // 生成中：转圈 + 已等待秒数，提交禁用
   const generating = renderComponent(CommitBox, { ...base, generating: true, elapsedMs: 3200 })

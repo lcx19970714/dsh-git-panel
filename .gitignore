@@ -16,3 +16,12 @@ Thumbs.db
 
 # ── 沙箱 ACL 诊断产物（外部工具生成，不属于插件） ──
 _acl-report/
+
+# ── 本地备份 / 凭据 / 编辑器产物（绝不入库） ──
+*.bundle
+.env
+.env.*
+*.pem
+*.key
+.vscode/
+.idea/

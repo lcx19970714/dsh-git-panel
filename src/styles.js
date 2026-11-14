@@ -94,7 +94,6 @@ export const CSS = `
   line-height: 1;
   cursor: pointer;
 }
-.dgp-iconbtn svg { width: 15px; height: 15px; }
 .dgp-iconbtn:hover:not(:disabled) {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
@@ -906,7 +905,6 @@ export const CSS = `
   line-height: 1.6;
 }
 .dgp-state-icon { flex: none; margin-bottom: 2px; color: var(--dsw-alias-label-tertiary); opacity: .5; }
-.dgp-state-icon svg { width: 22px; height: 22px; }
 .dgp-state-title { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; font-weight: 500; }
 .dgp-state-desc { margin: 0; max-width: 32ch; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .dgp-state-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
@@ -1629,7 +1627,6 @@ export const CSS = `
   line-height: 1;
   cursor: pointer;
 }
-.dgp-branch-more svg { width: 14px; height: 14px; }
 .dgp-branch-more:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
 .dgp-branch-more:disabled { opacity: .4; cursor: default; }
 .dgp-branch-confirm {

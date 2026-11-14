@@ -214,6 +214,33 @@ const diffFixture = {
 
 /* --------------------------------- 用例 --------------------------------- */
 
+test('Icon：统一 24 网格 / 2px 描边，size 只缩放，未知名字直接抛错', () => {
+  const { Icon } = loadModule('./ui/Icon.js')
+  const big = renderComponent(Icon, { name: 'git-branch', size: 24 })
+  const root = collect(big, (node) => node.$$host === true && node.type === 'svg')[0]
+  assert(root !== undefined, '应渲染 svg')
+  eq(root.props.viewBox, '0 0 24 24', '统一 24 网格')
+  eq(root.props.width, 24)
+  eq(root.props.height, 24)
+  eq(root.props.strokeWidth, 2, '统一 2px 描边')
+  eq(root.props.strokeLinecap, 'round', '统一圆角端点')
+  assert(root.children.length >= 1, '至少有一条 path')
+
+  const small = renderComponent(Icon, { name: 'check', size: 14 })
+  const smallRoot = collect(small, (node) => node.$$host === true && node.type === 'svg')[0]
+  eq(smallRoot.props.width, 14, '小尺寸只改宽高')
+  eq(smallRoot.props.viewBox, '0 0 24 24', '几何不随尺寸变')
+
+  const dots = renderComponent(Icon, { name: 'more', size: 16 })
+  const dotRoot = collect(dots, (node) => node.$$host === true && node.type === 'svg')[0]
+  eq(dotRoot.props.fill, 'currentColor', '更多按钮是实心点')
+  eq(dotRoot.children.length, 3, '三个点')
+
+  let threw = false
+  try { renderComponent(Icon, { name: 'not-an-icon' }) } catch { threw = true }
+  assert(threw, '未知图标必须抛错，不能静默回落')
+})
+
 test('DiffView（统一视图）：行 / 状态字母 / 计数都在', () => {
   const { DiffView } = loadModule('./components/DiffView.js')
   const tree = renderComponent(DiffView, {

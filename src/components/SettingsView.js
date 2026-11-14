@@ -264,7 +264,7 @@ export function SettingsView(props) {
               title: translate('accounts.edit', { name: account.label }),
               'aria-label': translate('accounts.edit', { name: account.label }),
               onClick: () => openEditing(account)
-            }, h(Icon, { name: 'file', size: 13 })),
+            }, h(Icon, { name: 'file', size: 14 })),
             h('button', {
               type: 'button',
               className: 'dgp-row-action',
@@ -274,7 +274,7 @@ export function SettingsView(props) {
               onClick: () => {
                 source.onRemoveAccount(account.id)
               }
-            }, h(Icon, { name: 'trash', size: 13 }))))),
+            }, h(Icon, { name: 'trash', size: 14 }))))),
       editing === null
         ? null
         : h('div', {

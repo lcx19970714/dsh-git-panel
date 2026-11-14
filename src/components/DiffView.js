@@ -41,7 +41,7 @@ const SIDE_NEW = 'new'
 
 /** 空/加载/错误态用的图标节点（States.EmptyState 的 icon 是 React 节点）。 */
 function stateIcon(name) {
-  return h(Icon, { name, size: 16 })
+  return h(Icon, { name, size: 24 })
 }
 
 /** 取第一个「已知」的计数：负数表示宿主没给数字（二进制/统计失败），不能当成 0 也不能显示出来。 */

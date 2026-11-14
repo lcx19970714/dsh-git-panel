@@ -96,7 +96,7 @@ export function PullDetail(props) {
   if (detail.error !== null) {
     return h('div', { className: 'dgp-viewer' },
       h('div', { className: 'dgp-state', 'data-dgp-pull': 'error' },
-        h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+        h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 24 })),
         h('div', { className: 'dgp-state-title' }, t('pull.failed')),
         h('div', { className: 'dgp-state-desc' }, detail.error),
         h('div', { className: 'dgp-state-actions' },

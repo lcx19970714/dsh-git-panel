@@ -14,7 +14,7 @@ import { useOpenPanel } from '../ui/useOpenPanel.js'
 
 const TAB_KIND = 'git'
 
-/** 彩色图标：分支线 + 两个提交点 + 一点高光（固定配色，不跟随主题灰度）。 */
+/** 彩色图标：主干 + 分支 + 三个提交点（固定配色，不跟随主题灰度）。 */
 function ColorfulGitDock() {
   return h('svg', {
     width: 18,
@@ -25,26 +25,28 @@ function ColorfulGitDock() {
   },
   h('defs', null,
     h('linearGradient', { id: 'dgpDockLine', x1: '0', y1: '0', x2: '1', y2: '1' },
-      h('stop', { offset: '0%', 'stop-color': '#7C6BFF' }),
+      h('stop', { offset: '0%', 'stop-color': '#6C5CE7' }),
       h('stop', { offset: '100%', 'stop-color': '#3FB6FF' })),
     h('linearGradient', { id: 'dgpDockHead', x1: '0', y1: '0', x2: '1', y2: '1' },
       h('stop', { offset: '0%', 'stop-color': '#FF8A5B' }),
       h('stop', { offset: '100%', 'stop-color': '#FF5C8A' }))),
+  // 主干：顶部提交点向下，拐到右下角的黄色节点
   h('path', {
-    d: 'M5.5 4.6v9.2c0 1.8 1.4 3.2 3.2 3.2h1.6',
+    d: 'M6 4.2v9.2c0 1.8 1.4 3.2 3.2 3.2h6.3',
     stroke: 'url(#dgpDockLine)',
-    strokeWidth: 2,
+    strokeWidth: 2.4,
     strokeLinecap: 'round'
   }),
-  h('circle', { cx: 5.5, cy: 4.4, r: 2.4, fill: 'url(#dgpDockHead)' }),
-  h('circle', { cx: 15.2, cy: 8.4, r: 2.2, fill: '#2FD36B' }),
+  // 分支：从主干向右上方，接到绿色节点
   h('path', {
-    d: 'M5.5 9.2c0-1.6 1.3-2.9 2.9-2.9h4.2c1 0 1.8.8 1.8 1.8v.6',
+    d: 'M6 9.2c0-2 1.6-3.6 3.6-3.6h5.9',
     stroke: 'url(#dgpDockLine)',
-    strokeWidth: 1.8,
+    strokeWidth: 2.2,
     strokeLinecap: 'round'
   }),
-  h('path', { d: 'M12.4 15.6h4.2', stroke: '#FFC53D', strokeWidth: 1.8, strokeLinecap: 'round' }))
+  h('circle', { cx: 6, cy: 4.2, r: 2.5, fill: 'url(#dgpDockHead)' }),
+  h('circle', { cx: 15.5, cy: 6.2, r: 2.3, fill: '#2FD36B' }),
+  h('circle', { cx: 15.5, cy: 16.6, r: 2.3, fill: '#FFC53D' }))
 }
 
 export function SidebarGitEntry(props) {

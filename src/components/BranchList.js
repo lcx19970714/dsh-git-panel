@@ -317,7 +317,7 @@ export function BranchList(props) {
     h('span', {
       className: 'dgp-branch-ico',
       'data-current': row.current === true ? 'true' : undefined
-    }, h(Icon, { name: row.current === true ? 'check' : 'git-branch', size: 12 })),
+    }, h(Icon, { name: row.current === true ? 'check' : 'git-branch', size: 14 })),
     h('span', { className: 'dgp-branch-name dgp-oneline' }, row.name),
     row.ahead > 0 || row.behind > 0
       ? h('span', { className: 'dgp-branch-track' }, aheadBehindText(row, translate))
@@ -334,7 +334,7 @@ export function BranchList(props) {
         event.stopPropagation()
         openMenu(row, event.currentTarget)
       }
-    }, rowBusy ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'more', size: 12 })),
+    }, rowBusy ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'more', size: 14 })),
     confirmHere
       ? h('div', { className: 'dgp-branch-confirm', 'data-dgp-branch-confirm': confirm.kind },
         h('div', { className: 'dgp-branch-confirm-text' },
@@ -469,7 +469,7 @@ export function BranchList(props) {
             'data-dgp-branch-fetch': 'true',
             disabled: fetching,
             onClick: runFetch
-          }, fetching ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'sync', size: 12 }))
+          }, fetching ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'sync', size: 14 }))
           : null,
         h('button', {
           type: 'button',
@@ -483,7 +483,7 @@ export function BranchList(props) {
             setNote(null)
             source.onReloadBranches()
           }
-        }, h(Icon, { name: 'refresh', size: 12 })))),
+        }, h(Icon, { name: 'refresh', size: 14 })))),
     showFilter
       ? h('input', {
         className: 'dgp-input dgp-branch-filter',

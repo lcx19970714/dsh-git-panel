@@ -25,7 +25,7 @@ const TAB_KIND = 'git'
 // 样式注入必须发生在 factory 执行期间（平台据此打 data-plugin 并在卸载时回收）。
 ensureStyles()
 
-/** 右侧栏「+」引导页里的插画（40×40，纯 currentColor，深浅色自适应）。 */
+/** 右侧栏「+」引导页里的插画：40×40，纯 currentColor，与图标集同一套圆角线。 */
 function GuideArtworkGit() {
   return h('svg', {
     width: 40,
@@ -33,19 +33,22 @@ function GuideArtworkGit() {
     viewBox: '0 0 40 40',
     fill: 'none',
     stroke: 'currentColor',
-    strokeWidth: 1.6,
+    strokeWidth: 1.8,
     strokeLinecap: 'round',
     strokeLinejoin: 'round',
     'aria-hidden': 'true'
   },
-  h('path', { d: 'M8 30V10' }),
-  h('path', { d: 'M8 16c0-4.4 3.6-8 8-8h6', opacity: 0.85 }),
-  h('path', { d: 'M22 24c-3.3 0-6-2.7-6-6v-2' }),
-  h('circle', { cx: 8, cy: 8, r: 2.6 }),
-  h('circle', { cx: 30, cy: 8, r: 2.6 }),
-  h('circle', { cx: 22, cy: 26, r: 2.6 }),
-  h('path', { d: 'M19 31h10', opacity: 0.5 }),
-  h('path', { d: 'M19 34h6', opacity: 0.35 }))
+  // 面板轮廓
+  h('rect', { x: 5, y: 6, width: 30, height: 28, rx: 5 }),
+  // 一条主干 + 一个分支 + 三个提交点
+  h('path', { d: 'M13 12v16' }),
+  h('path', { d: 'M13 18c0-2.2 1.8-4 4-4h6' }),
+  h('circle', { cx: 13, cy: 12, r: 2.2 }),
+  h('circle', { cx: 13, cy: 28, r: 2.2 }),
+  h('circle', { cx: 25, cy: 14, r: 2.2 }),
+  // 右侧的 diff 行：一条长、一条短
+  h('path', { d: 'M22 23h8' }),
+  h('path', { d: 'M22 27h5' }))
 }
 
 export const name = PLUGIN_ID

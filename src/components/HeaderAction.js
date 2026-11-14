@@ -10,6 +10,7 @@
  * 失败（没有已挂载会话）与左侧栏「代码坞」共用 `../ui/useOpenPanel.js` 的表现。
  */
 import { h } from '../platform.js'
+import { Icon } from '../ui/Icon.js'
 import { useOpenPanel } from '../ui/useOpenPanel.js'
 
 /** 与 tab 类型一致的 kind（右侧栏按 kind 找到 tab 定义）。 */
@@ -27,21 +28,6 @@ export function GitHeaderAction(props) {
     'data-failed': failed ? 'true' : undefined,
     onClick: activate
   },
-  h('svg', {
-    width: 14,
-    height: 14,
-    viewBox: '0 0 16 16',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 1.6,
-    strokeLinecap: 'round',
-    strokeLinejoin: 'round',
-    'aria-hidden': 'true'
-  },
-  h('path', { d: 'M4 3v10' }),
-  h('path', { d: 'M4 6a3 3 0 0 1 3-3h3' }),
-  h('circle', { cx: 4, cy: 3.4, r: 1.5 }),
-  h('circle', { cx: 12, cy: 9.2, r: 1.5 }),
-  h('path', { d: 'M4 13a3 3 0 0 0 3-3V8.6' })),
+  h(Icon, { name: 'git-branch', size: 16 }),
   h('span', { className: 'dgp-headerbtn-label' }, t('header.label')))
 }

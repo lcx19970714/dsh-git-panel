@@ -39,7 +39,7 @@
 | `src/ui/useAutoGrow.js` | `clampHeight, useAutoGrow` | 多行输入框按实测 `scrollHeight` 长高（提交框与创建 PR 描述框共用），不再按字符数估算 |
 | `src/ui/useSnapshotResource.js` | `useSnapshotResource` | 远端详情 / 分支全貌 / PR 详情 / 当前分支 PR 卡片共用的快照资源：序号守护、快照、loading 语义一处定义 |
 | `src/ui/useOpenPanel.js` | `useOpenPanel` | 两个「打开 Git 页签」入口共用的失败态：同步抛错 → 标红 + 5 秒复位 |
-| `src/ui/Icon.js` | `Icon` 组件 + `StatusLetter` | 内联 SVG 图标（不依赖 primitives） |
+| `src/ui/Icon.js` | `Icon` 组件 + `StatusLetter` | 内联 SVG 图标：24×24 网格、2px 描边、圆角端点，按 `size` 缩放（工具栏 16、行内 14、树/菜单 14、空态 24） |
 | `src/ui/Menu.js` | `PopupMenu, MenuItem, MenuLabel, MenuSeparator` | 轻量下拉菜单 |
 | `src/components/States.js` | `EmptyState, LoadingState, ErrorState, SkeletonRows, InlineNote` | 空/加载/错误/骨架 |
 | `src/components/DiffView.js` | `DiffView` | 统一/并排 diff |
@@ -524,7 +524,7 @@ SettingsView({
 | 列表行 | min-height 30px（变更行 30px，树行 30px），`padding: 0 10px`，`radius-md` |
 | 分组头 | 28px 高，11px/500 字重，`label-tertiary` 色 |
 | diff 行 | 22px（`min-height:22px; line-height:22px`） |
-| 图标按钮 | 28×28，内部 SVG 15×15，`radius-sm` |
+| 图标按钮 | 工具栏 28×28，内部 SVG 16×16；22px 行内按钮内部 14×14，`radius-sm` |
 | 列表缩进 | 每层 14px（用 `--dgp-depth` 变量 + `padding-left: calc(10px + var(--dgp-depth) * 14px)`） |
 | 字号 | 列表/正文 13px（`--dsh-content-font-size-secondary,13px`）；diff/代码 `--dsw-font-markdown-code-block`；分组头/计数 11px |
 | 圆角 | 行/按钮 `--dsw-radius-sm`，分组卡 `--dsw-radius-md` |

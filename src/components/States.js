@@ -49,7 +49,7 @@ export function EmptyState(props) {
   const iconNode = isBlank(icon)
     ? null
     : h('div', { className: 'dgp-state-icon' },
-        typeof icon === 'string' ? h(Icon, { name: icon, size: 28 }) : icon)
+        typeof icon === 'string' ? h(Icon, { name: icon, size: 24 }) : icon)
   const titleNode = isBlank(title) ? null : h('div', { className: 'dgp-state-title' }, title)
   const descNode = isBlank(description) ? null : h('div', { className: 'dgp-state-desc' }, description)
   const actionNodes = normalizeActions(actions)
@@ -83,7 +83,7 @@ export function ErrorState(props) {
     onClick: onRetry
   }, h(Icon, { name: 'refresh', size: 14 }), T('action.retry'))
   return h('div', { className: 'dgp-state', role: 'alert' },
-    h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 28 })),
+    h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 24 })),
     descNode,
     h('div', { className: 'dgp-state-actions' }, retry))
 }

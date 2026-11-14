@@ -65,7 +65,7 @@ export function RemoteDetail(props) {
   if (selection === null) {
     return h('div', { className: 'dgp-viewer' },
       h('div', { className: 'dgp-state', 'data-dgp-detail': 'empty' },
-        h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'file-diff', size: 22 })),
+        h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'file-diff', size: 24 })),
         h('div', { className: 'dgp-state-title' }, t('detail.pickRepo')),
         h('div', { className: 'dgp-state-desc' }, t('detail.pickRepoHint'))))
   }
@@ -80,7 +80,7 @@ export function RemoteDetail(props) {
   if (detail.error !== null) {
     return h('div', { className: 'dgp-viewer' },
       h('div', { className: 'dgp-state', 'data-dgp-detail': 'error' },
-        h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+        h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 24 })),
         h('div', { className: 'dgp-state-title' }, t('detail.failed')),
         h('div', { className: 'dgp-state-desc' }, detail.error),
         h('button', {

@@ -179,7 +179,7 @@ export function RemotePane(props) {
   let body = null
   if (error !== null) {
     body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'error' },
-      h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+      h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 24 })),
       h('div', { className: 'dgp-state-title' }, translate('remote.failedTitle')),
       h('div', { className: 'dgp-state-desc' }, error),
       h('button', {
@@ -192,7 +192,7 @@ export function RemotePane(props) {
       }, translate('remote.refresh')))
   } else if (accounts.length === 0) {
     body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'no-accounts' },
-      h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'external', size: 22 })),
+      h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'external', size: 24 })),
       h('div', { className: 'dgp-state-title' }, translate('remote.noAccounts')),
       h('div', { className: 'dgp-state-desc' }, translate('remote.noAccountsHint')),
       h('div', { className: 'dgp-state-actions' },
@@ -216,7 +216,7 @@ export function RemotePane(props) {
       h('div', { className: 'dgp-state-title' }, translate('remote.loading')))
   } else if (repos.length === 0) {
     body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'empty' },
-      h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'folder-open', size: 20 })),
+      h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'folder-open', size: 24 })),
       h('div', { className: 'dgp-state-title' }, translate('remote.empty')))
   } else {
     body = h('div', { className: 'dgp-list', 'data-dgp-remote': 'list', role: 'list' },
@@ -356,7 +356,7 @@ export function RemotePane(props) {
           'aria-label': translate('remote.addAccount'),
           'data-dgp-remote': 'add-account',
           onClick: () => openForm(providerIdOfAccount(accountId))
-        }, h(Icon, { name: 'plus', size: 13 })),
+        }, h(Icon, { name: 'plus', size: 16 })),
         h('button', {
           type: 'button',
           className: 'dgp-iconbtn',
@@ -365,7 +365,7 @@ export function RemotePane(props) {
           onClick: () => {
             source.onRefresh()
           }
-        }, h(Icon, { name: 'refresh', size: 13 }))),
+        }, h(Icon, { name: 'refresh', size: 16 }))),
     accounts.length === 0
       ? null
       : h('input', {

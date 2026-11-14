@@ -170,7 +170,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 │  ├─ styles.js             全部样式（令牌取色，注入 <style>）
 │  ├─ util/{paths,diff,changes,remote,time}.js  纯函数（有单测）
 │  ├─ util/{resource-cache,draft-cache}.js  模块级缓存：首屏快照 / 未保存草稿（切页签不丢）
-│  ├─ ui/{Icon,Menu}.js     内联 SVG 图标 + 轻量浮层菜单
+│  ├─ ui/{Icon,Menu}.js     24×24 网格 / 2px 描边的内联 SVG 图标 + 轻量浮层菜单
 │  ├─ ui/{useTreeCursor,useTimedNotice,useAutoGrow}.js  两棵树共用的键盘游标 / 提示定时 / 输入框自动高度
 │  ├─ ui/{useSnapshotResource,useOpenPanel}.js  远端四类资源的快照加载 / 两个入口共用的打开失败态
 │  └─ components/           Panel / RepoList / ChangesList / FileTree / DiffView / FileEditor / CommitBox / States / RemotePane / RemoteDetail / BranchList
@@ -664,7 +664,7 @@ export function apply(ctx) {
 | 面板外壳 | 一个 `GitPanelSurface` 同时服务两处 | 两套外壳组件 + `layout` 装饰属性 |
 | 宿主路径口径 | `diff` 的 path 相对 **repoRoot**；`file/read`、`tree/list` 的 path 相对 **rootPath** | `outside-root` 时回退到 repoRoot 再解析一次 |
 | 数据形状 | 宿主返回什么就用什么（契约见 `docs/CONTRACT.md` §2） | `Array.isArray(x) ? x : []`、`?? []` 之类逐层兜底 |
-| 图标 | 未知图标名打印一次错误并返回 null | 静默回落到 `file` 图标 |
+| 图标 | 未知图标名直接抛错（图标表就是契约） | 静默回落到 `file` 图标或返回 null |
 | 安装 | Windows 只走目录联接 | junction 失败再试 dir symlink |
 
 好处：任何一环不满足时**会直接报错**（DevTools / 面板错误条），而不是悄悄走另一条看起来能跑的路径

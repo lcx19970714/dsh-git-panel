@@ -509,7 +509,7 @@ export function RepoList(props) {
       title,
       'aria-label': title
     },
-    h(Icon, { name: 'file', size: 11 }),
+    h(Icon, { name: 'file', size: 12 }),
     h('span', { className: 'dgp-repo-stats-files' }, String(counts.total)),
     adds > 0 ? h('span', { className: 'dgp-add' }, '+' + adds) : null,
     dels > 0 ? h('span', { className: 'dgp-del' }, '−' + dels) : null,
@@ -544,7 +544,7 @@ export function RepoList(props) {
           'aria-label': t(showHidden ? 'roots.hiddenCollapse' : 'roots.hiddenShow', { count: hiddenRoots.length }),
           onClick: () => setShowHidden((previous) => !previous)
         },
-        h(Icon, { name: showHidden ? 'eye-off' : 'eye', size: 13 }),
+        h(Icon, { name: showHidden ? 'eye-off' : 'eye', size: 14 }),
         h('span', { className: 'dgp-repolist-hidden-count' }, String(hiddenRoots.length))),
       h('button', {
         type: 'button',
@@ -554,7 +554,7 @@ export function RepoList(props) {
         title: t('toolbar.addRoot'),
         'aria-label': t('toolbar.addRoot'),
         onClick: () => setFormOpen((previous) => !previous)
-      }, h(Icon, { name: 'plus', size: 13 }))),
+      }, h(Icon, { name: 'plus', size: 14 }))),
 
     open
       ? h('ul', { className: 'dgp-level dgp-repolist-rows', role: 'none' },
@@ -581,7 +581,7 @@ export function RepoList(props) {
                 onSelect(root)
               }
             },
-            h(Icon, { name: 'git-branch', size: 13 }),
+            h(Icon, { name: 'git-branch', size: 14 }),
             h('span', { className: 'dgp-name dgp-oneline' }, root.name)),
             // 改动规模：有改动才出现，没有改动时保持行安静
             renderStats(root),

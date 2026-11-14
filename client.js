@@ -56,7 +56,7 @@ window.__ModuleLoader__.load({
       // 样式注入必须发生在 factory 执行期间（平台据此打 data-plugin 并在卸载时回收）。
       ensureStyles()
 
-      /** 右侧栏「+」引导页里的插画（40×40，纯 currentColor，深浅色自适应）。 */
+      /** 右侧栏「+」引导页里的插画：40×40，纯 currentColor，与图标集同一套圆角线。 */
       function GuideArtworkGit() {
         return h('svg', {
           width: 40,
@@ -64,19 +64,22 @@ window.__ModuleLoader__.load({
           viewBox: '0 0 40 40',
           fill: 'none',
           stroke: 'currentColor',
-          strokeWidth: 1.6,
+          strokeWidth: 1.8,
           strokeLinecap: 'round',
           strokeLinejoin: 'round',
           'aria-hidden': 'true'
         },
-        h('path', { d: 'M8 30V10' }),
-        h('path', { d: 'M8 16c0-4.4 3.6-8 8-8h6', opacity: 0.85 }),
-        h('path', { d: 'M22 24c-3.3 0-6-2.7-6-6v-2' }),
-        h('circle', { cx: 8, cy: 8, r: 2.6 }),
-        h('circle', { cx: 30, cy: 8, r: 2.6 }),
-        h('circle', { cx: 22, cy: 26, r: 2.6 }),
-        h('path', { d: 'M19 31h10', opacity: 0.5 }),
-        h('path', { d: 'M19 34h6', opacity: 0.35 }))
+        // 面板轮廓
+        h('rect', { x: 5, y: 6, width: 30, height: 28, rx: 5 }),
+        // 一条主干 + 一个分支 + 三个提交点
+        h('path', { d: 'M13 12v16' }),
+        h('path', { d: 'M13 18c0-2.2 1.8-4 4-4h6' }),
+        h('circle', { cx: 13, cy: 12, r: 2.2 }),
+        h('circle', { cx: 13, cy: 28, r: 2.2 }),
+        h('circle', { cx: 25, cy: 14, r: 2.2 }),
+        // 右侧的 diff 行：一条长、一条短
+        h('path', { d: 'M22 23h8' }),
+        h('path', { d: 'M22 27h5' }))
       }
 
       const name = PLUGIN_ID
@@ -291,7 +294,6 @@ window.__ModuleLoader__.load({
         line-height: 1;
         cursor: pointer;
       }
-      .dgp-iconbtn svg { width: 15px; height: 15px; }
       .dgp-iconbtn:hover:not(:disabled) {
         color: var(--dsw-alias-label-primary);
         background: var(--dsw-alias-interactive-bg-hover);
@@ -1103,7 +1105,6 @@ window.__ModuleLoader__.load({
         line-height: 1.6;
       }
       .dgp-state-icon { flex: none; margin-bottom: 2px; color: var(--dsw-alias-label-tertiary); opacity: .5; }
-      .dgp-state-icon svg { width: 22px; height: 22px; }
       .dgp-state-title { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; font-weight: 500; }
       .dgp-state-desc { margin: 0; max-width: 32ch; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
       .dgp-state-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
@@ -1826,7 +1827,6 @@ window.__ModuleLoader__.load({
         line-height: 1;
         cursor: pointer;
       }
-      .dgp-branch-more svg { width: 14px; height: 14px; }
       .dgp-branch-more:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
       .dgp-branch-more:disabled { opacity: .4; cursor: default; }
       .dgp-branch-confirm {
@@ -5116,7 +5116,7 @@ window.__ModuleLoader__.load({
                   'data-tone': updateNote.tone,
                   title: t('update.openRelease'),
                   onClick: () => openExternalUrl(updateNote.url)
-                }, updateNote.text, h(Icon, { name: 'external', size: 11 }))),
+                }, updateNote.text, h(Icon, { name: 'external', size: 12 }))),
             h('button', {
               type: 'button',
               className: 'dgp-version',
@@ -5127,7 +5127,7 @@ window.__ModuleLoader__.load({
               'data-newer': pluginState.newer ? 'true' : undefined,
               disabled: pluginState.busy,
               onClick: checkUpdates
-            }, h(Icon, { name: 'sync', size: 13 }), h('span', { className: 'dgp-version-text' }, versionText)),
+            }, h(Icon, { name: 'sync', size: 12 }), h('span', { className: 'dgp-version-text' }, versionText)),
             h('button', {
               type: 'button',
               className: 'dgp-iconbtn',
@@ -5136,7 +5136,7 @@ window.__ModuleLoader__.load({
               'data-action': 'open-remote',
               disabled: remoteWebUrl === null,
               onClick: openRemote
-            }, h(Icon, { name: 'external', size: 15 })),
+            }, h(Icon, { name: 'external', size: 16 })),
             h('button', {
               type: 'button',
               className: 'dgp-iconbtn',
@@ -5144,7 +5144,7 @@ window.__ModuleLoader__.load({
               'aria-label': t('settings.open'),
               'data-action': 'open-settings',
               onClick: openSettings
-            }, h(Icon, { name: 'settings', size: 15 })),
+            }, h(Icon, { name: 'settings', size: 16 })),
             h('button', {
               type: 'button',
               className: 'dgp-iconbtn',
@@ -5157,13 +5157,13 @@ window.__ModuleLoader__.load({
                 setMoreOpen((previous) => !previous)
               },
               ref: moreAnchorRef
-            }, h(Icon, { name: 'more', size: 15 }))))
+            }, h(Icon, { name: 'more', size: 16 }))))
 
         const filterRow = showSettings || mode === MODE.remote
           ? null
           : h('div', { className: 'dgp-filter' },
           h('div', { className: 'dgp-search' },
-            h(Icon, { name: 'search', size: 13 }),
+            h(Icon, { name: 'search', size: 14 }),
             h('input', {
               ref: filterRef,
               className: 'dgp-input',
@@ -5754,47 +5754,137 @@ window.__ModuleLoader__.load({
       /**
        * src/ui/Icon.js —— 内联 SVG 图标集
        *
-       * 不依赖平台的 primitives 包（其导出名不稳定），自带一套 16×16 线性图标。
-       * 只保留真正用到的图标；未知名字返回 null 并打印一次错误，不做"静默退回默认图标"。
+       * 统一按 24×24 网格绘制、2px 描边、圆角端点；渲染时通过 size 缩放到 12/14/16/24。
+       * 这样同一套几何在 12px 的树行和 24px 的空态里都不会忽胖忽瘦。
+       *
+       * 只保留真正用到的图标；未知名字直接抛错，不做"静默退回默认图标"。
        */
       const { h } = __m("./platform.js");
 
-      /** 线性图标：name -> path 数组（16×16，1.5 描边）。 */
+      /**
+       * 线性图标：name -> path 数组（24×24，2px 描边）。
+       *
+       * 画法约定：
+       *  - 主体落在 3..21 的安全区，四周至少留 2px，避免小尺寸贴边；
+       *  - 圆点用「圆弧路径」而不是单独 circle，保持所有图标都只有 path，渲染路径统一；
+       *  - 视觉重心略偏上（y≈12），与 11/12px 的文字基线对齐更稳。
+       */
       const ICONS = {
-        'chevron-right': ['M6 4l4 4-4 4'],
-        'chevron-down': ['M4 6l4 4 4-4'],
-        refresh: ['M13.5 8a5.5 5.5 0 1 1-1.6-3.9', 'M13.5 2.5V5H11'],
-        'git-branch': ['M4 3v10', 'M4 6a3 3 0 0 1 3-3h3', 'M12 9a1.8 1.8 0 1 1 0 .01'],
-        'git-merge': ['M4 13V3', 'M4 8a4 4 0 0 0 4 4h3', 'M12 4a1.8 1.8 0 1 1-.01.01'],
-        file: ['M4 2h5l3 3v9H4z', 'M9 2v3h3'],
-        'file-diff': ['M4 2h5l3 3v9H4z', 'M9 2v3h3', 'M6 8h4', 'M6 11h4'],
-        folder: ['M2 4h4l1.5 2H14v7H2z'],
-        'folder-open': ['M2 4h4l1.5 2H14v7H2z', 'M2 7h12'],
-        check: ['M6 8.5l2 2 3-4'],
-        'check-circle': ['M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z', 'M5.6 8.2l1.7 1.7 3-3.2'],
-        close: ['M4 4l8 8', 'M12 4l-8 8'],
-        plus: ['M8 3v10', 'M3 8h10'],
-        minus: ['M3 8h10'],
-        search: ['M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10z', 'M10.6 10.6L14 14'],
-        warning: ['M8 2l6 11H2z', 'M8 6v3', 'M8 11h.01'],
-        info: ['M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z', 'M8 7v4', 'M8 5h.01'],
-        unified: ['M2 3h12v10H2z', 'M2 6h12', 'M2 9h12'],
-        split: ['M2 3h12v10H2z', 'M8 3v10'],
-        wrap: ['M2 4h12', 'M2 8h9a2 2 0 1 1 0 4H8', 'M10 10l-2 2 2 2'],
-        trash: ['M3 5h10', 'M6 5V3h4v2', 'M4.5 5l.7 8h5.6l.7-8'],
-        eye: ['M1.5 8S4 4 8 4s6.5 4 6.5 4S12 12 8 12 1.5 8 1.5 8z', 'M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'],
-        'eye-off': ['M1.5 8S4 4 8 4s6.5 4 6.5 4S12 12 8 12 1.5 8 1.5 8z', 'M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z', 'M3 13L13 3'],
-        clock: ['M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z', 'M8 5v3.5L10.5 10'],
-        filter: ['M2 3h12l-4.5 5.5V13L6 11.5V8.5z'],
-        sync: ['M13.5 8a5.5 5.5 0 0 1-9.4 3.9', 'M4 12v-3h3', 'M2.5 8a5.5 5.5 0 0 1 9.4-3.9', 'M12 4v3h-3'],
-        external: ['M9.5 3H13v3.5', 'M13 3L7.5 8.5', 'M11.5 9.5V13H3V4.5h3.5'],
-        sparkle: ['M8 2l1.2 3.3L12.5 6.5 9.2 7.7 8 11 6.8 7.7 3.5 6.5 6.8 5.3z', 'M12.5 10l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z'],
-        settings: ['M8 10.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4z', 'M8 1.8v1.6', 'M8 12.6v1.6', 'M3.2 3.2l1.1 1.1', 'M11.7 11.7l1.1 1.1', 'M1.8 8h1.6', 'M12.6 8h1.6', 'M3.2 12.8l1.1-1.1', 'M11.7 4.3l1.1-1.1']
+        'chevron-right': ['m9 6 6 6-6 6'],
+        'chevron-down': ['m6 9 6 6 6-6'],
+        refresh: ['M20 12a8 8 0 1 1-2.34-5.66', 'M20 4v4h-4'],
+        'git-branch': [
+          'M6 3v12',
+          'M21 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
+          'M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
+          'M18 9a9 9 0 0 1-9 9'
+        ],
+        'git-merge': [
+          'M6 21V9a9 9 0 0 0 9 9',
+          'M9 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
+          'M21 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'
+        ],
+        file: [
+          'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z',
+          'M14 3v5h5'
+        ],
+        'file-diff': [
+          'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z',
+          'M14 3v5h5',
+          'M9 13h6',
+          'M9 17h4'
+        ],
+        folder: [
+          'M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'
+        ],
+        'folder-open': [
+          'M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2'
+        ],
+        check: ['M20 6 9 17l-5-5'],
+        'check-circle': [
+          'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+          'm8 12 3 3 5-6'
+        ],
+        close: ['M18 6 6 18', 'm6 6 12 12'],
+        plus: ['M12 5v14', 'M5 12h14'],
+        minus: ['M5 12h14'],
+        search: [
+          'M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0z',
+          'm20 20-4-4'
+        ],
+        warning: [
+          'M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0z',
+          'M12 9v4',
+          'M12 17h.01'
+        ],
+        info: [
+          'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+          'M12 16v-4',
+          'M12 8h.01'
+        ],
+        unified: [
+          'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
+          'M7 8h10',
+          'M7 12h10',
+          'M7 16h10'
+        ],
+        split: [
+          'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
+          'M12 3v18'
+        ],
+        wrap: [
+          'M3 6h18',
+          'M3 12h15a3 3 0 1 1 0 6h-4',
+          'm16 16-2 2 2 2',
+          'M3 18h7'
+        ],
+        trash: [
+          'M4 7h16',
+          'M9 7V4h6v3',
+          'M6 7l1 13h10l1-13'
+        ],
+        eye: [
+          'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z',
+          'M15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z'
+        ],
+        'eye-off': [
+          'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z',
+          'M15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z',
+          'M3 3l18 18'
+        ],
+        clock: [
+          'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+          'M12 7v5l3 2'
+        ],
+        filter: ['M3 5h18l-7 8.5V20l-4-2v-4.5z'],
+        sync: [
+          'M20 8a8 8 0 0 0-14.3 3.2',
+          'M4 16a8 8 0 0 0 14.3-3.2',
+          'M20 3v5h-5',
+          'M4 21v-5h5'
+        ],
+        external: [
+          'M14 4h6v6',
+          'M20 4 11 13',
+          'M18 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5'
+        ],
+        sparkle: [
+          'M12 3c.8 4.6 3.4 7.2 8 8-4.6.8-7.2 3.4-8 8-.8-4.6-3.4-7.2-8-8 4.6-.8 7.2-3.4 8-8z',
+          'M19 3c.3 1.4 1 2.1 2.4 2.4-1.4.3-2.1 1-2.4 2.4-.3-1.4-1-2.1-2.4-2.4 1.4-.3 2.1-1 2.4-2.4z'
+        ],
+        settings: [
+          'M4 8h8',
+          'M16 8h4',
+          'M14 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0z',
+          'M4 16h4',
+          'M12 16h8',
+          'M10 16a2 2 0 1 1-4 0 2 2 0 0 1 4 0z'
+        ]
       }
 
       /** 用实心圆点而不是描边的图标。 */
       const FILLED_DOTS = {
-        more: [[3, 8], [8, 8], [13, 8]]
+        more: [[5, 12], [12, 12], [19, 12]]
       }
 
       /**
@@ -5816,16 +5906,16 @@ window.__ModuleLoader__.load({
 
         const children = filledDots === undefined
           ? paths.map((d, index) => h('path', { key: index, d }))
-          : filledDots.map(([cx, cy], index) => h('circle', { key: index, cx, cy, r: 1.2 }))
+          : filledDots.map(([cx, cy], index) => h('circle', { key: index, cx, cy, r: 2.2 }))
 
         return h('svg', {
           className: 'dgp-ico ' + className,
           width: size,
           height: size,
-          viewBox: '0 0 16 16',
+          viewBox: '0 0 24 24',
           fill: filledDots === undefined ? 'none' : 'currentColor',
           stroke: filledDots === undefined ? 'currentColor' : undefined,
-          strokeWidth: filledDots === undefined ? 1.5 : undefined,
+          strokeWidth: filledDots === undefined ? 2 : undefined,
           strokeLinecap: filledDots === undefined ? 'round' : undefined,
           strokeLinejoin: filledDots === undefined ? 'round' : undefined,
           'aria-hidden': title === undefined ? 'true' : undefined,
@@ -7339,7 +7429,7 @@ window.__ModuleLoader__.load({
             title,
             'aria-label': title
           },
-          h(Icon, { name: 'file', size: 11 }),
+          h(Icon, { name: 'file', size: 12 }),
           h('span', { className: 'dgp-repo-stats-files' }, String(counts.total)),
           adds > 0 ? h('span', { className: 'dgp-add' }, '+' + adds) : null,
           dels > 0 ? h('span', { className: 'dgp-del' }, '−' + dels) : null,
@@ -7374,7 +7464,7 @@ window.__ModuleLoader__.load({
                 'aria-label': t(showHidden ? 'roots.hiddenCollapse' : 'roots.hiddenShow', { count: hiddenRoots.length }),
                 onClick: () => setShowHidden((previous) => !previous)
               },
-              h(Icon, { name: showHidden ? 'eye-off' : 'eye', size: 13 }),
+              h(Icon, { name: showHidden ? 'eye-off' : 'eye', size: 14 }),
               h('span', { className: 'dgp-repolist-hidden-count' }, String(hiddenRoots.length))),
             h('button', {
               type: 'button',
@@ -7384,7 +7474,7 @@ window.__ModuleLoader__.load({
               title: t('toolbar.addRoot'),
               'aria-label': t('toolbar.addRoot'),
               onClick: () => setFormOpen((previous) => !previous)
-            }, h(Icon, { name: 'plus', size: 13 }))),
+            }, h(Icon, { name: 'plus', size: 14 }))),
 
           open
             ? h('ul', { className: 'dgp-level dgp-repolist-rows', role: 'none' },
@@ -7411,7 +7501,7 @@ window.__ModuleLoader__.load({
                       onSelect(root)
                     }
                   },
-                  h(Icon, { name: 'git-branch', size: 13 }),
+                  h(Icon, { name: 'git-branch', size: 14 }),
                   h('span', { className: 'dgp-name dgp-oneline' }, root.name)),
                   // 改动规模：有改动才出现，没有改动时保持行安静
                   renderStats(root),
@@ -7972,7 +8062,7 @@ window.__ModuleLoader__.load({
                 event.stopPropagation()
                 onStage(row.path, action)
               }
-            }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 13 }))
+            }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 14 }))
 
           return h('li', {
             key: 'file:' + row.path,
@@ -8016,7 +8106,7 @@ window.__ModuleLoader__.load({
                 event.stopPropagation()
                 onStageGroup(action)
               }
-            }, h(Icon, { name: action === 'unstage' ? 'minus' : 'plus', size: 13 }))
+            }, h(Icon, { name: action === 'unstage' ? 'minus' : 'plus', size: 14 }))
           return h('div', {
             key: group.key,
             className: 'dgp-group',
@@ -8573,7 +8663,7 @@ window.__ModuleLoader__.load({
         const iconNode = isBlank(icon)
           ? null
           : h('div', { className: 'dgp-state-icon' },
-              typeof icon === 'string' ? h(Icon, { name: icon, size: 28 }) : icon)
+              typeof icon === 'string' ? h(Icon, { name: icon, size: 24 }) : icon)
         const titleNode = isBlank(title) ? null : h('div', { className: 'dgp-state-title' }, title)
         const descNode = isBlank(description) ? null : h('div', { className: 'dgp-state-desc' }, description)
         const actionNodes = normalizeActions(actions)
@@ -8607,7 +8697,7 @@ window.__ModuleLoader__.load({
           onClick: onRetry
         }, h(Icon, { name: 'refresh', size: 14 }), T('action.retry'))
         return h('div', { className: 'dgp-state', role: 'alert' },
-          h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 28 })),
+          h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 24 })),
           descNode,
           h('div', { className: 'dgp-state-actions' }, retry))
       }
@@ -9054,7 +9144,7 @@ window.__ModuleLoader__.load({
 
       /** 空/加载/错误态用的图标节点（States.EmptyState 的 icon 是 React 节点）。 */
       function stateIcon(name) {
-        return h(Icon, { name, size: 16 })
+        return h(Icon, { name, size: 24 })
       }
 
       /** 取第一个「已知」的计数：负数表示宿主没给数字（二进制/统计失败），不能当成 0 也不能显示出来。 */
@@ -10945,7 +11035,7 @@ window.__ModuleLoader__.load({
                     title: translate('accounts.edit', { name: account.label }),
                     'aria-label': translate('accounts.edit', { name: account.label }),
                     onClick: () => openEditing(account)
-                  }, h(Icon, { name: 'file', size: 13 })),
+                  }, h(Icon, { name: 'file', size: 14 })),
                   h('button', {
                     type: 'button',
                     className: 'dgp-row-action',
@@ -10955,7 +11045,7 @@ window.__ModuleLoader__.load({
                     onClick: () => {
                       source.onRemoveAccount(account.id)
                     }
-                  }, h(Icon, { name: 'trash', size: 13 }))))),
+                  }, h(Icon, { name: 'trash', size: 14 }))))),
             editing === null
               ? null
               : h('div', {
@@ -11359,7 +11449,7 @@ window.__ModuleLoader__.load({
         let body = null
         if (error !== null) {
           body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'error' },
-            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 24 })),
             h('div', { className: 'dgp-state-title' }, translate('remote.failedTitle')),
             h('div', { className: 'dgp-state-desc' }, error),
             h('button', {
@@ -11372,7 +11462,7 @@ window.__ModuleLoader__.load({
             }, translate('remote.refresh')))
         } else if (accounts.length === 0) {
           body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'no-accounts' },
-            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'external', size: 22 })),
+            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'external', size: 24 })),
             h('div', { className: 'dgp-state-title' }, translate('remote.noAccounts')),
             h('div', { className: 'dgp-state-desc' }, translate('remote.noAccountsHint')),
             h('div', { className: 'dgp-state-actions' },
@@ -11396,7 +11486,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'dgp-state-title' }, translate('remote.loading')))
         } else if (repos.length === 0) {
           body = h('div', { className: 'dgp-state', 'data-dgp-remote': 'empty' },
-            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'folder-open', size: 20 })),
+            h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'folder-open', size: 24 })),
             h('div', { className: 'dgp-state-title' }, translate('remote.empty')))
         } else {
           body = h('div', { className: 'dgp-list', 'data-dgp-remote': 'list', role: 'list' },
@@ -11536,7 +11626,7 @@ window.__ModuleLoader__.load({
                 'aria-label': translate('remote.addAccount'),
                 'data-dgp-remote': 'add-account',
                 onClick: () => openForm(providerIdOfAccount(accountId))
-              }, h(Icon, { name: 'plus', size: 13 })),
+              }, h(Icon, { name: 'plus', size: 16 })),
               h('button', {
                 type: 'button',
                 className: 'dgp-iconbtn',
@@ -11545,7 +11635,7 @@ window.__ModuleLoader__.load({
                 onClick: () => {
                   source.onRefresh()
                 }
-              }, h(Icon, { name: 'refresh', size: 13 }))),
+              }, h(Icon, { name: 'refresh', size: 16 }))),
           accounts.length === 0
             ? null
             : h('input', {
@@ -11631,7 +11721,7 @@ window.__ModuleLoader__.load({
         if (selection === null) {
           return h('div', { className: 'dgp-viewer' },
             h('div', { className: 'dgp-state', 'data-dgp-detail': 'empty' },
-              h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'file-diff', size: 22 })),
+              h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'file-diff', size: 24 })),
               h('div', { className: 'dgp-state-title' }, t('detail.pickRepo')),
               h('div', { className: 'dgp-state-desc' }, t('detail.pickRepoHint'))))
         }
@@ -11646,7 +11736,7 @@ window.__ModuleLoader__.load({
         if (detail.error !== null) {
           return h('div', { className: 'dgp-viewer' },
             h('div', { className: 'dgp-state', 'data-dgp-detail': 'error' },
-              h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+              h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 24 })),
               h('div', { className: 'dgp-state-title' }, t('detail.failed')),
               h('div', { className: 'dgp-state-desc' }, detail.error),
               h('button', {
@@ -12074,7 +12164,7 @@ window.__ModuleLoader__.load({
           h('span', {
             className: 'dgp-branch-ico',
             'data-current': row.current === true ? 'true' : undefined
-          }, h(Icon, { name: row.current === true ? 'check' : 'git-branch', size: 12 })),
+          }, h(Icon, { name: row.current === true ? 'check' : 'git-branch', size: 14 })),
           h('span', { className: 'dgp-branch-name dgp-oneline' }, row.name),
           row.ahead > 0 || row.behind > 0
             ? h('span', { className: 'dgp-branch-track' }, aheadBehindText(row, translate))
@@ -12091,7 +12181,7 @@ window.__ModuleLoader__.load({
               event.stopPropagation()
               openMenu(row, event.currentTarget)
             }
-          }, rowBusy ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'more', size: 12 })),
+          }, rowBusy ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'more', size: 14 })),
           confirmHere
             ? h('div', { className: 'dgp-branch-confirm', 'data-dgp-branch-confirm': confirm.kind },
               h('div', { className: 'dgp-branch-confirm-text' },
@@ -12226,7 +12316,7 @@ window.__ModuleLoader__.load({
                   'data-dgp-branch-fetch': 'true',
                   disabled: fetching,
                   onClick: runFetch
-                }, fetching ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'sync', size: 12 }))
+                }, fetching ? h('span', { className: 'dgp-spinner' }) : h(Icon, { name: 'sync', size: 14 }))
                 : null,
               h('button', {
                 type: 'button',
@@ -12240,7 +12330,7 @@ window.__ModuleLoader__.load({
                   setNote(null)
                   source.onReloadBranches()
                 }
-              }, h(Icon, { name: 'refresh', size: 12 })))),
+              }, h(Icon, { name: 'refresh', size: 14 })))),
           showFilter
             ? h('input', {
               className: 'dgp-input dgp-branch-filter',
@@ -12389,7 +12479,7 @@ window.__ModuleLoader__.load({
         if (detail.error !== null) {
           return h('div', { className: 'dgp-viewer' },
             h('div', { className: 'dgp-state', 'data-dgp-pull': 'error' },
-              h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 20 })),
+              h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 24 })),
               h('div', { className: 'dgp-state-title' }, t('pull.failed')),
               h('div', { className: 'dgp-state-desc' }, detail.error),
               h('div', { className: 'dgp-state-actions' },
@@ -13490,6 +13580,7 @@ window.__ModuleLoader__.load({
        * 失败（没有已挂载会话）与左侧栏「代码坞」共用 `../ui/useOpenPanel.js` 的表现。
        */
       const { h } = __m("./platform.js");
+      const { Icon } = __m("./ui/Icon.js");
       const { useOpenPanel } = __m("./ui/useOpenPanel.js");
 
       /** 与 tab 类型一致的 kind（右侧栏按 kind 找到 tab 定义）。 */
@@ -13507,22 +13598,7 @@ window.__ModuleLoader__.load({
           'data-failed': failed ? 'true' : undefined,
           onClick: activate
         },
-        h('svg', {
-          width: 14,
-          height: 14,
-          viewBox: '0 0 16 16',
-          fill: 'none',
-          stroke: 'currentColor',
-          strokeWidth: 1.6,
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          'aria-hidden': 'true'
-        },
-        h('path', { d: 'M4 3v10' }),
-        h('path', { d: 'M4 6a3 3 0 0 1 3-3h3' }),
-        h('circle', { cx: 4, cy: 3.4, r: 1.5 }),
-        h('circle', { cx: 12, cy: 9.2, r: 1.5 }),
-        h('path', { d: 'M4 13a3 3 0 0 0 3-3V8.6' })),
+        h(Icon, { name: 'git-branch', size: 16 }),
         h('span', { className: 'dgp-headerbtn-label' }, t('header.label')))
       }
 
@@ -13586,7 +13662,7 @@ window.__ModuleLoader__.load({
 
       const TAB_KIND = 'git'
 
-      /** 彩色图标：分支线 + 两个提交点 + 一点高光（固定配色，不跟随主题灰度）。 */
+      /** 彩色图标：主干 + 分支 + 三个提交点（固定配色，不跟随主题灰度）。 */
       function ColorfulGitDock() {
         return h('svg', {
           width: 18,
@@ -13597,26 +13673,28 @@ window.__ModuleLoader__.load({
         },
         h('defs', null,
           h('linearGradient', { id: 'dgpDockLine', x1: '0', y1: '0', x2: '1', y2: '1' },
-            h('stop', { offset: '0%', 'stop-color': '#7C6BFF' }),
+            h('stop', { offset: '0%', 'stop-color': '#6C5CE7' }),
             h('stop', { offset: '100%', 'stop-color': '#3FB6FF' })),
           h('linearGradient', { id: 'dgpDockHead', x1: '0', y1: '0', x2: '1', y2: '1' },
             h('stop', { offset: '0%', 'stop-color': '#FF8A5B' }),
             h('stop', { offset: '100%', 'stop-color': '#FF5C8A' }))),
+        // 主干：顶部提交点向下，拐到右下角的黄色节点
         h('path', {
-          d: 'M5.5 4.6v9.2c0 1.8 1.4 3.2 3.2 3.2h1.6',
+          d: 'M6 4.2v9.2c0 1.8 1.4 3.2 3.2 3.2h6.3',
           stroke: 'url(#dgpDockLine)',
-          strokeWidth: 2,
+          strokeWidth: 2.4,
           strokeLinecap: 'round'
         }),
-        h('circle', { cx: 5.5, cy: 4.4, r: 2.4, fill: 'url(#dgpDockHead)' }),
-        h('circle', { cx: 15.2, cy: 8.4, r: 2.2, fill: '#2FD36B' }),
+        // 分支：从主干向右上方，接到绿色节点
         h('path', {
-          d: 'M5.5 9.2c0-1.6 1.3-2.9 2.9-2.9h4.2c1 0 1.8.8 1.8 1.8v.6',
+          d: 'M6 9.2c0-2 1.6-3.6 3.6-3.6h5.9',
           stroke: 'url(#dgpDockLine)',
-          strokeWidth: 1.8,
+          strokeWidth: 2.2,
           strokeLinecap: 'round'
         }),
-        h('path', { d: 'M12.4 15.6h4.2', stroke: '#FFC53D', strokeWidth: 1.8, strokeLinecap: 'round' }))
+        h('circle', { cx: 6, cy: 4.2, r: 2.5, fill: 'url(#dgpDockHead)' }),
+        h('circle', { cx: 15.5, cy: 6.2, r: 2.3, fill: '#2FD36B' }),
+        h('circle', { cx: 15.5, cy: 16.6, r: 2.3, fill: '#FFC53D' }))
       }
 
       function SidebarGitEntry(props) {

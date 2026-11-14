@@ -2086,7 +2086,7 @@ export function Panel(props) {
             'data-tone': updateNote.tone,
             title: t('update.openRelease'),
             onClick: () => openExternalUrl(updateNote.url)
-          }, updateNote.text, h(Icon, { name: 'external', size: 11 }))),
+          }, updateNote.text, h(Icon, { name: 'external', size: 12 }))),
       h('button', {
         type: 'button',
         className: 'dgp-version',
@@ -2097,7 +2097,7 @@ export function Panel(props) {
         'data-newer': pluginState.newer ? 'true' : undefined,
         disabled: pluginState.busy,
         onClick: checkUpdates
-      }, h(Icon, { name: 'sync', size: 13 }), h('span', { className: 'dgp-version-text' }, versionText)),
+      }, h(Icon, { name: 'sync', size: 12 }), h('span', { className: 'dgp-version-text' }, versionText)),
       h('button', {
         type: 'button',
         className: 'dgp-iconbtn',
@@ -2106,7 +2106,7 @@ export function Panel(props) {
         'data-action': 'open-remote',
         disabled: remoteWebUrl === null,
         onClick: openRemote
-      }, h(Icon, { name: 'external', size: 15 })),
+      }, h(Icon, { name: 'external', size: 16 })),
       h('button', {
         type: 'button',
         className: 'dgp-iconbtn',
@@ -2114,7 +2114,7 @@ export function Panel(props) {
         'aria-label': t('settings.open'),
         'data-action': 'open-settings',
         onClick: openSettings
-      }, h(Icon, { name: 'settings', size: 15 })),
+      }, h(Icon, { name: 'settings', size: 16 })),
       h('button', {
         type: 'button',
         className: 'dgp-iconbtn',
@@ -2127,13 +2127,13 @@ export function Panel(props) {
           setMoreOpen((previous) => !previous)
         },
         ref: moreAnchorRef
-      }, h(Icon, { name: 'more', size: 15 }))))
+      }, h(Icon, { name: 'more', size: 16 }))))
 
   const filterRow = showSettings || mode === MODE.remote
     ? null
     : h('div', { className: 'dgp-filter' },
     h('div', { className: 'dgp-search' },
-      h(Icon, { name: 'search', size: 13 }),
+      h(Icon, { name: 'search', size: 14 }),
       h('input', {
         ref: filterRef,
         className: 'dgp-input',

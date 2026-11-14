@@ -210,7 +210,7 @@ export function ChangesList(props) {
           event.stopPropagation()
           onStage(row.path, action)
         }
-      }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 13 }))
+      }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 14 }))
 
     return h('li', {
       key: 'file:' + row.path,
@@ -254,7 +254,7 @@ export function ChangesList(props) {
           event.stopPropagation()
           onStageGroup(action)
         }
-      }, h(Icon, { name: action === 'unstage' ? 'minus' : 'plus', size: 13 }))
+      }, h(Icon, { name: action === 'unstage' ? 'minus' : 'plus', size: 14 }))
     return h('div', {
       key: group.key,
       className: 'dgp-group',

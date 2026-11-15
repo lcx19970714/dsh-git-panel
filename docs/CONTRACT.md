@@ -34,7 +34,7 @@
 | `src/util/diff.js` | `buildUnifiedRows, buildSplitRows, highlightWordDiff, diffStats, budgetRows, pairChangedRuns, MAX_DIFF_ROWS` | **纯函数**，必须可单测 |
 | `src/util/resource-cache.js` | `readSnapshot, writeSnapshot, dropSnapshot, snapshotAge, clearSnapshots` | 首屏快照（内存、模块级、有上限）：切走再切回来先渲染旧画面、后台刷新；只存成功结果 |
 | `src/util/draft-cache.js` | `readDrafts, writeDraft, dropDraft, clearDrafts` | 编辑器草稿（内存、模块级、按仓库根 + 路径分桶、条数/字符双上限）：切页签卸载组件后未保存的改动仍在 |
-| `src/ui/useTreeCursor.js` | `useTreeCursor`、`clampCursor`、`cursorElement` | 「变更」树与「文件」树共用的键盘游标（↑↓ / Enter / ←→ / 滚进可视区 / 焦点收尾）。后两个导出是「游标落在哪一行」的纯规则：行数变少时收敛到末行，行被卸载后 `rowRefs` 里是 `null`（挂载前是 `undefined`），`cursorElement` 把它们统一成 `null` 交给调用方 |
+| `src/ui/useTreeCursor.js` | `useTreeCursor` | 「变更」树与「文件」树共用的键盘游标（↑↓ / Enter / ←→ / 滚进可视区 / 焦点收尾）。它对外给出的 `cursor` 是**渲染期收敛**过的下标：永远是本遍渲染里真实存在的行，或 `-1`（没有行 / 还没选行），所以调用方与滚进可视区那一步都不需要判空 |
 | `src/ui/useTimedNotice.js` | `useTimedNotice` | 操作结果提示的唯一定时规则：`info` 过 ttl 自动消失，`warn` / `error` 留着等用户处理 |
 | `src/ui/useAutoGrow.js` | `clampHeight, useAutoGrow` | 多行输入框按实测 `scrollHeight` 长高（提交框与创建 PR 描述框共用），不再按字符数估算 |
 | `src/ui/useSnapshotResource.js` | `useSnapshotResource` | 远端详情 / 分支全貌 / PR 详情 / 当前分支 PR 卡片共用的快照资源：序号守护、快照、loading 语义一处定义 |

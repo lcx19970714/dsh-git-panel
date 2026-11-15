@@ -11,10 +11,9 @@
  *    所以不需要 contains 判断 —— 只有「Enter 由容器自己处理还是交给行 button」
  *    需要区分 target 是不是容器。
  *  - 行节点由组件通过 ref 收集进 `rowRefs`，索引与扁平行数组一致。
- *  - **`rowRefs.current[i]` 有三种值**：行已挂载（元素）、行还没挂载过（`undefined`）、
- *    行被卸载（React 会把 ref 回调传成 `null`）。游标移动时行可能刚好被卸载
- *    （折叠分组 / 过滤 / 提交后列表变短 / 暂存后文件换组），所以「有没有元素」必须
- *    同时认 `null` 和 `undefined` —— 少认一种就是对着 `null` 调 `scrollIntoView`。
+ *  - 游标是**渲染期收敛**的（见 `cursor`）：对外给出的 `cursor` 永远是本遍渲染里
+ *    真实存在的行号，或 -1（还没选行 / 没有行）。调用方（含滚动 effect）不需要
+ *    再判空 —— 判空就是把「下标可以先失效、晚点再修正」这个错误模型留在代码里。
  */
 import { useEffect, useRef, useState } from '../platform.js'
 
@@ -22,31 +21,6 @@ import { useEffect, useRef, useState } from '../platform.js'
 function consume(event) {
   event.preventDefault()
   event.stopPropagation()
-}
-
-/**
- * 游标该落在哪一行：行数变少时收敛到最后一行，还没选行（-1）与空列表都返回 -1。
- *
- * 单独拿出来是因为**状态收敛（effect 里的 setCursor）要下一遍渲染才生效**，
- * 而同一提交里的滚动 effect 读的还是这一遍的旧游标 —— 读之前必须自己按当前行数收敛，
- * 否则就会读到一个已经不存在的行号。
- */
-export function clampCursor(cursor, total) {
-  if (total <= 0 || cursor < 0) return -1
-  return cursor >= total ? total - 1 : cursor
-}
-
-/**
- * 游标对应的行元素；没有就返回 `null`。
- *
- * 行被卸载时 React 写进 `rowRefs` 的是 `null`（挂载前是 `undefined`），两种都表示
- * 「这一行现在不在 DOM 里」，调用方拿到 `null` 就不该再碰它。
- */
-export function cursorElement(rowRefs, cursor, total) {
-  const index = clampCursor(cursor, total)
-  if (index < 0) return null
-  const element = rowRefs[index]
-  return element === undefined || element === null ? null : element
 }
 
 /**
@@ -60,21 +34,27 @@ export function cursorElement(rowRefs, cursor, total) {
  */
 export function useTreeCursor(options) {
   const { rows, isDir, isOpen, onToggle, onActivate } = options
-  const [cursor, setCursor] = useState(-1)
+  /** 存下来的是「用户上次落点」的下标，它不保证还在 rows 里。 */
+  const [stored, setCursor] = useState(-1)
+  /**
+   * 有效游标 = 存下来的下标按**当前行数**收敛，在渲染期算出来。
+   *
+   * 这是整个 hook 的唯一一条不变式：游标永远落在本遍渲染画出来的行里。
+   * 行数会独立于游标变化（折叠分组 / 过滤 / 提交 / 暂存换组 / 切仓库），
+   * 而「把游标改回合法值」如果放在 effect 里，状态要到下一遍渲染才生效 ——
+   * 同一提交里的滚动 effect 读到的仍是旧下标，那个下标的行可能刚被卸载
+   * （React 卸载行时把 ref 回调传成 `null`），`null.scrollIntoView` 就是那次崩溃。
+   * 在渲染期收敛就不存在「旧下标」这个中间状态：渲染画出的行都在 0..rows.length-1，
+   * 它们的 ref 也在本提交挂好了，所以下面滚动时读到的一定是真实元素。
+   */
+  const cursor = Math.min(stored, rows.length - 1)
   const rowRefs = useRef([])
   const wantFocusRef = useRef(false)
 
-  // 行数变少（折叠分组 / 过滤 / 切目录）时把游标收敛回最后一行。
-  useEffect(() => {
-    setCursor((previous) => clampCursor(previous, rows.length))
-  }, [rows.length])
-
   // 游标移动：滚进可视区；键盘移动时把真实焦点也带过去（Enter 由原生 click 处理）。
-  // 这里按「当前行数」重新收敛一次：状态收敛要下一遍渲染才生效，而这一遍的行里
-  // 可能已经有行被卸载、ref 变成了 null。
   useEffect(() => {
-    const element = cursorElement(rowRefs.current, cursor, rows.length)
-    if (element === null) return
+    if (cursor < 0) return
+    const element = rowRefs.current[cursor]
     element.scrollIntoView({ block: 'nearest' })
     if (wantFocusRef.current === true) {
       wantFocusRef.current = false
@@ -114,17 +94,16 @@ export function useTreeCursor(options) {
 
     if (event.key === 'Enter') {
       // 行上的 Enter 由原生 button click 处理，避免重复激活。
-      if (onContainer !== true) return
-      const row = rows[cursor]
-      if (row === undefined) return
+      if (onContainer !== true || cursor < 0) return
       consume(event)
-      onActivate(row)
+      onActivate(rows[cursor])
       return
     }
 
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    if (cursor < 0) return
     const row = rows[cursor]
-    if (row === undefined || isDir(row) !== true) return
+    if (isDir(row) !== true) return
     const open = isOpen(row)
     if ((event.key === 'ArrowRight') === open) return
     consume(event)

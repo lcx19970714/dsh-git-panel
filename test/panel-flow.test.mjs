@@ -5580,6 +5580,54 @@ test('用例 9：变更模式下刷新，文件消失则清空选中与 diff', a
 })
 
 /* ================================================================== */
+/* 用例 9b：行数变少时游标当场收敛（不能留一个「没有游标」的帧）            */
+/* ================================================================== */
+
+test('用例 9b：行数变少时游标在同一帧就收敛到仍然存在的行', async () => {
+  let round = 0
+  const after = statusThree()
+  after.files = after.files.filter((entry) => entry.path !== 'notes.txt')
+  after.counts = { total: 2, staged: 1, unstaged: 1, untracked: 0, conflicted: 0 }
+
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => {
+        round += 1
+        return sayOk(round === 1 ? statusThree() : after)
+      },
+      diff: () => sayOk(diffText())
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    // 点最后一行（notes.txt，第 3 行），游标停在 2
+    const last = panel.fileRow('notes.txt')
+    assert(last !== null, '找不到 notes.txt 行')
+    click(last)
+    await panel.flush()
+    eq(byAttr(panel.tree, 'data-cursor', 'true').length, 1, '点完这一行之后游标应在它上面')
+
+    const seq = panel.frameSeq
+    await refreshViaMenu(panel)
+
+    // notes.txt 消失：列表从 3 行变 2 行。游标必须在**同一帧**就落到仍然存在的行上。
+    // 「先把游标改回合法值、下一遍渲染再修正」的写法会先渲染出一个游标指向不存在行的帧，
+    // 那一帧里滚动 effect 读到的是已经被卸载的行（React 把它的 ref 传成 null），
+    // `null.scrollIntoView` 就是「面板渲染失败」的来源。
+    let sawRows = 0
+    for (const frame of panel.framesSince(seq)) {
+      if (byAttr(frame.tree, 'data-dgp-row', 'file').length === 0) continue
+      sawRows += 1
+      eq(byAttr(frame.tree, 'data-cursor', 'true').length, 1,
+        '第 ' + frame.seq + ' 帧：游标必须落在真实存在的行上')
+    }
+    assert(sawRows > 0, '刷新期间应有带变更行的提交')
+    assert(panel.fileRow('notes.txt') === null, 'notes.txt 行应已消失')
+  })
+})
+
+/* ================================================================== */
 /* 用例 10：刷新按钮提示带上次刷新时刻                                    */
 /* ================================================================== */
 

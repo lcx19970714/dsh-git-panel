@@ -510,7 +510,9 @@ export const zh = {
   'error.outsideRoot': '路径超出仓库范围',
   'error.openFailed': '无法打开链接（浏览器拦截或环境不支持）：{url}',
   'error.generic': '出错了：{message}',
-  'error.modelFailed': '模型调用失败：{message}'
+  'error.modelFailed': '模型调用失败：{message}',
+  /** 面板渲染期异常（插件的 bug）：标题一句话，异常原文由边界作为描述传进来。 */
+  'error.panelCrashed': '面板渲染失败'
 }
 
 export const en = {
@@ -1016,5 +1018,7 @@ export const en = {
   'error.outsideRoot': 'Path outside the repository',
   'error.openFailed': 'Could not open the link (blocked or unsupported): {url}',
   'error.generic': 'Something went wrong: {message}',
-  'error.modelFailed': 'The model call failed: {message}'
+  'error.modelFailed': 'The model call failed: {message}',
+  /** A render-time exception (a bug in the panel itself). */
+  'error.panelCrashed': 'The panel failed to render'
 }

@@ -52,6 +52,18 @@ function eq(actual, expected, message) {
 function createFakeReact() {
   let frame = null
 
+  /**
+   * 类组件基类：与真 react 一样把 props/state 放在实例上。
+   * 插件只有一个类组件（面板入口的渲染错误边界），单遍渲染不涉及 setState。
+   */
+  class Component {
+    constructor(props) {
+      this.props = props
+      this.state = {}
+    }
+  }
+  Component.prototype.isReactComponent = true
+
   function createElement(type, props, ...children) {
     const flat = children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false && child !== true)
     return { $$el: true, type, props: props ?? {}, children: flat }
@@ -102,11 +114,15 @@ function createFakeReact() {
     if (Array.isArray(node)) return node.map(render).filter((child) => child !== null)
     if (typeof node === 'string' || typeof node === 'number') return String(node)
     if (node.$$el !== true) return null
+    const props = { ...node.props, children: node.children }
+    if (typeof node.type === 'function' && node.type.prototype !== undefined && node.type.prototype.isReactComponent === true) {
+      return render(new node.type(props).render())
+    }
     if (typeof node.type === 'function') {
       const previous = frame
       frame = { slots: [], cursor: 0 }
       try {
-        const result = node.type({ ...node.props, children: node.children })
+        const result = node.type(props)
         return render(result)
       } finally {
         frame = previous
@@ -123,6 +139,7 @@ function createFakeReact() {
   return {
     createElement,
     Fragment,
+    Component,
     useState,
     useRef,
     useMemo,

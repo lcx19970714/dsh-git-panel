@@ -66,6 +66,13 @@ Git 变动与「当前会话所在项目」强绑定，所以只挂在 session �
 
 实现 = `ctx.sidebarRightTabs.register({ id, kind, title, guide })` + `ctx.slots.register({ name: 'sidebar.right.pane.tab', key: id })`，
 body 的 `key` 必须等于 tab 类型的 `id`（不是 `kind`）。
+
+宿主的 tab body 外面还套着一层 slot 错误边界，但它**没有 crash face**：崩溃时它渲染的是
+`<div data-slot-error="sidebar.right.pane.tab">`（没有文字、没有边框、高度 0），并且会把这次注册
+标记成 abdicated —— 页签重开也只能拿到同一个空 div，只有刷新页面（插件重新注册）才恢复。
+所以插件的 tab body 必须自己接住渲染期异常：`GitPanelSurface` 里有一层 `PanelRenderBoundary`，
+把异常原文显示成面板内的错误态（`data-dgp-crash`），堆栈写进渲染进程 console。
+它不是降级：不重试、不换路径，契约破坏依然是致命的，只是从「黑屏」变成「看得见的错误」。
 ## 1. 它解决什么
 
 DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git 仓库」和「项目目录」并不是一一对应的。
@@ -687,7 +694,7 @@ export function apply(ctx) {
 | 现象 | 检查 |
 |---|---|
 | 右侧栏「+」里没有「Git 变更」 | `dsh.profile.bundles` 是否含 `dsh-git-panel`；`node_modules/dsh-git-panel` 链接是否指向本目录；是否已重新组合 profile |
-| tab 能开但一片空白 | 浏览器 DevTools Console 有无报错；`exports["./client"]` 指向的文件是否存在 |
+| tab 能开但一片空白 | 浏览器 DevTools Console 有无报错；`exports["./client"]` 指向的文件是否存在。**如果整块全黑、什么都没有**：那是渲染期异常逃到宿主导致的（宿主把它换成空 div 并退役这次注册，所以关页签重开也还是黑）。现在 `PanelRenderBoundary` 会把它显示成「面板渲染失败 + 异常原文」，按那条原文修；`F5` 之后才会重新注册 |
 | 面板显示「当前目录不是 Git 仓库」 | 项目里没有任何工作树；用「储存库」标题行的 `+` 补一个外部仓库 |
 | 变更一直是旧的 | 关掉自动刷新时按 `⟳`；确认宿主 `status` 缓存 1.2s 内没有踩到 |
 | 文案显示成 key | 字典没注册上（`ctx.locale.register` 与 `locale: NS` 的 ns 必须都是 `dshGitPanel`） |

@@ -48,7 +48,7 @@
 | `src/components/FileTree.js` | `FileTree` | 「文件」模式的浏览树 |
 | `src/components/RepoList.js` | `RepoList` | 「储存库」列表：仓库行 + 改动规模（文件数 / +N −N）+ 分支按钮 + 分支菜单（切换 / 新建 / 拉取 / 隐藏 / 移除） |
 | `src/components/AddRootForm.js` | `AddRootForm` | 添加本机目录的内联表单（粘贴带引号的路径会自动去引号） |
-| `src/components/GitPanelSurface.js` | `GitPanelSurface` | 右侧栏 tab 的转发层（只注册 `sidebar.right.pane.tab` 一处） |
+| `src/components/GitPanelSurface.js` | `GitPanelSurface`、`PanelRenderBoundary` | 右侧栏 tab 的转发层（只注册 `sidebar.right.pane.tab` 一处）；`PanelRenderBoundary` 是面板渲染期异常的唯一出口——异常原样显示成错误态，不让它逃到宿主被换成空 div |
 | `src/components/Panel.js` | `Panel` | 根布局：工具条 + 分栏 + 键盘 + 拖拽 |
 | `src/components/CommitBox.js` | `CommitBox` | 提交框：说明输入 + 生成 + 提交 + 创建 PR |
 | `src/components/CreatePullForm.js` | `CreatePullForm` | 创建 PR 表单（目标分支 / 模型生成 / 同步阻断提示） |

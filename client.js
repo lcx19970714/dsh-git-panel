@@ -175,6 +175,14 @@ window.__ModuleLoader__.load({
       /** 组件片段。 */
       const Fragment = react.Fragment
 
+      /**
+       * 类组件基类。
+       *
+       * 全插件只有一处需要它：面板入口的错误边界（`components/GitPanelSurface.js`）。
+       * 渲染期异常只能由最近的 error boundary 接住，而 boundary 在 React 里只能是类组件。
+       */
+      const Component = react.Component
+
       /** 只导出实际用到的 hooks。 */
       const useState = react.useState
       const useEffect = react.useEffect
@@ -194,7 +202,7 @@ window.__ModuleLoader__.load({
         return pluginContext
       }
 
-      Object.assign(exports, { h, Fragment, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, setPluginContext, getPluginContext });
+      Object.assign(exports, { h, Fragment, Component, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, setPluginContext, getPluginContext });
 
     });
     __define("./styles.js", (exports, module) => {
@@ -2498,7 +2506,9 @@ window.__ModuleLoader__.load({
         'error.outsideRoot': '路径超出仓库范围',
         'error.openFailed': '无法打开链接（浏览器拦截或环境不支持）：{url}',
         'error.generic': '出错了：{message}',
-        'error.modelFailed': '模型调用失败：{message}'
+        'error.modelFailed': '模型调用失败：{message}',
+        /** 面板渲染期异常（插件的 bug）：标题一句话，异常原文由边界作为描述传进来。 */
+        'error.panelCrashed': '面板渲染失败'
       }
 
       const en = {
@@ -3004,7 +3014,9 @@ window.__ModuleLoader__.load({
         'error.outsideRoot': 'Path outside the repository',
         'error.openFailed': 'Could not open the link (blocked or unsupported): {url}',
         'error.generic': 'Something went wrong: {message}',
-        'error.modelFailed': 'The model call failed: {message}'
+        'error.modelFailed': 'The model call failed: {message}',
+        /** A render-time exception (a bug in the panel itself). */
+        'error.panelCrashed': 'The panel failed to render'
       }
 
       Object.assign(exports, { NS, zh, en });
@@ -3016,15 +3028,375 @@ window.__ModuleLoader__.load({
        *
        * 面板只挂在右侧栏 tab（`sidebar.right.pane.tab`）：Git 变动与「当前会话所在项目」强绑定，
        * 右侧栏是 session 作用域，框架直接给 `sessionId` 与 `t`，所以这里只做转发。
+       *
+       * 这一层同时是**面板渲染期异常的唯一出口**。原因不是「要兜底」，而是宿主那条链路会把
+       * 逃出去的异常变成一块查不出原因的黑屏：
+       *
+       *   · 宿主给每个 tab body 套的 slot 错误边界没有 crash face，崩溃时渲染的是
+       *     `<div data-slot-error="sidebar.right.pane.tab">` —— 没有文字、没有边框、高度 0；
+       *   · 它还会把这次注册标记成 abdicated（`reportEntryError(..., { abdicate: true })`），
+       *     之后 `entriesOfSlot` 里就没有这条注册了，页签重开也只能拿到同一个空 div，
+       *     只有刷新页面（插件重新注册）才恢复。
+       *
+       * 所以异常必须在本层被接住，并由面板自己**原样显示**：标题一句话 + 异常原文，
+       * 堆栈写进渲染进程 console。这里不做重试、不做降级、不换一条能跑的路径 ——
+       * 契约破坏依然是致命的，只是它的表现形式从「黑屏」变成「看得见的错误」。
+       * 异常在本层被接住后就不会再逃到宿主那一层，这次注册也不会被退役：
+       * 切走再切回来（重新挂载）面板就能继续用。
        */
-      const { h } = __m("./platform.js");
+      const { h, Component } = __m("./platform.js");
+      const { EmptyState } = __m("./components/States.js");
       const { Panel } = __m("./components/Panel.js");
 
-      function GitPanelSurface(props) {
-        return h(Panel, { sessionId: props.sessionId, t: props.t })
+      /** 异常原文（`throw 'oops'` 这类非 Error 也要能显示）。 */
+      function messageOf(error) {
+        return error instanceof Error ? error.message : String(error)
       }
 
-      Object.assign(exports, { GitPanelSurface });
+      /**
+       * 面板渲染期的错误边界（React 里只有类组件能做 boundary）。
+       *
+       * 只接渲染与提交阶段的异常；RPC 失败仍然是各处自己的错误条（`dgp-errorbar`），
+       * 它们不是 bug，不该走到这里。
+       */
+      class PanelRenderBoundary extends Component {
+        constructor(props) {
+          super(props)
+          this.state = { error: null }
+        }
+
+        static getDerivedStateFromError(error) {
+          return { error }
+        }
+
+        componentDidCatch(error) {
+          console.error('[dsh-git-panel] 面板渲染失败: '
+            + (error instanceof Error && typeof error.stack === 'string' ? error.stack : String(error)))
+        }
+
+        render() {
+          const { error } = this.state
+          if (error === null) return this.props.children
+          return h('div', { className: 'dgp-root', 'data-dgp-crash': 'render' },
+            h(EmptyState, {
+              icon: 'warning',
+              title: this.props.t('error.panelCrashed'),
+              description: messageOf(error)
+            }))
+        }
+      }
+
+      function GitPanelSurface(props) {
+        return h(PanelRenderBoundary, { t: props.t },
+          h(Panel, { sessionId: props.sessionId, t: props.t }))
+      }
+
+      Object.assign(exports, { PanelRenderBoundary, GitPanelSurface });
+
+    });
+    __define("./components/States.js", (exports, module) => {
+      /**
+       * src/components/States.js —— 空 / 加载 / 错误 / 骨架 / 行内提示
+       *
+       * 结构一律按 CONTRACT.md §5 的 class 词汇表输出，样式全部由 src/styles.js 提供。
+       * 文案全部走 `t('key')`；`t` 由宿主传入，缺了就是调用方的 bug（直接抛错，不静默降级）。
+       *
+       * props 契约（CONTRACT.md §3）：
+       *   EmptyState({ icon, title, description, actions })
+       *   LoadingState({ label, t })
+       *   ErrorState({ message, onRetry, t })
+       *   SkeletonRows({ rows })
+       *   InlineNote({ tone: 'info'|'warn'|'error', children })
+       */
+      const { h, Fragment } = __m("./platform.js");
+      const { Icon } = __m("./ui/Icon.js");
+
+      const TONES = ['info', 'warn', 'error']
+
+      /** 组件都要求宿主传入翻译函数：缺了就是调用方的 bug，直接报出来。 */
+      function requireTranslate(t, name) {
+        if (typeof t !== 'function') throw new Error(name + ' 缺少 t（翻译函数）')
+        return t
+      }
+
+      /** actions 允许单 node 或 node 数组；null / false 直接丢掉，逐个包 keyed Fragment。 */
+      function normalizeActions(actions) {
+        if (actions === null || actions === undefined || actions === false) return []
+        const list = Array.isArray(actions) ? actions : [actions]
+        const nodes = []
+        for (let i = 0; i < list.length; i += 1) {
+          const node = list[i]
+          if (node === null || node === undefined || node === false) continue
+          nodes.push(h(Fragment, { key: i }, node))
+        }
+        return nodes
+      }
+
+      function isBlank(value) {
+        return value === null || value === undefined || value === false || value === ''
+      }
+
+      /**
+       * 居中空态。
+       * `icon` 既可以传图标名（字符串，内部渲染 `Icon`），也可以传现成的 React node。
+       * 空态不取 `t`：标题与描述都由调用方翻译好再传进来。
+       */
+      function EmptyState(props) {
+        const { icon, title, description, actions } = props
+        const iconNode = isBlank(icon)
+          ? null
+          : h('div', { className: 'dgp-state-icon' },
+              typeof icon === 'string' ? h(Icon, { name: icon, size: 24 }) : icon)
+        const titleNode = isBlank(title) ? null : h('div', { className: 'dgp-state-title' }, title)
+        const descNode = isBlank(description) ? null : h('div', { className: 'dgp-state-desc' }, description)
+        const actionNodes = normalizeActions(actions)
+        const actionBox = actionNodes.length > 0
+          ? h('div', { className: 'dgp-state-actions' }, actionNodes)
+          : null
+        return h('div', { className: 'dgp-state' }, iconNode, titleNode, descNode, actionBox)
+      }
+
+      /** 加载态：小转圈 + 文案（居中同上）。 */
+      function LoadingState(props) {
+        const { label, t } = props
+        const T = requireTranslate(t, 'LoadingState')
+        const text = isBlank(label) ? T('status.loading') : label
+        return h('div', { className: 'dgp-state', role: 'status', 'aria-live': 'polite' },
+          h('span', { className: 'dgp-spinner', 'aria-hidden': 'true' }),
+          h('div', { className: 'dgp-state-desc' }, text))
+      }
+
+      /** 错误态：警告图标 + 原因 + 重试按钮。 */
+      function ErrorState(props) {
+        const { message, onRetry, t } = props
+        const T = requireTranslate(t, 'ErrorState')
+        const text = isBlank(message) ? '' : String(message)
+        const descNode = text === '' ? null : h('div', { className: 'dgp-state-desc' }, text)
+        const retry = h('button', {
+          type: 'button',
+          className: 'dgp-btn',
+          'data-variant': 'ghost',
+          'data-size': 'sm',
+          onClick: onRetry
+        }, h(Icon, { name: 'refresh', size: 14 }), T('action.retry'))
+        return h('div', { className: 'dgp-state', role: 'alert' },
+          h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 24 })),
+          descNode,
+          h('div', { className: 'dgp-state-actions' }, retry))
+      }
+
+      const SKELETON_WIDTHS = [92, 74, 86, 62, 88, 70, 95, 58, 80, 66]
+
+      /** 骨架屏：`rows` 行，宽度按固定节奏变化（内联 width，样式在 styles.js）。 */
+      function SkeletonRows(props) {
+        const { rows } = props
+        const count = (typeof rows === 'number' && Number.isFinite(rows))
+          ? Math.max(0, Math.min(40, Math.floor(rows)))
+          : 6
+        const items = []
+        for (let i = 0; i < count; i += 1) {
+          const width = SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]
+          items.push(h('div', { key: i, className: 'dgp-skel-row' },
+            h('span', { className: 'dgp-skel-dot' }),
+            h('span', { className: 'dgp-skel-bar', style: { width: width + '%' } })))
+        }
+        return h('div', { className: 'dgp-skeleton', 'aria-hidden': 'true' }, items)
+      }
+
+      /** 行内提示条（不占满面板；放进内容流里用）。 */
+      function InlineNote(props) {
+        const { tone, children } = props
+        const safeTone = TONES.indexOf(tone) === -1 ? 'info' : tone
+        return h('div', { className: 'dgp-inline-note', 'data-tone': safeTone }, children)
+      }
+
+      Object.assign(exports, { EmptyState, LoadingState, ErrorState, SkeletonRows, InlineNote });
+
+    });
+    __define("./ui/Icon.js", (exports, module) => {
+      /**
+       * src/ui/Icon.js —— 内联 SVG 图标集
+       *
+       * 统一按 24×24 网格绘制、2px 描边、圆角端点；渲染时通过 size 缩放到 12/14/16/24。
+       * 这样同一套几何在 12px 的树行和 24px 的空态里都不会忽胖忽瘦。
+       *
+       * 只保留真正用到的图标；未知名字直接抛错，不做"静默退回默认图标"。
+       */
+      const { h } = __m("./platform.js");
+
+      /**
+       * 线性图标：name -> path 数组（24×24，2px 描边）。
+       *
+       * 画法约定：
+       *  - 主体落在 3..21 的安全区，四周至少留 2px，避免小尺寸贴边；
+       *  - 圆点用「圆弧路径」而不是单独 circle，保持所有图标都只有 path，渲染路径统一；
+       *  - 视觉重心略偏上（y≈12），与 11/12px 的文字基线对齐更稳。
+       */
+      const ICONS = {
+        'chevron-right': ['m9 6 6 6-6 6'],
+        'chevron-down': ['m6 9 6 6 6-6'],
+        refresh: ['M20 12a8 8 0 1 1-2.34-5.66', 'M20 4v4h-4'],
+        'git-branch': [
+          'M6 3v12',
+          'M21 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
+          'M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
+          'M18 9a9 9 0 0 1-9 9'
+        ],
+        'git-merge': [
+          'M6 21V9a9 9 0 0 0 9 9',
+          'M9 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
+          'M21 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'
+        ],
+        file: [
+          'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z',
+          'M14 3v5h5'
+        ],
+        'file-diff': [
+          'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z',
+          'M14 3v5h5',
+          'M9 13h6',
+          'M9 17h4'
+        ],
+        folder: [
+          'M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'
+        ],
+        'folder-open': [
+          'M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2'
+        ],
+        check: ['M20 6 9 17l-5-5'],
+        'check-circle': [
+          'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+          'm8 12 3 3 5-6'
+        ],
+        close: ['M18 6 6 18', 'm6 6 12 12'],
+        plus: ['M12 5v14', 'M5 12h14'],
+        minus: ['M5 12h14'],
+        search: [
+          'M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0z',
+          'm20 20-4-4'
+        ],
+        warning: [
+          'M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0z',
+          'M12 9v4',
+          'M12 17h.01'
+        ],
+        info: [
+          'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+          'M12 16v-4',
+          'M12 8h.01'
+        ],
+        unified: [
+          'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
+          'M7 8h10',
+          'M7 12h10',
+          'M7 16h10'
+        ],
+        split: [
+          'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
+          'M12 3v18'
+        ],
+        wrap: [
+          'M3 6h18',
+          'M3 12h15a3 3 0 1 1 0 6h-4',
+          'm16 16-2 2 2 2',
+          'M3 18h7'
+        ],
+        trash: [
+          'M4 7h16',
+          'M9 7V4h6v3',
+          'M6 7l1 13h10l1-13'
+        ],
+        eye: [
+          'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z',
+          'M15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z'
+        ],
+        'eye-off': [
+          'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z',
+          'M15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z',
+          'M3 3l18 18'
+        ],
+        clock: [
+          'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+          'M12 7v5l3 2'
+        ],
+        filter: ['M3 5h18l-7 8.5V20l-4-2v-4.5z'],
+        sync: [
+          'M20 8a8 8 0 0 0-14.3 3.2',
+          'M4 16a8 8 0 0 0 14.3-3.2',
+          'M20 3v5h-5',
+          'M4 21v-5h5'
+        ],
+        external: [
+          'M14 4h6v6',
+          'M20 4 11 13',
+          'M18 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5'
+        ],
+        sparkle: [
+          'M12 3c.8 4.6 3.4 7.2 8 8-4.6.8-7.2 3.4-8 8-.8-4.6-3.4-7.2-8-8 4.6-.8 7.2-3.4 8-8z',
+          'M19 3c.3 1.4 1 2.1 2.4 2.4-1.4.3-2.1 1-2.4 2.4-.3-1.4-1-2.1-2.4-2.4 1.4-.3 2.1-1 2.4-2.4z'
+        ],
+        settings: [
+          'M4 8h8',
+          'M16 8h4',
+          'M14 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0z',
+          'M4 16h4',
+          'M12 16h8',
+          'M10 16a2 2 0 1 1-4 0 2 2 0 0 1 4 0z'
+        ]
+      }
+
+      /** 用实心圆点而不是描边的图标。 */
+      const FILLED_DOTS = {
+        more: [[5, 12], [12, 12], [19, 12]]
+      }
+
+      /**
+       * 渲染一个图标。
+       *
+       * 未知名字是编程错误：图标表就是契约，缺了就应该在开发时炸出来，
+       * 而不是静默返回 null 让界面少一块（那种「少了个图标」的问题极难发现）。
+       *
+       * @param {{name: string, size?: number, className?: string, title?: string}} props
+       */
+      function Icon(props) {
+        const { name, size = 16, className = '', title } = props
+        const filledDots = FILLED_DOTS[name]
+        const paths = ICONS[name]
+
+        if (filledDots === undefined && paths === undefined) {
+          throw new Error('[dsh-git-panel] 未知图标: ' + name)
+        }
+
+        const children = filledDots === undefined
+          ? paths.map((d, index) => h('path', { key: index, d }))
+          : filledDots.map(([cx, cy], index) => h('circle', { key: index, cx, cy, r: 2.2 }))
+
+        return h('svg', {
+          className: 'dgp-ico ' + className,
+          width: size,
+          height: size,
+          viewBox: '0 0 24 24',
+          fill: filledDots === undefined ? 'none' : 'currentColor',
+          stroke: filledDots === undefined ? 'currentColor' : undefined,
+          strokeWidth: filledDots === undefined ? 2 : undefined,
+          strokeLinecap: filledDots === undefined ? 'round' : undefined,
+          strokeLinejoin: filledDots === undefined ? 'round' : undefined,
+          'aria-hidden': title === undefined ? 'true' : undefined,
+          role: title === undefined ? undefined : 'img'
+        }, title === undefined ? null : h('title', null, title), children)
+      }
+
+      /** 状态字母徽标（纯文字，颜色由 styles.js 的 [data-status] 决定）。 */
+      function StatusLetter(props) {
+        const { status, className = '' } = props
+        return h('span', {
+          className: 'dgp-status-letter ' + className,
+          'data-status': status,
+          'aria-hidden': 'true'
+        }, status === '?' ? 'U' : status)
+      }
+
+      Object.assign(exports, { Icon, StatusLetter });
 
     });
     __define("./components/Panel.js", (exports, module) => {
@@ -3194,6 +3566,16 @@ window.__ModuleLoader__.load({
         const allGitRoots = useMemo(() => roots.filter((root) => root.isGit === true), [roots])
         const activeRoot = visibleRoots.find((root) => root.id === activeRootId) ?? visibleRoots[0] ?? null
         /**
+         * 「当前可操作的仓库」：变更模式里的写操作（暂存 / 提交 / 生成说明 / 建 PR）都只对它生效。
+         *
+         * `activeRoot` 是「储存库列表里当前高亮的那一行」，它可以是 null：所有仓库都被隐藏时
+         * `visibleRoots` 为空，那是一个真实状态（没有可操作的仓库），不是异常。渲染层与回调
+         * 一律只看 `activeRepo` 是否为 null，不再各自拼 `activeRoot === null || activeRoot.isGit === false`
+         * 这种两段判定 —— 那种写法漏掉一处就是一个渲染期 TypeError，而渲染期异常会被宿主
+         * 换成一块没有任何内容的黑屏（`GitPanelSurface.js`）。
+         */
+        const activeRepo = activeRoot !== null && activeRoot.isGit === true ? activeRoot : null
+        /**
          * 文件模式固定浏览项目根（roots[0]：项目仓库根，或项目根不是仓库时的浏览根）。
          * 仓库切换只发生在变更模式的「储存库」列表里，文件模式不再有根选择器。
          */
@@ -3249,8 +3631,9 @@ window.__ModuleLoader__.load({
           snapshot: false,
           keepPrevious: true,
           keepOnError: true,
-          // 带上发起请求时的仓库 id：切根后在途的旧结果不会挂到新仓库的卡片上
-          load: () => api.prLinked({ rootPath: activeRoot.path }).then((value) => ({ ...value, rootId: activeRoot.id })),
+          // 仓库是入参而不是闭包：没有活动仓库时这个请求没有意义，调用方必须先把仓库给它
+          // （带上的 rootId 让切根后在途的旧结果不会挂到新仓库的卡片上）
+          load: (root) => api.prLinked({ rootPath: root.path }).then((value) => ({ ...value, rootId: root.id })),
           t
         })
 
@@ -3536,7 +3919,7 @@ window.__ModuleLoader__.load({
 
         useEffect(() => {
           // 换根：先把上次看过的快照摆上来，再后台刷新 —— 切回来不再白屏
-          const rootPath = activeRoot === null || activeRoot.isGit !== true ? null : activeRoot.path
+          const rootPath = activeRepo === null ? null : activeRepo.path
           const cachedStatus = rootPath === null ? undefined : readSnapshot(statusKeyOf(rootPath))
           const cachedSelection = rootPath === null ? undefined : readSnapshot(selectionKeyOf(rootPath))
           statusSignatureRef.current = cachedStatus === undefined ? null : statusSignature(cachedStatus)
@@ -3548,7 +3931,7 @@ window.__ModuleLoader__.load({
           setCommitMessage('')
           setCommitNote(null)
           setPullForm(null)
-          if (activeRoot === null || activeRoot.isGit === false) {
+          if (activeRepo === null) {
             setStatusLoading(false)
             return undefined
           }
@@ -3558,7 +3941,7 @@ window.__ModuleLoader__.load({
             statusAbortRef.current?.abort()
             statusAbortRef.current = null
           }
-        }, [activeRootId, activeRoot === null ? null : activeRoot.isGit, refreshActiveStatus])
+        }, [activeRootId, activeRepo === null, refreshActiveStatus])
 
         /* ---------------------------- 选中项快照 ---------------------------- */
         // 切走再切回来时要回到「上次看的那个文件」，否则每次都要重新点一遍
@@ -3901,13 +4284,13 @@ window.__ModuleLoader__.load({
          * 所以文件会从下面的未暂存移到上面的已暂存（或反过来）。
          */
         const stageEntry = useCallback(async (relPath, action) => {
-          if (activeRoot === null || activeRoot.isGit === false) return
+          if (activeRepo === null) return
           if (stagePendingRef.current !== null) return
           stagePendingRef.current = relPath
           setStagePending(relPath)
           setStatusError(null)
           try {
-            await api.stageFile({ rootPath: activeRoot.path, path: relPath, action })
+            await api.stageFile({ rootPath: activeRepo.path, path: relPath, action })
             await refreshRepository()
             setDiffNonce((previous) => previous + 1)
           } catch (error) {
@@ -3918,17 +4301,17 @@ window.__ModuleLoader__.load({
             stagePendingRef.current = null
             setStagePending(null)
           }
-        }, [activeRoot, refreshRepository])
+        }, [activeRepo, refreshRepository])
 
         /** 分组头的批量按钮：一次暂存或取消暂存整组。 */
         const stageGroup = useCallback(async (scope) => {
-          if (activeRoot === null || activeRoot.isGit === false) return
+          if (activeRepo === null) return
           if (stagePendingRef.current !== null) return
           stagePendingRef.current = scope
           setStagePending(scope)
           setStatusError(null)
           try {
-            await api.stageGroup({ rootPath: activeRoot.path, scope })
+            await api.stageGroup({ rootPath: activeRepo.path, scope })
             await refreshRepository()
             setDiffNonce((previous) => previous + 1)
           } catch (error) {
@@ -3939,7 +4322,7 @@ window.__ModuleLoader__.load({
             stagePendingRef.current = null
             setStagePending(null)
           }
-        }, [activeRoot, refreshRepository])
+        }, [activeRepo, refreshRepository])
 
         /**
          * 推送当前分支（`branch/push`）。成功就刷新仓库状态 —— 提示条由 `status.sync` 驱动，
@@ -3988,13 +4371,13 @@ window.__ModuleLoader__.load({
         }, [resolveProject, refreshRepository])
 
         const commitStaged = useCallback(async () => {
-          if (activeRoot === null || activeRoot.isGit === false) return
+          if (activeRepo === null) return
           const message = commitMessage.trim()
           if (message === '' || commitBusy) return
           setCommitBusy(true)
           setCommitNote(null)
           try {
-            const result = await api.commitChanges({ rootPath: activeRoot.path, message })
+            const result = await api.commitChanges({ rootPath: activeRepo.path, message })
             setCommitMessage('')
             const subject = result.subject.trim()
             setCommitNote({
@@ -4013,7 +4396,7 @@ window.__ModuleLoader__.load({
           } finally {
             setCommitBusy(false)
           }
-        }, [activeRoot, commitMessage, commitBusy, refreshRepository, postCommitPush, pushBranchNow])
+        }, [activeRepo, commitMessage, commitBusy, refreshRepository, postCommitPush, pushBranchNow])
 
         /** 改输入就清掉上一次的结果提示：用户已经在写新的说明了。 */
         const changeCommitMessage = useCallback((text) => {
@@ -4035,18 +4418,18 @@ window.__ModuleLoader__.load({
 
         /** 生成提交说明：有暂存看暂存，否则看未暂存，由宿主决定。 */
         const generateMessage = useCallback(async () => {
-          if (activeRoot === null || activeRoot.isGit === false || commitGenerating) return
+          if (activeRepo === null || commitGenerating) return
           setCommitGenerating(true)
           setCommitNote(null)
           try {
-            const result = await api.commitMessage({ rootPath: activeRoot.path })
+            const result = await api.commitMessage({ rootPath: activeRepo.path })
             setCommitMessage(result.message)
           } catch (error) {
             setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current), code: error?.code ?? null })
           } finally {
             setCommitGenerating(false)
           }
-        }, [activeRoot, commitGenerating])
+        }, [activeRepo, commitGenerating])
 
         /** 设置里存的是 {provider, model}，下拉框用的是扁平 ref。 */
         const refOfPair = (pair) => (pair === null || pair === undefined ? null : pair.provider + '/' + pair.model)
@@ -4057,10 +4440,10 @@ window.__ModuleLoader__.load({
 
         /** 打开创建 PR 表单：先向宿主要仓库/账号/分支信息。 */
         const openCreatePull = useCallback(async () => {
-          if (activeRoot === null || activeRoot.isGit !== true) return
+          if (activeRepo === null) return
           setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', generating: false, creating: false, created: null, notice: null })
           try {
-            const prepared = await api.prPrepare({ rootPath: activeRoot.path })
+            const prepared = await api.prPrepare({ rootPath: activeRepo.path })
             const remembered = readPrefs().pullTargets?.[pullTargetKey(prepared.repo)] ?? ''
             const base = prepared.bases.includes(remembered) ? remembered : (prepared.bases[0] ?? '')
             setPullForm({
@@ -4082,7 +4465,7 @@ window.__ModuleLoader__.load({
           } catch (error) {
             setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', generating: false, creating: false, created: null, notice: null })
           }
-        }, [activeRoot])
+        }, [activeRepo])
 
         const closeCreatePull = useCallback(() => setPullForm(null), [])
 
@@ -4095,13 +4478,13 @@ window.__ModuleLoader__.load({
 
         /** 用模型生成标题与描述（失败就地显示原因）。 */
         const generatePullText = useCallback(async () => {
-          if (pullForm === null || activeRoot === null) return
+          if (pullForm === null || activeRepo === null) return
           // 没有目标分支就不发请求：`{ base: undefined }` 序列化后字段会整个消失，
           // 宿主只会回一句「缺少参数 base」，看起来像生成功能坏了，其实模型根本没被调用。
           if (pullForm.base === '') return
           setPullForm({ ...pullForm, generating: true, error: null, notice: null })
           try {
-            const generated = await api.prGenerate({ rootPath: activeRoot.path, base: pullForm.base })
+            const generated = await api.prGenerate({ rootPath: activeRepo.path, base: pullForm.base })
             setPullForm((previous) => (previous === null ? previous : {
               ...previous,
               generating: false,
@@ -4114,18 +4497,18 @@ window.__ModuleLoader__.load({
               ...previous, generating: false, error: api.describeError(error, tRef.current)
             }))
           }
-        }, [pullForm, activeRoot])
+        }, [pullForm, activeRepo])
 
         /** 创建 PR：成功后记住目标分支，供下次默认。 */
         const createPull = useCallback(async () => {
-          if (pullForm === null || activeRoot === null) return
+          if (pullForm === null || activeRepo === null) return
           // 同 generatePullText：没有目标分支（或还没准备出 repo）时不发这个注定被拒的请求
           if (pullForm.base === '') return
           if (pullForm.repo === null) return
           setPullForm({ ...pullForm, creating: true, error: null, notice: null })
           try {
             const created = await api.prCreate({
-              rootPath: activeRoot.path,
+              rootPath: activeRepo.path,
               accountId: pullForm.accountId,
               fullName: pullForm.repo.fullName,
               base: pullForm.base,
@@ -4133,7 +4516,7 @@ window.__ModuleLoader__.load({
               body: pullForm.body
             })
             writePref('pullTargets', { ...(readPrefs().pullTargets ?? {}), [pullTargetKey(pullForm.repo)]: pullForm.base })
-            await loadLinkedPull()
+            await loadLinkedPull(activeRepo)
             await refreshRepository()
             setPullForm((previous) => (previous === null ? previous : { ...previous, creating: false, created }))
           } catch (error) {
@@ -4141,7 +4524,7 @@ window.__ModuleLoader__.load({
               ...previous, creating: false, error: api.describeError(error, tRef.current)
             }))
           }
-        }, [pullForm, activeRoot, refreshRepository])
+        }, [pullForm, activeRepo, refreshRepository, loadLinkedPull])
 
         /** 读账号列表（token 不会下发到客户端，只有 id/login/label）。 */
         const loadAccounts = useCallback(async () => {
@@ -4229,10 +4612,10 @@ window.__ModuleLoader__.load({
          */
         useEffect(() => {
           if (mode !== MODE.changes) return
-          if (activeRoot !== null && activeRoot.isGit === true) return
+          if (activeRepo !== null) return
           const firstRepo = gitRoots[0]
           if (firstRepo !== undefined) setActiveRootId(firstRepo.id)
-        }, [mode, activeRoot, gitRoots])
+        }, [mode, activeRepo, gitRoots])
 
         const toggleGroup = useCallback((groupKey) => {
           setCollapsedGroups((previous) => {
@@ -4459,9 +4842,9 @@ window.__ModuleLoader__.load({
 
         // 切到变更页签或分支变化时刷新；不轮询（面板没有后台任务）
         useEffect(() => {
-          if (mode !== MODE.changes || activeRoot === null || activeRoot.isGit !== true) return
-          loadLinkedPull()
-        }, [mode, status === null ? '' : status.branch, loadLinkedPull, activeRoot])
+          if (mode !== MODE.changes || activeRepo === null) return
+          loadLinkedPull(activeRepo)
+        }, [mode, status === null ? '' : status.branch, loadLinkedPull, activeRepo])
 
         /** 从卡片打开 PR：切到远端页签并载入详情，同时记已读。 */
         const openLinkedPull = useCallback(async () => {
@@ -5293,7 +5676,8 @@ window.__ModuleLoader__.load({
                       - (readPrefs().pullSeen?.[linkedPull.data.accountId + '#' + linkedPull.data.number] ?? 0))
                     : 0,
                   onOpen: openLinkedPull,
-                  onRefresh: loadLinkedPull,
+                  // 卡片只在「发起请求的那个仓库就是当前仓库」时渲染，所以这里一定有可操作的仓库
+                  onRefresh: () => loadLinkedPull(activeRepo),
                   t
                 })
                 : null,
@@ -5315,21 +5699,25 @@ window.__ModuleLoader__.load({
                   error: remoteAction.error
                 })
                 : null,
-              h(CommitBox, {
-                message: commitMessage,
-                stagedCount,
-                changeCount,
-                busy: commitBusy,
-                generating: commitGenerating,
-                elapsedMs: generateElapsed,
-                note: commitNote,
-                onChange: changeCommitMessage,
-                onCommit: commitStaged,
-                onGenerate: generateMessage,
-                onOpenSettings: openSettings,
-                onCreatePull: activeRoot.isGit === true ? openCreatePull : undefined,
-                t
-              }),
+              // 提交框只在「有可操作的仓库」时存在：没有仓库时它既没有提交对象，
+              // 也没有「创建 PR」可言 —— 那不是禁用状态，是这个控件本来就不该出现。
+              activeRepo === null
+                ? null
+                : h(CommitBox, {
+                  message: commitMessage,
+                  stagedCount,
+                  changeCount,
+                  busy: commitBusy,
+                  generating: commitGenerating,
+                  elapsedMs: generateElapsed,
+                  note: commitNote,
+                  onChange: changeCommitMessage,
+                  onCommit: commitStaged,
+                  onGenerate: generateMessage,
+                  onOpenSettings: openSettings,
+                  onCreatePull: openCreatePull,
+                  t
+                }),
               h(ChangesList, {
                 status,
                 loading: statusLoading && status === null,
@@ -5433,8 +5821,7 @@ window.__ModuleLoader__.load({
             rightPane = h('div', { className: 'dgp-viewer' },
               h(EmptyState, {
                 icon: 'file-diff',
-                title: t('viewer.placeholderDiff'),
-                description: activeRoot === null ? t('status.noRootsHint') : undefined
+                title: t('viewer.placeholderDiff')
               }))
           } else {
             rightPane = h(DiffView, {
@@ -5453,8 +5840,7 @@ window.__ModuleLoader__.load({
           rightPane = h('div', { className: 'dgp-viewer' },
             h(EmptyState, {
               icon: 'file',
-              title: t('viewer.placeholder'),
-              description: activeRoot === null ? t('status.noRootsHint') : undefined
+              title: t('viewer.placeholder')
             }))
         } else {
           const path = fileSelection.path
@@ -5748,192 +6134,6 @@ window.__ModuleLoader__.load({
       }
 
       Object.assign(exports, { Panel });
-
-    });
-    __define("./ui/Icon.js", (exports, module) => {
-      /**
-       * src/ui/Icon.js —— 内联 SVG 图标集
-       *
-       * 统一按 24×24 网格绘制、2px 描边、圆角端点；渲染时通过 size 缩放到 12/14/16/24。
-       * 这样同一套几何在 12px 的树行和 24px 的空态里都不会忽胖忽瘦。
-       *
-       * 只保留真正用到的图标；未知名字直接抛错，不做"静默退回默认图标"。
-       */
-      const { h } = __m("./platform.js");
-
-      /**
-       * 线性图标：name -> path 数组（24×24，2px 描边）。
-       *
-       * 画法约定：
-       *  - 主体落在 3..21 的安全区，四周至少留 2px，避免小尺寸贴边；
-       *  - 圆点用「圆弧路径」而不是单独 circle，保持所有图标都只有 path，渲染路径统一；
-       *  - 视觉重心略偏上（y≈12），与 11/12px 的文字基线对齐更稳。
-       */
-      const ICONS = {
-        'chevron-right': ['m9 6 6 6-6 6'],
-        'chevron-down': ['m6 9 6 6 6-6'],
-        refresh: ['M20 12a8 8 0 1 1-2.34-5.66', 'M20 4v4h-4'],
-        'git-branch': [
-          'M6 3v12',
-          'M21 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
-          'M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
-          'M18 9a9 9 0 0 1-9 9'
-        ],
-        'git-merge': [
-          'M6 21V9a9 9 0 0 0 9 9',
-          'M9 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
-          'M21 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'
-        ],
-        file: [
-          'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z',
-          'M14 3v5h5'
-        ],
-        'file-diff': [
-          'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z',
-          'M14 3v5h5',
-          'M9 13h6',
-          'M9 17h4'
-        ],
-        folder: [
-          'M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'
-        ],
-        'folder-open': [
-          'M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2'
-        ],
-        check: ['M20 6 9 17l-5-5'],
-        'check-circle': [
-          'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
-          'm8 12 3 3 5-6'
-        ],
-        close: ['M18 6 6 18', 'm6 6 12 12'],
-        plus: ['M12 5v14', 'M5 12h14'],
-        minus: ['M5 12h14'],
-        search: [
-          'M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0z',
-          'm20 20-4-4'
-        ],
-        warning: [
-          'M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0z',
-          'M12 9v4',
-          'M12 17h.01'
-        ],
-        info: [
-          'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
-          'M12 16v-4',
-          'M12 8h.01'
-        ],
-        unified: [
-          'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
-          'M7 8h10',
-          'M7 12h10',
-          'M7 16h10'
-        ],
-        split: [
-          'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
-          'M12 3v18'
-        ],
-        wrap: [
-          'M3 6h18',
-          'M3 12h15a3 3 0 1 1 0 6h-4',
-          'm16 16-2 2 2 2',
-          'M3 18h7'
-        ],
-        trash: [
-          'M4 7h16',
-          'M9 7V4h6v3',
-          'M6 7l1 13h10l1-13'
-        ],
-        eye: [
-          'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z',
-          'M15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z'
-        ],
-        'eye-off': [
-          'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z',
-          'M15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z',
-          'M3 3l18 18'
-        ],
-        clock: [
-          'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
-          'M12 7v5l3 2'
-        ],
-        filter: ['M3 5h18l-7 8.5V20l-4-2v-4.5z'],
-        sync: [
-          'M20 8a8 8 0 0 0-14.3 3.2',
-          'M4 16a8 8 0 0 0 14.3-3.2',
-          'M20 3v5h-5',
-          'M4 21v-5h5'
-        ],
-        external: [
-          'M14 4h6v6',
-          'M20 4 11 13',
-          'M18 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5'
-        ],
-        sparkle: [
-          'M12 3c.8 4.6 3.4 7.2 8 8-4.6.8-7.2 3.4-8 8-.8-4.6-3.4-7.2-8-8 4.6-.8 7.2-3.4 8-8z',
-          'M19 3c.3 1.4 1 2.1 2.4 2.4-1.4.3-2.1 1-2.4 2.4-.3-1.4-1-2.1-2.4-2.4 1.4-.3 2.1-1 2.4-2.4z'
-        ],
-        settings: [
-          'M4 8h8',
-          'M16 8h4',
-          'M14 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0z',
-          'M4 16h4',
-          'M12 16h8',
-          'M10 16a2 2 0 1 1-4 0 2 2 0 0 1 4 0z'
-        ]
-      }
-
-      /** 用实心圆点而不是描边的图标。 */
-      const FILLED_DOTS = {
-        more: [[5, 12], [12, 12], [19, 12]]
-      }
-
-      /**
-       * 渲染一个图标。
-       *
-       * 未知名字是编程错误：图标表就是契约，缺了就应该在开发时炸出来，
-       * 而不是静默返回 null 让界面少一块（那种「少了个图标」的问题极难发现）。
-       *
-       * @param {{name: string, size?: number, className?: string, title?: string}} props
-       */
-      function Icon(props) {
-        const { name, size = 16, className = '', title } = props
-        const filledDots = FILLED_DOTS[name]
-        const paths = ICONS[name]
-
-        if (filledDots === undefined && paths === undefined) {
-          throw new Error('[dsh-git-panel] 未知图标: ' + name)
-        }
-
-        const children = filledDots === undefined
-          ? paths.map((d, index) => h('path', { key: index, d }))
-          : filledDots.map(([cx, cy], index) => h('circle', { key: index, cx, cy, r: 2.2 }))
-
-        return h('svg', {
-          className: 'dgp-ico ' + className,
-          width: size,
-          height: size,
-          viewBox: '0 0 24 24',
-          fill: filledDots === undefined ? 'none' : 'currentColor',
-          stroke: filledDots === undefined ? 'currentColor' : undefined,
-          strokeWidth: filledDots === undefined ? 2 : undefined,
-          strokeLinecap: filledDots === undefined ? 'round' : undefined,
-          strokeLinejoin: filledDots === undefined ? 'round' : undefined,
-          'aria-hidden': title === undefined ? 'true' : undefined,
-          role: title === undefined ? undefined : 'img'
-        }, title === undefined ? null : h('title', null, title), children)
-      }
-
-      /** 状态字母徽标（纯文字，颜色由 styles.js 的 [data-status] 决定）。 */
-      function StatusLetter(props) {
-        const { status, className = '' } = props
-        return h('span', {
-          className: 'dgp-status-letter ' + className,
-          'data-status': status,
-          'aria-hidden': 'true'
-        }, status === '?' ? 'U' : status)
-      }
-
-      Object.assign(exports, { Icon, StatusLetter });
 
     });
     __define("./ui/Menu.js", (exports, module) => {
@@ -8609,125 +8809,6 @@ window.__ModuleLoader__.load({
       }
 
       Object.assign(exports, { GROUP_ORDER, groupsOfFile, groupChanges, rowActionOf, groupActionOf, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, buildListRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection, sideForEntry, statusSignature });
-
-    });
-    __define("./components/States.js", (exports, module) => {
-      /**
-       * src/components/States.js —— 空 / 加载 / 错误 / 骨架 / 行内提示
-       *
-       * 结构一律按 CONTRACT.md §5 的 class 词汇表输出，样式全部由 src/styles.js 提供。
-       * 文案全部走 `t('key')`；`t` 由宿主传入，缺了就是调用方的 bug（直接抛错，不静默降级）。
-       *
-       * props 契约（CONTRACT.md §3）：
-       *   EmptyState({ icon, title, description, actions })
-       *   LoadingState({ label, t })
-       *   ErrorState({ message, onRetry, t })
-       *   SkeletonRows({ rows })
-       *   InlineNote({ tone: 'info'|'warn'|'error', children })
-       */
-      const { h, Fragment } = __m("./platform.js");
-      const { Icon } = __m("./ui/Icon.js");
-
-      const TONES = ['info', 'warn', 'error']
-
-      /** 组件都要求宿主传入翻译函数：缺了就是调用方的 bug，直接报出来。 */
-      function requireTranslate(t, name) {
-        if (typeof t !== 'function') throw new Error(name + ' 缺少 t（翻译函数）')
-        return t
-      }
-
-      /** actions 允许单 node 或 node 数组；null / false 直接丢掉，逐个包 keyed Fragment。 */
-      function normalizeActions(actions) {
-        if (actions === null || actions === undefined || actions === false) return []
-        const list = Array.isArray(actions) ? actions : [actions]
-        const nodes = []
-        for (let i = 0; i < list.length; i += 1) {
-          const node = list[i]
-          if (node === null || node === undefined || node === false) continue
-          nodes.push(h(Fragment, { key: i }, node))
-        }
-        return nodes
-      }
-
-      function isBlank(value) {
-        return value === null || value === undefined || value === false || value === ''
-      }
-
-      /**
-       * 居中空态。
-       * `icon` 既可以传图标名（字符串，内部渲染 `Icon`），也可以传现成的 React node。
-       * 空态不取 `t`：标题与描述都由调用方翻译好再传进来。
-       */
-      function EmptyState(props) {
-        const { icon, title, description, actions } = props
-        const iconNode = isBlank(icon)
-          ? null
-          : h('div', { className: 'dgp-state-icon' },
-              typeof icon === 'string' ? h(Icon, { name: icon, size: 24 }) : icon)
-        const titleNode = isBlank(title) ? null : h('div', { className: 'dgp-state-title' }, title)
-        const descNode = isBlank(description) ? null : h('div', { className: 'dgp-state-desc' }, description)
-        const actionNodes = normalizeActions(actions)
-        const actionBox = actionNodes.length > 0
-          ? h('div', { className: 'dgp-state-actions' }, actionNodes)
-          : null
-        return h('div', { className: 'dgp-state' }, iconNode, titleNode, descNode, actionBox)
-      }
-
-      /** 加载态：小转圈 + 文案（居中同上）。 */
-      function LoadingState(props) {
-        const { label, t } = props
-        const T = requireTranslate(t, 'LoadingState')
-        const text = isBlank(label) ? T('status.loading') : label
-        return h('div', { className: 'dgp-state', role: 'status', 'aria-live': 'polite' },
-          h('span', { className: 'dgp-spinner', 'aria-hidden': 'true' }),
-          h('div', { className: 'dgp-state-desc' }, text))
-      }
-
-      /** 错误态：警告图标 + 原因 + 重试按钮。 */
-      function ErrorState(props) {
-        const { message, onRetry, t } = props
-        const T = requireTranslate(t, 'ErrorState')
-        const text = isBlank(message) ? '' : String(message)
-        const descNode = text === '' ? null : h('div', { className: 'dgp-state-desc' }, text)
-        const retry = h('button', {
-          type: 'button',
-          className: 'dgp-btn',
-          'data-variant': 'ghost',
-          'data-size': 'sm',
-          onClick: onRetry
-        }, h(Icon, { name: 'refresh', size: 14 }), T('action.retry'))
-        return h('div', { className: 'dgp-state', role: 'alert' },
-          h('div', { className: 'dgp-state-icon' }, h(Icon, { name: 'warning', size: 24 })),
-          descNode,
-          h('div', { className: 'dgp-state-actions' }, retry))
-      }
-
-      const SKELETON_WIDTHS = [92, 74, 86, 62, 88, 70, 95, 58, 80, 66]
-
-      /** 骨架屏：`rows` 行，宽度按固定节奏变化（内联 width，样式在 styles.js）。 */
-      function SkeletonRows(props) {
-        const { rows } = props
-        const count = (typeof rows === 'number' && Number.isFinite(rows))
-          ? Math.max(0, Math.min(40, Math.floor(rows)))
-          : 6
-        const items = []
-        for (let i = 0; i < count; i += 1) {
-          const width = SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]
-          items.push(h('div', { key: i, className: 'dgp-skel-row' },
-            h('span', { className: 'dgp-skel-dot' }),
-            h('span', { className: 'dgp-skel-bar', style: { width: width + '%' } })))
-        }
-        return h('div', { className: 'dgp-skeleton', 'aria-hidden': 'true' }, items)
-      }
-
-      /** 行内提示条（不占满面板；放进内容流里用）。 */
-      function InlineNote(props) {
-        const { tone, children } = props
-        const safeTone = TONES.indexOf(tone) === -1 ? 'info' : tone
-        return h('div', { className: 'dgp-inline-note', 'data-tone': safeTone }, children)
-      }
-
-      Object.assign(exports, { EmptyState, LoadingState, ErrorState, SkeletonRows, InlineNote });
 
     });
     __define("./components/FileTree.js", (exports, module) => {

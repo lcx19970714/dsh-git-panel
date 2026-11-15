@@ -12,6 +12,14 @@ export const h = react.createElement
 /** 组件片段。 */
 export const Fragment = react.Fragment
 
+/**
+ * 类组件基类。
+ *
+ * 全插件只有一处需要它：面板入口的错误边界（`components/GitPanelSurface.js`）。
+ * 渲染期异常只能由最近的 error boundary 接住，而 boundary 在 React 里只能是类组件。
+ */
+export const Component = react.Component
+
 /** 只导出实际用到的 hooks。 */
 export const useState = react.useState
 export const useEffect = react.useEffect

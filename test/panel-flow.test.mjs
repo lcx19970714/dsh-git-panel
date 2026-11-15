@@ -102,6 +102,21 @@ function createReconciler() {
 
   /* ---------------------------- 元素 ---------------------------- */
 
+  /**
+   * 类组件基类（真 react 的 Component 最小替身）：props 由渲染器写回，state 由实例自己持有。
+   *
+   * 这个迷你 reconciler 只支持「类组件渲染 + props 更新」，不实现 error boundary 语义：
+   * 插件里唯一的类组件是面板入口的渲染错误边界，正常路径下它就是把 children 原样渲染；
+   * 崩溃后的显示行为由 components.test.mjs 直接实例化验证。
+   */
+  class Component {
+    constructor(props) {
+      this.props = props
+      this.state = {}
+    }
+  }
+  Component.prototype.isReactComponent = true
+
   function pushChild(out, value) {
     if (value === null || value === undefined || value === false || value === true) return
     if (Array.isArray(value)) {
@@ -323,6 +338,13 @@ function createReconciler() {
     if (children.length === 1) props.children = children[0]
     else if (children.length > 1) props.children = children.slice()
 
+    if (node.type.prototype !== undefined && node.type.prototype.isReactComponent === true) {
+      // 类组件：实例按位置复用、props 每次更新（与 react 一致）
+      if (inst.instance === undefined) inst.instance = new node.type(props)
+      else inst.instance.props = props
+      return renderNode(inst.instance.render(), position + '!')
+    }
+
     const savedInst = activeInst
     const savedCursor = cursor
     activeInst = inst
@@ -477,6 +499,7 @@ function createReconciler() {
   return {
     createElement,
     Fragment,
+    Component,
     useState,
     useRef,
     useMemo,
@@ -4571,6 +4594,31 @@ test('用例 1v2：可以在储存库里隐藏仓库，再展开「已隐藏」�
     eq(unhiddenCalls[0], { projectRoot: PROJECT, path: ROOT_OTHER.path }, '取消隐藏载荷')
     eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-repolist-hidden') !== undefined).length, 0,
       '没有隐藏仓库后开关消失')
+  })
+})
+
+test('用例 1v4：所有仓库都被隐藏时给空态，不再在渲染期解引用 null', async () => {
+  // 全隐藏 = 没有可操作的仓库（activeRoot 为 null）。渲染层曾经直接读 `activeRoot.isGit`，
+  // 抛出的异常逃到宿主后被换成一块空 div，并且会把这次注册退役 ——
+  // 用户看到的正是「变更页签全黑、什么都没有，重开也还是黑」。
+  const allHidden = [{ ...ROOT, hidden: true }]
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk(allHidden, PROJECT)
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    eq(panel.class('dgp-root').length, 1, '面板应正常渲染（不是空树、不是错误边界）')
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-crash') !== undefined).length, 0,
+      '不应进入渲染错误态')
+    assert(panel.text().includes('储存库'), '储存库标题还在：取消隐藏的入口不能在崩掉的那条路上')
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-repo') !== undefined).length, 0,
+      '已隐藏的仓库默认不列出来')
+    assert(panel.one((node) => isHost(node) && attr(node, 'data-dgp-repolist-hidden') !== undefined) !== null,
+      '「显示已隐藏」开关必须在，否则用户没有回到有仓库状态的路')
+    eq(panel.all((node) => isHost(node) && attr(node, 'data-dgp-commit') === 'input').length, 0,
+      '没有可操作的仓库时提交框不该出现')
   })
 })
 

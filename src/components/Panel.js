@@ -164,6 +164,16 @@ export function Panel(props) {
   const allGitRoots = useMemo(() => roots.filter((root) => root.isGit === true), [roots])
   const activeRoot = visibleRoots.find((root) => root.id === activeRootId) ?? visibleRoots[0] ?? null
   /**
+   * 「当前可操作的仓库」：变更模式里的写操作（暂存 / 提交 / 生成说明 / 建 PR）都只对它生效。
+   *
+   * `activeRoot` 是「储存库列表里当前高亮的那一行」，它可以是 null：所有仓库都被隐藏时
+   * `visibleRoots` 为空，那是一个真实状态（没有可操作的仓库），不是异常。渲染层与回调
+   * 一律只看 `activeRepo` 是否为 null，不再各自拼 `activeRoot === null || activeRoot.isGit === false`
+   * 这种两段判定 —— 那种写法漏掉一处就是一个渲染期 TypeError，而渲染期异常会被宿主
+   * 换成一块没有任何内容的黑屏（`GitPanelSurface.js`）。
+   */
+  const activeRepo = activeRoot !== null && activeRoot.isGit === true ? activeRoot : null
+  /**
    * 文件模式固定浏览项目根（roots[0]：项目仓库根，或项目根不是仓库时的浏览根）。
    * 仓库切换只发生在变更模式的「储存库」列表里，文件模式不再有根选择器。
    */
@@ -219,8 +229,9 @@ export function Panel(props) {
     snapshot: false,
     keepPrevious: true,
     keepOnError: true,
-    // 带上发起请求时的仓库 id：切根后在途的旧结果不会挂到新仓库的卡片上
-    load: () => api.prLinked({ rootPath: activeRoot.path }).then((value) => ({ ...value, rootId: activeRoot.id })),
+    // 仓库是入参而不是闭包：没有活动仓库时这个请求没有意义，调用方必须先把仓库给它
+    // （带上的 rootId 让切根后在途的旧结果不会挂到新仓库的卡片上）
+    load: (root) => api.prLinked({ rootPath: root.path }).then((value) => ({ ...value, rootId: root.id })),
     t
   })
 
@@ -506,7 +517,7 @@ export function Panel(props) {
 
   useEffect(() => {
     // 换根：先把上次看过的快照摆上来，再后台刷新 —— 切回来不再白屏
-    const rootPath = activeRoot === null || activeRoot.isGit !== true ? null : activeRoot.path
+    const rootPath = activeRepo === null ? null : activeRepo.path
     const cachedStatus = rootPath === null ? undefined : readSnapshot(statusKeyOf(rootPath))
     const cachedSelection = rootPath === null ? undefined : readSnapshot(selectionKeyOf(rootPath))
     statusSignatureRef.current = cachedStatus === undefined ? null : statusSignature(cachedStatus)
@@ -518,7 +529,7 @@ export function Panel(props) {
     setCommitMessage('')
     setCommitNote(null)
     setPullForm(null)
-    if (activeRoot === null || activeRoot.isGit === false) {
+    if (activeRepo === null) {
       setStatusLoading(false)
       return undefined
     }
@@ -528,7 +539,7 @@ export function Panel(props) {
       statusAbortRef.current?.abort()
       statusAbortRef.current = null
     }
-  }, [activeRootId, activeRoot === null ? null : activeRoot.isGit, refreshActiveStatus])
+  }, [activeRootId, activeRepo === null, refreshActiveStatus])
 
   /* ---------------------------- 选中项快照 ---------------------------- */
   // 切走再切回来时要回到「上次看的那个文件」，否则每次都要重新点一遍
@@ -871,13 +882,13 @@ export function Panel(props) {
    * 所以文件会从下面的未暂存移到上面的已暂存（或反过来）。
    */
   const stageEntry = useCallback(async (relPath, action) => {
-    if (activeRoot === null || activeRoot.isGit === false) return
+    if (activeRepo === null) return
     if (stagePendingRef.current !== null) return
     stagePendingRef.current = relPath
     setStagePending(relPath)
     setStatusError(null)
     try {
-      await api.stageFile({ rootPath: activeRoot.path, path: relPath, action })
+      await api.stageFile({ rootPath: activeRepo.path, path: relPath, action })
       await refreshRepository()
       setDiffNonce((previous) => previous + 1)
     } catch (error) {
@@ -888,17 +899,17 @@ export function Panel(props) {
       stagePendingRef.current = null
       setStagePending(null)
     }
-  }, [activeRoot, refreshRepository])
+  }, [activeRepo, refreshRepository])
 
   /** 分组头的批量按钮：一次暂存或取消暂存整组。 */
   const stageGroup = useCallback(async (scope) => {
-    if (activeRoot === null || activeRoot.isGit === false) return
+    if (activeRepo === null) return
     if (stagePendingRef.current !== null) return
     stagePendingRef.current = scope
     setStagePending(scope)
     setStatusError(null)
     try {
-      await api.stageGroup({ rootPath: activeRoot.path, scope })
+      await api.stageGroup({ rootPath: activeRepo.path, scope })
       await refreshRepository()
       setDiffNonce((previous) => previous + 1)
     } catch (error) {
@@ -909,7 +920,7 @@ export function Panel(props) {
       stagePendingRef.current = null
       setStagePending(null)
     }
-  }, [activeRoot, refreshRepository])
+  }, [activeRepo, refreshRepository])
 
   /**
    * 推送当前分支（`branch/push`）。成功就刷新仓库状态 —— 提示条由 `status.sync` 驱动，
@@ -958,13 +969,13 @@ export function Panel(props) {
   }, [resolveProject, refreshRepository])
 
   const commitStaged = useCallback(async () => {
-    if (activeRoot === null || activeRoot.isGit === false) return
+    if (activeRepo === null) return
     const message = commitMessage.trim()
     if (message === '' || commitBusy) return
     setCommitBusy(true)
     setCommitNote(null)
     try {
-      const result = await api.commitChanges({ rootPath: activeRoot.path, message })
+      const result = await api.commitChanges({ rootPath: activeRepo.path, message })
       setCommitMessage('')
       const subject = result.subject.trim()
       setCommitNote({
@@ -983,7 +994,7 @@ export function Panel(props) {
     } finally {
       setCommitBusy(false)
     }
-  }, [activeRoot, commitMessage, commitBusy, refreshRepository, postCommitPush, pushBranchNow])
+  }, [activeRepo, commitMessage, commitBusy, refreshRepository, postCommitPush, pushBranchNow])
 
   /** 改输入就清掉上一次的结果提示：用户已经在写新的说明了。 */
   const changeCommitMessage = useCallback((text) => {
@@ -1005,18 +1016,18 @@ export function Panel(props) {
 
   /** 生成提交说明：有暂存看暂存，否则看未暂存，由宿主决定。 */
   const generateMessage = useCallback(async () => {
-    if (activeRoot === null || activeRoot.isGit === false || commitGenerating) return
+    if (activeRepo === null || commitGenerating) return
     setCommitGenerating(true)
     setCommitNote(null)
     try {
-      const result = await api.commitMessage({ rootPath: activeRoot.path })
+      const result = await api.commitMessage({ rootPath: activeRepo.path })
       setCommitMessage(result.message)
     } catch (error) {
       setCommitNote({ tone: 'error', text: api.describeError(error, tRef.current), code: error?.code ?? null })
     } finally {
       setCommitGenerating(false)
     }
-  }, [activeRoot, commitGenerating])
+  }, [activeRepo, commitGenerating])
 
   /** 设置里存的是 {provider, model}，下拉框用的是扁平 ref。 */
   const refOfPair = (pair) => (pair === null || pair === undefined ? null : pair.provider + '/' + pair.model)
@@ -1027,10 +1038,10 @@ export function Panel(props) {
 
   /** 打开创建 PR 表单：先向宿主要仓库/账号/分支信息。 */
   const openCreatePull = useCallback(async () => {
-    if (activeRoot === null || activeRoot.isGit !== true) return
+    if (activeRepo === null) return
     setPullForm({ loading: true, error: null, repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', generating: false, creating: false, created: null, notice: null })
     try {
-      const prepared = await api.prPrepare({ rootPath: activeRoot.path })
+      const prepared = await api.prPrepare({ rootPath: activeRepo.path })
       const remembered = readPrefs().pullTargets?.[pullTargetKey(prepared.repo)] ?? ''
       const base = prepared.bases.includes(remembered) ? remembered : (prepared.bases[0] ?? '')
       setPullForm({
@@ -1052,7 +1063,7 @@ export function Panel(props) {
     } catch (error) {
       setPullForm({ loading: false, error: api.describeError(error, tRef.current), repo: null, head: '', bases: [], accounts: [], accountId: '', base: '', title: '', body: '', generating: false, creating: false, created: null, notice: null })
     }
-  }, [activeRoot])
+  }, [activeRepo])
 
   const closeCreatePull = useCallback(() => setPullForm(null), [])
 
@@ -1065,13 +1076,13 @@ export function Panel(props) {
 
   /** 用模型生成标题与描述（失败就地显示原因）。 */
   const generatePullText = useCallback(async () => {
-    if (pullForm === null || activeRoot === null) return
+    if (pullForm === null || activeRepo === null) return
     // 没有目标分支就不发请求：`{ base: undefined }` 序列化后字段会整个消失，
     // 宿主只会回一句「缺少参数 base」，看起来像生成功能坏了，其实模型根本没被调用。
     if (pullForm.base === '') return
     setPullForm({ ...pullForm, generating: true, error: null, notice: null })
     try {
-      const generated = await api.prGenerate({ rootPath: activeRoot.path, base: pullForm.base })
+      const generated = await api.prGenerate({ rootPath: activeRepo.path, base: pullForm.base })
       setPullForm((previous) => (previous === null ? previous : {
         ...previous,
         generating: false,
@@ -1084,18 +1095,18 @@ export function Panel(props) {
         ...previous, generating: false, error: api.describeError(error, tRef.current)
       }))
     }
-  }, [pullForm, activeRoot])
+  }, [pullForm, activeRepo])
 
   /** 创建 PR：成功后记住目标分支，供下次默认。 */
   const createPull = useCallback(async () => {
-    if (pullForm === null || activeRoot === null) return
+    if (pullForm === null || activeRepo === null) return
     // 同 generatePullText：没有目标分支（或还没准备出 repo）时不发这个注定被拒的请求
     if (pullForm.base === '') return
     if (pullForm.repo === null) return
     setPullForm({ ...pullForm, creating: true, error: null, notice: null })
     try {
       const created = await api.prCreate({
-        rootPath: activeRoot.path,
+        rootPath: activeRepo.path,
         accountId: pullForm.accountId,
         fullName: pullForm.repo.fullName,
         base: pullForm.base,
@@ -1103,7 +1114,7 @@ export function Panel(props) {
         body: pullForm.body
       })
       writePref('pullTargets', { ...(readPrefs().pullTargets ?? {}), [pullTargetKey(pullForm.repo)]: pullForm.base })
-      await loadLinkedPull()
+      await loadLinkedPull(activeRepo)
       await refreshRepository()
       setPullForm((previous) => (previous === null ? previous : { ...previous, creating: false, created }))
     } catch (error) {
@@ -1111,7 +1122,7 @@ export function Panel(props) {
         ...previous, creating: false, error: api.describeError(error, tRef.current)
       }))
     }
-  }, [pullForm, activeRoot, refreshRepository])
+  }, [pullForm, activeRepo, refreshRepository, loadLinkedPull])
 
   /** 读账号列表（token 不会下发到客户端，只有 id/login/label）。 */
   const loadAccounts = useCallback(async () => {
@@ -1199,10 +1210,10 @@ export function Panel(props) {
    */
   useEffect(() => {
     if (mode !== MODE.changes) return
-    if (activeRoot !== null && activeRoot.isGit === true) return
+    if (activeRepo !== null) return
     const firstRepo = gitRoots[0]
     if (firstRepo !== undefined) setActiveRootId(firstRepo.id)
-  }, [mode, activeRoot, gitRoots])
+  }, [mode, activeRepo, gitRoots])
 
   const toggleGroup = useCallback((groupKey) => {
     setCollapsedGroups((previous) => {
@@ -1429,9 +1440,9 @@ export function Panel(props) {
 
   // 切到变更页签或分支变化时刷新；不轮询（面板没有后台任务）
   useEffect(() => {
-    if (mode !== MODE.changes || activeRoot === null || activeRoot.isGit !== true) return
-    loadLinkedPull()
-  }, [mode, status === null ? '' : status.branch, loadLinkedPull, activeRoot])
+    if (mode !== MODE.changes || activeRepo === null) return
+    loadLinkedPull(activeRepo)
+  }, [mode, status === null ? '' : status.branch, loadLinkedPull, activeRepo])
 
   /** 从卡片打开 PR：切到远端页签并载入详情，同时记已读。 */
   const openLinkedPull = useCallback(async () => {
@@ -2263,7 +2274,8 @@ export function Panel(props) {
                 - (readPrefs().pullSeen?.[linkedPull.data.accountId + '#' + linkedPull.data.number] ?? 0))
               : 0,
             onOpen: openLinkedPull,
-            onRefresh: loadLinkedPull,
+            // 卡片只在「发起请求的那个仓库就是当前仓库」时渲染，所以这里一定有可操作的仓库
+            onRefresh: () => loadLinkedPull(activeRepo),
             t
           })
           : null,
@@ -2285,21 +2297,25 @@ export function Panel(props) {
             error: remoteAction.error
           })
           : null,
-        h(CommitBox, {
-          message: commitMessage,
-          stagedCount,
-          changeCount,
-          busy: commitBusy,
-          generating: commitGenerating,
-          elapsedMs: generateElapsed,
-          note: commitNote,
-          onChange: changeCommitMessage,
-          onCommit: commitStaged,
-          onGenerate: generateMessage,
-          onOpenSettings: openSettings,
-          onCreatePull: activeRoot.isGit === true ? openCreatePull : undefined,
-          t
-        }),
+        // 提交框只在「有可操作的仓库」时存在：没有仓库时它既没有提交对象，
+        // 也没有「创建 PR」可言 —— 那不是禁用状态，是这个控件本来就不该出现。
+        activeRepo === null
+          ? null
+          : h(CommitBox, {
+            message: commitMessage,
+            stagedCount,
+            changeCount,
+            busy: commitBusy,
+            generating: commitGenerating,
+            elapsedMs: generateElapsed,
+            note: commitNote,
+            onChange: changeCommitMessage,
+            onCommit: commitStaged,
+            onGenerate: generateMessage,
+            onOpenSettings: openSettings,
+            onCreatePull: openCreatePull,
+            t
+          }),
         h(ChangesList, {
           status,
           loading: statusLoading && status === null,
@@ -2403,8 +2419,7 @@ export function Panel(props) {
       rightPane = h('div', { className: 'dgp-viewer' },
         h(EmptyState, {
           icon: 'file-diff',
-          title: t('viewer.placeholderDiff'),
-          description: activeRoot === null ? t('status.noRootsHint') : undefined
+          title: t('viewer.placeholderDiff')
         }))
     } else {
       rightPane = h(DiffView, {
@@ -2423,8 +2438,7 @@ export function Panel(props) {
     rightPane = h('div', { className: 'dgp-viewer' },
       h(EmptyState, {
         icon: 'file',
-        title: t('viewer.placeholder'),
-        description: activeRoot === null ? t('status.noRootsHint') : undefined
+        title: t('viewer.placeholder')
       }))
   } else {
     const path = fileSelection.path

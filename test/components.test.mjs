@@ -70,11 +70,15 @@ function createFakeReact() {
     if (Array.isArray(node)) return node.map(render).filter((child) => child !== null)
     if (typeof node === 'string' || typeof node === 'number') return String(node)
     if (node.$$el !== true) return null
+    const props = { ...node.props, children: node.children }
+    if (typeof node.type === 'function' && node.type.prototype !== undefined && node.type.prototype.isReactComponent === true) {
+      return render(new node.type(props).render())
+    }
     if (typeof node.type === 'function') {
       const previous = frame
       frame = { slots: [], cursor: 0 }
       try {
-        return render(node.type({ ...node.props, children: node.children }))
+        return render(node.type(props))
       } finally {
         frame = previous
       }
@@ -82,7 +86,16 @@ function createFakeReact() {
     return { $$host: true, type: node.type, props: node.props, children: node.children.map(render).filter((child) => child !== null) }
   }
 
-  return { createElement, Fragment: 'Fragment', useState, useRef: (v) => ({ current: v }), useMemo: (fn) => fn(), useCallback: (fn) => fn, useEffect: () => {}, useLayoutEffect: () => {}, render }
+  /** 类组件基类：插件唯一的类组件是面板入口的渲染错误边界（见 GitPanelSurface.js）。 */
+  class Component {
+    constructor(props) {
+      this.props = props
+      this.state = {}
+    }
+  }
+  Component.prototype.isReactComponent = true
+
+  return { createElement, Fragment: 'Fragment', Component, useState, useRef: (v) => ({ current: v }), useMemo: (fn) => fn(), useCallback: (fn) => fn, useEffect: () => {}, useLayoutEffect: () => {}, render }
 }
 
 function collect(node, predicate, out = []) {
@@ -909,6 +922,32 @@ test('BranchList：上一个仓库的旧数据不能画在新仓库下面（按 
   const text = textOf(tree)
   assert(text.includes('branch.loading') || text.includes('branch.refreshing'), '旧数据应按加载中处理：' + text)
   assert(!text.includes('local-only'), '不能把上一个仓库的分支名画出来：' + text)
+})
+
+test('渲染错误边界：异常被面板自己接住并原样显示，不会变成空树', () => {
+  const { PanelRenderBoundary } = loadModule('./components/GitPanelSurface.js')
+  const t = (key) => 'T:' + key
+  const child = () => fakeReact.createElement('div', { className: 'dgp-root', 'data-child': 'yes' })
+
+  // 1. 没有异常：children 原样渲染（边界是透明的）
+  const healthy = new PanelRenderBoundary({ t, children: child() })
+  const okTree = fakeReact.render(healthy.render())
+  eq(collect(okTree, (node) => node.$$host === true && node.props['data-child'] === 'yes').length, 1,
+    '无异常时应原样渲染 children')
+
+  // 2. 渲染期抛异常：异常原文显示在面板里。
+  //    这一层如果不在，异常会逃到宿主的 slot 边界，那边渲染的是空的
+  //    <div data-slot-error>，并且会把这次注册退役 —— 用户看到的是永久黑屏。
+  const crashed = new PanelRenderBoundary({ t, children: child() })
+  crashed.state = PanelRenderBoundary.getDerivedStateFromError(new Error('boom: bad icon'))
+  const tree = fakeReact.render(crashed.render())
+  const text = textOf(tree)
+  assert(text.includes('T:error.panelCrashed'), '应显示错误标题：' + text)
+  assert(text.includes('boom: bad icon'), '应显示异常原文：' + text)
+  eq(collect(tree, (node) => node.$$host === true && node.props['data-dgp-crash'] !== undefined).length, 1,
+    '错误态应带 data-dgp-crash 标记')
+  eq(collect(tree, (node) => node.$$host === true && node.props['data-child'] === 'yes').length, 0,
+    '崩溃后不应再渲染 children')
 })
 
 console.log('')

@@ -104,7 +104,7 @@ try {
   }
   const fakeRequire = (id) => {
     if (id !== 'react') throw new Error('unexpected require: ' + id)
-    return { useState: () => [0, () => {}], createElement: () => null, Fragment: 'Fragment' }
+    return { useState: () => [0, () => {}], createElement: () => null, Fragment: 'Fragment', Component: class {} }
   }
 
   await testAsync('工厂可被调用并返回模块导出', () => {

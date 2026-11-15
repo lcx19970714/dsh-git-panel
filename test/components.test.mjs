@@ -950,6 +950,27 @@ test('渲染错误边界：异常被面板自己接住并原样显示，不会�
     '崩溃后不应再渲染 children')
 })
 
+test('树游标：行被卸载后 ref 是 null，不能对着 null 调 scrollIntoView', () => {
+  const { clampCursor, cursorElement } = loadModule('./ui/useTreeCursor.js')
+  const row = { 'data-row': 1 }
+  const other = { 'data-row': 2 }
+
+  // 正常：游标落在已挂载的行上
+  assert(cursorElement([row, other], 1, 2) === other, '应返回游标那一行的元素')
+  // 行被卸载：React 会把 ref 回调传成 null ——「面板渲染失败 / reading scrollIntoView」就是这一格
+  assert(cursorElement([row, null], 1, 2) === null, 'null 槽位不能当成元素')
+  // 行数刚变少、游标还停在旧行号上：收敛到最后一行，而不是读已经不存在的槽位
+  assert(cursorElement([row, other, null], 4, 2) === other, '游标越界时应读最后一行')
+  // 空列表 / 还没选行
+  assert(cursorElement([], -1, 0) === null, '空列表没有元素')
+  assert(cursorElement([row], -1, 1) === null, '游标 -1 表示还没选行，不该去滚第一行')
+
+  eq(clampCursor(5, 3), 2)
+  eq(clampCursor(1, 3), 1)
+  eq(clampCursor(-1, 3), -1)
+  eq(clampCursor(0, 0), -1)
+})
+
 console.log('')
 if (failures.length > 0) {
   console.error(failures.length + ' failed, ' + passed + ' passed')

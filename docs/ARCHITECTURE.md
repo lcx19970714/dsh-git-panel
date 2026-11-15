@@ -467,6 +467,12 @@ GitHub 走 `GET /issues/{n}/comments`、Gitee 走 `GET /pulls/{n}/comments`（�
 平台对二进制或过大的文件不返回 patch，此时 `patchAvailable=false`，界面明确写「读不到」而不是当成空改动。
 文件列表读失败不拖垮 PR 详情：只给 `filesUnavailable`，其余区块照常显示。
 
+文件对象的字段形状由 provider 自己归一（`pull.normalizePullFile`，缺了启动即失败）：
+GitHub 的 `additions` / `deletions` 是数字、`patch` 是 hunk 字符串；Gitee 的 `additions` / `deletions`
+是**字符串**、`patch` 是**对象**（diff 文本在 `patch.diff`，行数在 `patch.added_lines` / `removed_lines`），
+`status` 还可能是 null。按 GitHub 的形状读会得到「文件看得见、每行 +0 −0、点开没有 diff」——
+增删行数与 diff 必须在归一化这一层读对，上层只认数字和 patch 文本。
+
 **AI 审阅约定**：`remote/pull/ai-review` 由宿主取 `pulls/{n}/files` 的 patch，拼成
 PR 元信息 + 文件块的提示词，让 `reviewModel` 输出固定结构的 JSON（summary / verdict / findings[] / comment）。
 

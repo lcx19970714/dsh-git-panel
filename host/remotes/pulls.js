@@ -320,16 +320,11 @@ export function createPulls(deps) {
       const response = await request(fetchImpl, url, { headers }, options.signal)
       const listed = await readArray(response, 'PR 文件列表')
       for (const item of listed) {
-        files.push({
-          filename: typeof item.filename === 'string' ? item.filename : '',
-          status: typeof item.status === 'string' ? item.status : '',
-          additions: Number.isFinite(item.additions) ? item.additions : 0,
-          deletions: Number.isFinite(item.deletions) ? item.deletions : 0,
-          changes: Number.isFinite(item.changes) ? item.changes : 0,
-          patch: typeof item.patch === 'string' ? item.patch : '',
-          // 平台没给 patch：二进制文件，或该文件 diff 过大
-          patchAvailable: typeof item.patch === 'string' && item.patch !== ''
-        })
+        // 字段形状由 provider 自己归一：Gitee 的 additions/deletions 是字符串、patch 是对象，
+        // 按 GitHub 的形状读会把所有行数读成 0、把 patch 读成空
+        const file = provider.pull.normalizePullFile(item)
+        // 平台没给 patch 文本：二进制文件，或该文件 diff 过大
+        files.push({ ...file, patchAvailable: file.patch !== '' })
       }
       if (wanted !== null && files.some((file) => file.filename === wanted)) break
       if (listed.length < PAGE_SIZE) break

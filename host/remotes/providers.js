@@ -19,6 +19,27 @@ function mergeableOf(value) {
   return null
 }
 
+/**
+ * 计数字段归一化。
+ *
+ * 两家对「行数」的声明不同：GitHub 给数字（`3`），Gitee 给字符串（`"3"` —— 官方 schema 里
+ * `additions` / `deletions` 的 type 就是 string）。两者都是平台自己声明的形状，所以在归一化
+ * 这一层转一次，上层拿到的永远是数字；平台没给这个字段时返回 null（界面据此显示「—」）。
+ */
+function countOf(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value !== 'string' || value.trim() === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+/**
+ * Gitee 的布尔标记：schema 里写的是 integer，官方示例里是 false / true，两种都当同一个意思。
+ */
+function flagged(value) {
+  return value === true || value === 1
+}
+
 function baseMeta(item, fullName, provider) {
   return {
     fullName,
@@ -79,8 +100,10 @@ function issueMeta(item) {
  * 缺字段时界面显示「—」而不是 0。
  */
 function pullMeta(item, provider) {
-  const hasStats = Number.isFinite(item.additions) || Number.isFinite(item.deletions)
-    || Number.isFinite(item.changed_files)
+  const additions = countOf(item.additions)
+  const deletions = countOf(item.deletions)
+  const changedFiles = countOf(item.changed_files)
+  const hasStats = additions !== null || deletions !== null || changedFiles !== null
   const merged = item.merged === true || item.state === 'merged'
     || (typeof item.merged_at === 'string' && item.merged_at !== '')
   return {
@@ -98,9 +121,9 @@ function pullMeta(item, provider) {
     headRepo: typeof item.head?.repo?.full_name === 'string' ? item.head.repo.full_name : '',
     // PR 的 head 提交：本地已经是这个提交时，深度审阅不需要再 fetch
     headSha: typeof item.head?.sha === 'string' ? item.head.sha : '',
-    additions: Number.isFinite(item.additions) ? item.additions : 0,
-    deletions: Number.isFinite(item.deletions) ? item.deletions : 0,
-    changedFiles: Number.isFinite(item.changed_files) ? item.changed_files : 0,
+    additions: additions ?? 0,
+    deletions: deletions ?? 0,
+    changedFiles: changedFiles ?? 0,
     commits: Number.isFinite(item.commits) ? item.commits : 0,
     statsComplete: hasStats,
     createdAt: typeof item.created_at === 'string' ? item.created_at : '',
@@ -173,6 +196,15 @@ const github = {
     // GitHub 的合并门禁是 required status checks（CI 决定），面板里没有「标记测试通过」这种动作
     testPath: null,
     normalizePull: (item) => pullMeta(item, github),
+    // 文件变更（GET /pulls/{n}/files）：计数是数字，patch 是 hunk 文本
+    normalizePullFile: (item) => ({
+      filename: typeof item.filename === 'string' ? item.filename : '',
+      status: typeof item.status === 'string' ? item.status : '',
+      additions: countOf(item.additions) ?? 0,
+      deletions: countOf(item.deletions) ?? 0,
+      changes: countOf(item.changes) ?? 0,
+      patch: typeof item.patch === 'string' ? item.patch : ''
+    }),
     normalizeReview: (item) => ({
       author: typeof item.user?.login === 'string' ? item.user.login : '',
       state: typeof item.state === 'string' ? item.state : '',
@@ -200,6 +232,42 @@ const github = {
       url: typeof item.html_url === 'string' ? item.html_url : ''
     })
   }
+}
+
+/**
+ * Gitee 的 PR 文件对象（`GET /pulls/{n}/files`）与 GitHub 不同构，官方 schema 写得很清楚：
+ *
+ *   · `additions` / `deletions` 是**字符串**（`"3"`）。按数字读（`Number.isFinite`）会全部落成 0 ——
+ *     这正是「PR 的文件列表能看到、每行的 +N −M 显示不出来」的原因；
+ *   · `patch` 是**对象**：diff 文本在 `patch.diff`，行数在 `patch.added_lines` / `removed_lines`。
+ *     按字符串读会得到空 patch —— 点开文件、AI 审阅都拿不到这个文件的改动；
+ *   · `status` 可能是 null（官方示例里就是 null），真实改动类型在 `patch.new_file` /
+ *     `deleted_file` / `renamed_file` 上。
+ *
+ * Gitee 没有 `changes` 字段，按同一份定义（增 + 删）算出来。
+ */
+function giteeFile(item) {
+  const patch = item.patch !== null && typeof item.patch === 'object' ? item.patch : null
+  const additions = countOf(item.additions) ?? (patch === null ? 0 : countOf(patch.added_lines) ?? 0)
+  const deletions = countOf(item.deletions) ?? (patch === null ? 0 : countOf(patch.removed_lines) ?? 0)
+  return {
+    filename: typeof item.filename === 'string' ? item.filename : '',
+    status: giteeFileStatus(item.status, patch),
+    additions,
+    deletions,
+    changes: additions + deletions,
+    patch: patch === null || typeof patch.diff !== 'string' ? '' : patch.diff
+  }
+}
+
+/** Gitee 的 status 为空时，用 patch 上的三个标记还原改动类型。 */
+function giteeFileStatus(status, patch) {
+  if (typeof status === 'string' && status !== '') return status
+  if (patch === null) return ''
+  if (flagged(patch.deleted_file)) return 'deleted'
+  if (flagged(patch.renamed_file)) return 'renamed'
+  if (flagged(patch.new_file)) return 'added'
+  return 'modified'
 }
 
 const gitee = {
@@ -269,6 +337,8 @@ const gitee = {
     // Gitee 允许把 PR 标记为「测试通过」，这是它的合并门禁之一
     testPath: '/test',
     normalizePull: (item) => pullMeta(item, gitee),
+    // 文件变更：Gitee 的计数是字符串、patch 是对象（见 giteeFile）
+    normalizePullFile: giteeFile,
     normalizeReview: null,
     normalizeCommit: (item) => ({
       sha: typeof item.sha === 'string' ? item.sha : '',
@@ -304,7 +374,8 @@ const REQUIRED_PROVIDER_KEYS = [
   'normalizeRepo', 'normalizeIssue', 'normalizeBranch', 'normalizeDetail'
 ]
 const REQUIRED_PULL_KEYS = [
-  'verdicts', 'mergeMethods', 'mergeDeletesBranch', 'normalizePull', 'normalizeComment', 'normalizeCommit'
+  'verdicts', 'mergeMethods', 'mergeDeletesBranch', 'normalizePull', 'normalizePullFile',
+  'normalizeComment', 'normalizeCommit'
 ]
 
 for (const provider of Object.values(PROVIDERS)) {

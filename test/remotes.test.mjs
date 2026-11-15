@@ -910,6 +910,79 @@ await test('PR 文件 diff：Gitee 的路径同样不能双拼 /pulls/{n}（带 
   assert.ok(!seen[0].includes('/pulls/4/pulls/4'), '不能出现双拼路径')
 })
 
+await test('PR 文件 diff：Gitee 的 additions/deletions 是字符串、patch 是对象，归一化后行数与 diff 都要在', async () => {
+  // 真实回包形状（Gitee 官方 schema + 成功示例）：计数是字符串 "3"，patch 是对象，
+  // status 可能是 null。按 GitHub 的形状读，就会变成「文件能看到、每行 +0 −0、点开没有 diff」。
+  const giteeFiles = [
+    {
+      sha: '45e1211',
+      filename: 'README.md',
+      status: null,
+      additions: '3',
+      deletions: '1',
+      patch: {
+        diff: '@@ -13,4 +13,7 @@ demo\n line\n-removed\n+added1\n+added2\n+added3',
+        new_path: 'README.md',
+        old_path: 'README.md',
+        new_file: false,
+        renamed_file: false,
+        deleted_file: false,
+        too_large: false,
+        added_lines: 3,
+        removed_lines: 1
+      }
+    },
+    {
+      sha: '45e1211',
+      filename: 'assets/logo.png',
+      status: 'added',
+      additions: '0',
+      deletions: '0',
+      patch: {
+        diff: '',
+        new_file: true,
+        renamed_file: false,
+        deleted_file: false,
+        too_large: true,
+        added_lines: 0,
+        removed_lines: 0
+      }
+    }
+  ]
+  const credentials = fakeCredentials()
+  const fetchImpl = fakeFetch([
+    [/gitee\.com\/api\/v5\/user\?/, { json: { login: 'bob' } }],
+    [/\/repos\/bob\/tool\/pulls\/4\/files\?/, { json: giteeFiles }],
+    [/\/repos\/bob\/tool\/pulls\/4\/commits\?/, { json: [] }],
+    [/\/repos\/bob\/tool\/pulls\/4\/comments\?/, { json: [] }],
+    [/\/repos\/bob\/tool\/pulls\/4\?access_token=/, {
+      json: { number: 4, title: 'T', state: 'open', base: { ref: 'main' }, head: { ref: 'feat' } }
+    }]
+  ])
+  const remotes = createRemotes({ credentials, fetchImpl })
+  await remotes.addAccount({ provider: 'gitee', token: 't' })
+  const base = { accountId: 'gitee:bob', fullName: 'bob/tool', number: 4 }
+
+  // 详情里的文件清单（界面「变动文件」那张列表读的就是它）
+  const detail = await remotes.pullDetail(base, { withFiles: true })
+  assert.equal(detail.files.length, 2, '文件列表')
+  assert.equal(detail.files[0].additions, 3, 'Gitee 的 "3" 要变成数字 3')
+  assert.equal(detail.files[0].deletions, 1)
+  assert.equal(detail.files[0].changes, 4, 'Gitee 没有 changes 字段，按「增 + 删」算')
+  assert.equal(detail.files[0].status, 'modified', 'status 为 null 时用 patch 标记还原改动类型')
+  assert.equal(detail.files[1].status, 'added')
+  assert.equal(detail.files[1].patchAvailable, false, 'too_large 的文件没有 diff 文本')
+
+  // 点开一个文件时按需读那个文件的 diff（patch 在对象里，要取 patch.diff）
+  const one = await remotes.pullFile({ ...base, filename: 'README.md' })
+  assert.equal(one.file.additions, 3)
+  assert.equal(one.file.changes, 4)
+  assert.equal(one.diff.kind, 'text', 'Gitee 给了 patch.diff，就应该解析成文本 diff')
+  assert.equal(one.diff.hunks.length, 1)
+  assert.equal(one.diff.stats.adds, 3, 'diff 统计：+3')
+  assert.equal(one.diff.stats.dels, 1, 'diff 统计：−1')
+})
+
 await test('PR 文件 diff：平台没给 patch 的文件标 patchAvailable=false 并带上改动量', async () => {
   const credentials = fakeCredentials()
   const fetchImpl = fakeFetch([

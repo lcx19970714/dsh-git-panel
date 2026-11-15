@@ -38,6 +38,14 @@ github:lcx19970714/dsh-git-panel
 dsh plugin add github:lcx19970714/dsh-git-panel
 ```
 
+**更新已安装的插件**
+
+工具条右侧的版本号只负责检查 GitHub Release 并打开 release 页，**不会自己替换已安装文件**。
+
+- 新电脑：按上面的方式安装，直接取到默认分支最新代码。
+- 已安装：在「插件」页对 `dsh-git-panel` 重新安装（或再执行一次 `dsh plugin add github:lcx19970714/dsh-git-panel`）。
+- 更新后如果包含宿主端改动（例如新增的 `roots/stats`），重启一次 DSH；客户端 bundle 会热更新，不需要重启。
+
 **本地开发**
 
 ```bash

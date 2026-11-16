@@ -21,6 +21,7 @@
  *   file/read       { rootPath, path }          -> FileResult（含 hash/bom/eol，保存时要用）
  *   file/write      { rootPath, path, text, expectedHash|force, eol, bom } -> WriteResult
  *   index/stage     { rootPath, path, action }  -> { path, action }（stage = git add，unstage = git restore --staged）
+ *   index/discard   { rootPath, path }          -> { path, action, kind }（已跟踪 = 工作区回到索引；未跟踪 = 删除文件）
  *   index/stage-group { rootPath, scope }       -> { scope }（stage-unstaged / stage-untracked / unstage）
  *   commit          { rootPath, message }       -> { head, subject }（只提交已暂存内容）
  *   commit/message  { rootPath }                -> { message, model, source }（按设置里的模型生成）
@@ -51,6 +52,7 @@ import {
   resolveRepo,
   stageFile,
   stageGroup,
+  discardFile,
   commitIndex,
   commitDiffText,
   listBranches,
@@ -130,6 +132,7 @@ export const ENDPOINTS = Object.freeze([
   'file/read',
   'file/write',
   'index/stage',
+  'index/discard',
   'index/stage-group',
   'branches/list',
   'branch/switch',
@@ -612,9 +615,26 @@ function createDispatcher(ctx) {
     return result
   }
 
+  /* index/discard ----------------------------------------------------- */
+  /**
+   * 退回单个文件的改动（未跟踪文件是删除）。
+   *
+   * 客户端只说「退回哪个文件」：它那一行是快照，可能已经过期，所以「退回到索引还是删掉
+   * 这个文件」由宿主按索引状态判定（见 `discardFile`），不采信客户端的分组。
+   */
+  async function indexDiscard(request, signal) {
+    const rootPath = requireAbsolute(request.rootPath, 'rootPath')
+    const rawPath = requireString(request.path, 'path')
+    const repo = await resolveRepo(rootPath)
+    if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
+    if (repo.bare) throw new GitError('not-a-repository', `裸仓库没有工作区：${normalizeSlashes(rootPath)}`)
+    const result = await discardFile(normalizeSlashes(repo.repoRoot), rawPath, { signal })
+    clearStatusCache()
+    return result
+  }
+
   /* index/stage-group ------------------------------------------------- */
-  /** 分组头的批量操作。scope 由客户端按分组显式给出。 */
-  async function indexStageGroup(request, signal) {
+  /** 分组头的批量操作。scope 由客户端按分组显式给出。 */  async function indexStageGroup(request, signal) {
     const rootPath = requireAbsolute(request.rootPath, 'rootPath')
     const repo = await resolveRepo(rootPath)
     if (!repo?.repoRoot) throw await notARepositoryError(rootPath)
@@ -1547,6 +1567,7 @@ function createDispatcher(ctx) {
     'file/read': (request, signal) => fileRead(request, signal),
     'file/write': (request, signal) => fileWrite(request, signal),
     'index/stage': (request, signal) => indexStage(request, signal),
+    'index/discard': (request, signal) => indexDiscard(request, signal),
     'index/stage-group': (request, signal) => indexStageGroup(request, signal),
     'accounts/list': () => accountsList(),
     'accounts/add': (request, signal) => accountsAdd(request, signal),

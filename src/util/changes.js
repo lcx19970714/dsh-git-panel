@@ -77,6 +77,21 @@ export function rowActionOf(groupKey) {
 }
 
 /**
+ * 这一行能不能「退回改动」，以及退回的是哪一种（VS Code 的行为）：
+ *
+ *  · 只有未暂存 / 未跟踪的行能退回 —— 能与「暂存」共存的那个位置，就是工作区的那一半；
+ *    已暂存的那一行对应的是索引，它的动作是「取消暂存」，不是退回。
+ *  · 冲突文件不给：退回会把冲突标记一起抹掉，正确做法是先解决冲突。
+ *  · 未跟踪文件退回 = **删除它**（它没有 HEAD 版本可回），确认文案必须说清这一点。
+ *
+ * 返回 `'revert'`（工作区回到索引）、`'delete'`（删除未跟踪文件）或 `null`（不提供）。
+ */
+export function rowDiscardKind(entry, groupKey) {
+  if (rowActionOf(groupKey) !== 'stage') return null
+  return entry !== null && entry !== undefined && entry.untracked === true ? 'delete' : 'revert'
+}
+
+/**
  * 分组头右侧的批量操作。与行尾按钮同一套规则，作用范围是**整组**，
  * 所以必须跟着分组内容走：
  *   staged    → unstage（取消暂存全部已暂存）

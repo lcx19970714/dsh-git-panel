@@ -1434,7 +1434,7 @@ test('用例 1s：未暂存行点加号暂存，已暂存行点减号取消暂�
     await panel.flush()
 
     // 操作按钮和文件行包在同一个 dgp-row-wrap 里，按这个容器配对，不靠全局顺序。
-    const buttonFor = (groupKey, relPath) => {
+    const buttonFor = (groupKey, relPath, action) => {
       const group = byAttr(panel.tree, 'data-dgp-group', groupKey)[0]
       assert(group !== undefined, '缺少分组 ' + groupKey)
       const wrap = findOne(group, (node) => (
@@ -1446,19 +1446,16 @@ test('用例 1s：未暂存行点加号暂存，已暂存行点减号取消暂�
       ))
       assert(wrap !== null, groupKey + ' 里缺少 ' + relPath + ' 的行')
       const button = findOne(wrap, (node) => (
-        isHost(node) && node.type === 'button' && typeof attr(node, 'data-dgp-action') === 'string'
+        isHost(node) && node.type === 'button' && attr(node, 'data-dgp-action') === action
       ))
-      assert(button !== null, relPath + ' 缺少行尾按钮')
+      assert(button !== null, relPath + ' 缺少行尾按钮 ' + action)
       return button
     }
 
-    const stageButton = buttonFor('unstaged', 'app.js')
-    eq(attr(stageButton, 'data-dgp-action'), 'stage', '未暂存行应是加号（暂存）')
-    const unstageButton = buttonFor('staged', 'util.ts')
-    eq(attr(unstageButton, 'data-dgp-action'), 'unstage', '已暂存行应是减号（取消暂存）')
+    const stageButton = buttonFor('unstaged', 'app.js', 'stage')
+    const unstageButton = buttonFor('staged', 'util.ts', 'unstage')
     // 合并模式下未跟踪文件就在「未暂存」组里，同样带加号
-    const untrackedButton = buttonFor('unstaged', 'notes.txt')
-    eq(attr(untrackedButton, 'data-dgp-action'), 'stage', '未跟踪行也应能暂存')
+    const untrackedButton = buttonFor('unstaged', 'notes.txt', 'stage')
 
     const mark = panel.router.mark()
     click(stageButton)
@@ -1473,8 +1470,103 @@ test('用例 1s：未暂存行点加号暂存，已暂存行点减号取消暂�
   })
 })
 
-test('用例 1t：提交框在有暂存且有说明时可提交，生成按钮走 commit/message', async () => {
-  const commits = []
+/* ================================================================== */
+/* 用例 1s2：行尾退回（↶）—— 就地确认，只退这一个文件                     */
+/* ================================================================== */
+
+test('用例 1s2：未暂存行点退回 → 就地确认 → 只把这个文件的改动退掉', async () => {
+  const discarded = []
+  let round = 0
+  const after = statusThree()
+  after.files = after.files.filter((entry) => entry.path !== 'app.js')
+  after.counts = { total: 2, staged: 1, unstaged: 0, untracked: 1, conflicted: 0 }
+
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => {
+        round += 1
+        return sayOk(round === 1 ? statusThree() : after)
+      },
+      'index/discard': (payload) => {
+        discarded.push(payload)
+        return sayOk({ path: payload.path, action: 'discard', kind: 'reverted' })
+      },
+      diff: () => sayOk(diffText())
+    }
+  }, async (panel) => {
+    await panel.flush()
+
+    const rowButton = (relPath, action) => {
+      const wrap = findOne(panel.tree, (node) => (
+        isHost(node) && hasClass(node, 'dgp-row-wrap')
+        && findOne(node, (child) => (
+          isHost(child) && attr(child, 'data-dgp-path') === relPath && attr(child, 'data-dgp-row') === 'file'
+        )) !== null
+      ))
+      assert(wrap !== null, '缺少 ' + relPath + ' 的行')
+      const button = findOne(wrap, (node) => (
+        isHost(node) && node.type === 'button' && attr(node, 'data-dgp-action') === action
+      ))
+      assert(button !== null, relPath + ' 缺少 ' + action + ' 按钮')
+      return button
+    }
+    const confirmNode = () => findOne(panel.tree, (node) => (
+      isHost(node) && attr(node, 'data-dgp-discard-confirm') !== undefined
+    ))
+
+    // 先选中这一行：退回之后它从列表消失，选中项与 diff 都要跟着清空
+    const appRow = panel.fileRow('app.js')
+    assert(appRow !== null, '缺少 app.js 行')
+    click(appRow)
+    await panel.flush()
+    assert(panel.text().includes('const c = 4'), '选中后 diff 应渲染出来')
+
+    const discardButton = rowButton('app.js', 'discard')
+    eq(attr(discardButton, 'data-dgp-discard-kind'), 'revert', '已跟踪文件的退回 = 工作区回到索引')
+
+    // 点 ↶ 只展开确认，不发请求（退回不可恢复）
+    click(discardButton)
+    await panel.flush()
+    eq(discarded.length, 0, '点退回不应立刻发请求')
+    const confirm = confirmNode()
+    assert(confirm !== null, '应就地展开一行确认')
+    eq(attr(confirm, 'data-dgp-discard-confirm'), 'revert', '确认的种类跟着行来')
+    assert(textOf(confirm).includes('app.js'), '确认文案要点出文件名：' + textOf(confirm))
+
+    // 取消：确认收起，仍然没有请求
+    const cancelButton = findOne(confirm, (node) => isHost(node) && attr(node, 'data-dgp-discard-cancel') === 'true')
+    assert(cancelButton !== null, '确认行里应有取消按钮')
+    click(cancelButton)
+    await panel.flush()
+    eq(confirmNode(), null, '取消后确认应收起')
+    eq(discarded.length, 0, '取消不应发请求')
+
+    // 未跟踪文件的退回是删除，文案要说清
+    click(rowButton('notes.txt', 'discard'))
+    await panel.flush()
+    eq(attr(confirmNode(), 'data-dgp-discard-confirm'), 'delete', '未跟踪文件的退回 = 删除')
+    assert(textOf(confirmNode()).includes('删除'), '删除类文案要说清后果：' + textOf(confirmNode()))
+    click(findOne(confirmNode(), (node) => isHost(node) && attr(node, 'data-dgp-discard-cancel') === 'true'))
+    await panel.flush()
+
+    // 确认：请求只带路径，宿主自己判定退回成什么
+    const mark = panel.router.mark()
+    click(rowButton('app.js', 'discard'))
+    await panel.flush()
+    click(findOne(confirmNode(), (node) => isHost(node) && attr(node, 'data-dgp-discard-run') === 'revert'))
+    await panel.flush()
+
+    eq(discarded.length, 1, '确认后只发一次')
+    eq(discarded[0], { rootPath: PROJECT, path: 'app.js' }, '退回载荷只带仓库与路径')
+    assert(panel.router.all('status', mark).length >= 1, '退回后要重读 status')
+    assert(panel.fileRow('app.js') === null, '退回成功的文件应从列表消失')
+    assert(!panel.text().includes('const c = 4'), '文件消失后 diff 要清空')
+    eq(confirmNode(), null, '成功后退回确认态要收起')
+  })
+})
+
+test('用例 1t：提交框在有暂存且有说明时可提交，生成按钮走 commit/message', async () => {  const commits = []
   const generated = []
   await withPanel({
     routes: {

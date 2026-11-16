@@ -261,7 +261,8 @@ interface RootsStatsResult { summaries: RootStatsSummary[] }
   collapsedGroups,   // { staged?: boolean, unstaged?: boolean, untracked?: boolean, conflicted?: boolean }
   onToggleGroup,     // (group: string) => void
   onStage,           // (relPath: string, action: 'stage'|'unstage') => void
-  pendingPath,       // string | null（正在暂存/取消暂存的文件）
+  onDiscard,         // (relPath: string) => Promise<void> —— 行尾 ↶ 确认后调用；失败由 Panel 的错误条渲染
+  pendingPath,       // string | null（正在暂存/取消暂存/退回的文件）
   onStageGroup,      // (scope: 'stage-unstaged'|'stage-untracked'|'stage-all'|'unstage') => void
   pendingGroup,      // string | null（正在操作的整组 scope）
   t,                 // (key, params?) => string
@@ -269,6 +270,9 @@ interface RootsStatsResult { summaries: RootStatsSummary[] }
 ```
 行为：把 `status.files` 按 冲突 / 已暂存 / 未暂存 / 未跟踪 分组（同一文件可同时出现在已暂存与未暂存组，
 VSCode 的 MM 就是这样），每组内按路径构建**目录树**（单子节点链折叠成 `a/b/c`）。
+行尾动作只由分组决定（`rowActionOf` / `rowDiscardKind`，两个纯函数都在 `util/changes.js`）：
+未暂存 / 未跟踪 = `↶` 退回 + `+` 暂存，已暂存 = `−` 取消暂存，冲突 = 不给。退回先就地展开一行确认
+（`data-dgp-discard-confirm`），确认后才调 `onDiscard`；未跟踪文件的退回是删除，文案由 `discard.confirmUntracked` 说明。
 筛选框非空时所有分组与目录按展开渲染（命中项必须看得见）；错误只由 Panel 的错误条统一渲染。
 
 ### `<FileTree />`

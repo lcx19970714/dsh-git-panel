@@ -132,6 +132,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 - 变更区顶部是「储存库」列表（VS Code 的 Repositories）：每个仓库一行，点选切换下方变更区，可折叠；外部仓库行尾可移除，标题行 `+` 添加。**有改动的仓库行尾显示改动规模**（文件数 + `+N −N`，由 `roots/stats` 一次查完所有仓库；二进制文件只计文件数、行数不编 0），单个仓库读失败只在该行给一个可悬停的 `!`，不影响其它行。当前分支是贴在行最右侧的按钮，点仓库名只选中仓库，只有点这个按钮才打开分支菜单；菜单里可切到已有分支，也可在底部输入名字创建新分支：创建区能选「从」哪里开始（默认当前分支；其它本地分支标「（本地）」、远端分支标「（远端）」，选了非当前分支会补一句人话说明新分支从哪开始、改动会怎样），并决定是否「创建后切换」；工作区脏时先显示改动计数（`当前 main · 3 处改动（1 已暂存 · 2 未暂存）`）；合并 / 变基 / 拣选 / 回滚进行中时只留「只建分支」一个出口；跨起点撞车时把重叠文件摊开，给两个零风险出口：「改为从当前分支创建」/「只建分支」（不切换、改动不动）。用不上的根（测试夹具、vendor 仓库）可以在行尾隐藏：只是从储存库里收起，仓库本身不动，配置持久化在 `roots.json` 的 `hidden` 段；标题行的眼睛按钮展开「已隐藏」，在那里取消隐藏。项目根本身不给隐藏入口。文件模式固定浏览项目根，没有根选择器
 - 变更列表有两种显示方式，设置页与 `⋯` 菜单共用同一个偏好：**列表**（一行一个文件，文件名为主体、路径弱化在后，路径先截断）/ **树形**（按文件夹展开折叠）
 - 未跟踪文件有两种归属：**并进未暂存**（默认，VS Code 的 Changes 里同时有改动和新文件）或**单列未跟踪组**。批量按钮跟着分组内容走：合并模式是「全部暂存」（`git add -A`），分开模式才是「暂存已跟踪改动」（`git add -u`）+「只暂存新文件」（逐路径 `git add`）
+- 行尾动作按所在分组给（VS Code 的 SCM 行）：**未暂存 / 未跟踪**那一行是「退回（↶）+ 暂存（+）」，**已暂存**那一行只有「取消暂存（−）」，冲突行不给（退回会把冲突标记一起抹掉，先解决冲突）。退回**不可恢复**，所以它先就地展开一行确认（与删除分支同一套做法，不弹模态）；未跟踪文件的退回是**删除文件**（它没有 HEAD 版本可回），确认文案直接写明这一点。退回只作用于这一行对应的那一半：文件既有已暂存又有未暂存改动时，工作区回到索引，已暂存的部分留着。「退回到索引还是删掉文件」由宿主按**索引状态**判定，不采信客户端的分组（行是快照，可能过期）
 - 提交框只有两行：输入框（右上角生成/重新生成 + 提交图标）+ 一行「状态 + 创建 PR」。**说明为空时右上角只有生成图标，不渲染提交按钮**；生成成功后同一个位置变成「重新生成 + 提交」两个 SVG，用户点完生成不用移动鼠标就能接着提交，底部不再放提交按钮。输入框随内容自动长高（两行起步、约七行封顶，超出改为内部滚动），生成的说明有好几行时不会被压成两行只露一截
 - 状态行按状态行按 **结果 > 生成中 > 提交中 > 不能提交的原因** 只显示一件事，成功/失败/进度都不会把下面的变更列表顶下去；不能提交时说清是「没有已暂存的改动」还是「填写提交说明后提交」，不做无声禁用
 - 提交成功的结果（`已提交 abc1234 · 主题`）显示在同一条状态行里，8 秒后自动消失，开始写新说明时立刻让位；错误提示留着等你动手
@@ -194,7 +195,7 @@ DSH 的项目是以**会话的工作目录（cwd）**为中心的，但「git �
 不会静默产出坏包。
 
 **宿主与客户端的边界**：客户端只做展示与交互，一切文件系统与 git 操作都在宿主侧（插件 host 半体），
-通过 56 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）、`branch/create`（选基准建分支、可选建完就切过去；基准是当前 HEAD 时未提交改动原样跟随，跨基准撞车直接拒绝并给两个零风险出口）、`branch/delete`（删除本地分支，默认只删已合并的）和 `branch/cleanup`（收尾「远端分支已被删除」的当前本地分支：取远程更新 → 切回默认分支并快进 → 删掉这条本地分支，一条链做完；只走 `branch -d`，不加强制删除）。
+通过 57 个 RPC 端点通信。写能力包括 `file/write`（必须带内容哈希）、`index/stage`（暂存/取消暂存）、`index/discard`（退回单个文件的改动：已跟踪 = 工作区回到索引，未跟踪 = 删除文件）、`commit`（smart commit：有暂存只提交暂存，没有则先全部暂存）、`branch/create`（选基准建分支、可选建完就切过去；基准是当前 HEAD 时未提交改动原样跟随，跨基准撞车直接拒绝并给两个零风险出口）、`branch/delete`（删除本地分支，默认只删已合并的）和 `branch/cleanup`（收尾「远端分支已被删除」的当前本地分支：取远程更新 → 切回默认分支并快进 → 删掉这条本地分支，一条链做完；只走 `branch -d`，不加强制删除）。
 git 层面的**远端写**只有 `branch/push`（把当前分支推到 origin，用本机 git 凭据，
 `git push --set-upstream origin <当前分支>`；失败按认证 / 非快进分类）。
 `remote/fetch`（只更新远端跟踪引用，不动工作区与本地分支）与 `branch/pull`（fetch + 只允许快进）
@@ -214,6 +215,7 @@ git 层面的**远端写**只有 `branch/push`（把当前分支推到 origin，
 | `file/read` | `{rootPath, path}` | `{kind, text, size, language, eol, bom, hash, lines}`（文本一律 LF 归一） |
 | `file/write` | `{rootPath, path, text, expectedHash, eol, bom}` 或 `{…, force:true}` | `{size, mtimeMs, hash}`；哈希不匹配 → `conflict` |
 | `index/stage` | `{rootPath, path, action}` | `{path, action}`；`stage` = `git add --`，`unstage` = `git restore --staged --` |
+| `index/discard` | `{rootPath, path}` | `{path, action, kind}`；`kind` ∈ `reverted` / `deleted`。「退回到索引还是删掉这个文件」由宿主按**索引状态**判定（`ls-files --error-unmatch`），不采信客户端的分组：已跟踪 → `git restore --worktree --`（只退工作区那一半，已暂存的不动）；未跟踪 → 删除文件 |
 | `index/stage-group` | `{rootPath, scope}` | `{scope}`；整组暂存 / 取消暂存 |
 | `branches/list` | `{rootPath}` | `{branches, current, state}`；一次 for-each-ref 同时读 refs/heads 与 refs/remotes，按分支名合成一条：`{name, local, current, remote, upstream, ahead, behind, upstreamGone}`（`remote` 是远程名或 null，`local:false` 表示只有远程）；跳过 origin/HEAD 这类符号引用。`state` 是分支菜单要的全部现状，跟名单同一次往返取回：`{head, detached, unborn, inProgress, dirty}` —— `head` 是短 sha（`null` = unborn，空仓库还没有第一个提交）、`inProgress` ∈ `null / merge / rebase / cherry-pick / revert`（读 `.git/MERGE_HEAD`、`rebase-merge` / `rebase-apply`、`CHERRY_PICK_HEAD`、`REVERT_HEAD` 与 `sequencer`）、`dirty` 与 `status.counts` 同形但**不做行数统计**（菜单只要计数）；裸仓库明确报 `not-a-repository` |
 | `branch/track` | `{rootPath, remote, name}` | `{branch, head, upstream}`；`git switch -c <name> --track <remote>/<name>`，本地同名分支已存在报 `branch-exists` |
@@ -684,7 +686,7 @@ export function apply(ctx) {
 ——之前那个"面板一直闪、diff 永远加载不出来"的 bug 就是一路静默降级掩盖出来的。
 ## 5. 已知边界（v1 明确不做）
 
-- **提交是 smart commit**：有暂存就只提交暂存；没有暂存但工作区有改动时，会先把全部改动（含未跟踪文件）暂存再提交 —— 与 VS Code 的 `git.enableSmartCommit` 行为一致，只是这里始终开启。不做 discard（撤销本地改动）。
+- **提交是 smart commit**：有暂存就只提交暂存；没有暂存但工作区有改动时，会先把全部改动（含未跟踪文件）暂存再提交 —— 与 VS Code 的 `git.enableSmartCommit` 行为一致，只是这里始终开启。**可以退回单个文件的改动**（行尾 `↶`，二次确认）：已跟踪文件只把工作区退回索引（`git restore --worktree`），已暂存的部分不动；未跟踪文件退回 = 删除文件。没有「整组退回」，也不做 force checkout。
 - **仓库自己的 git hooks 照常执行**（pre-commit / commit-msg 等），不传 `--no-verify`；hook 失败时把它的输出原样显示出来。有未解决的冲突时会在提交前拦住并报 `unmerged`，不让 git 用一句退出码 1 收场。
 - 项目根是仓库子目录时，变更列表展示的是**整个仓库**的变更（VSCode 行为），不做「只看项目目录以内」的过滤。
 - 文件模式的筛选只搜索**已展开**的目录，不做仓库级全文搜索。

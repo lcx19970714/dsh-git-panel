@@ -534,6 +534,24 @@ export const CSS = `
 .dgp-row-action:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dgp-row-action[data-busy='true'] { opacity: .5; cursor: default; }
 .dgp-row-action:disabled { cursor: default; }
+/* 行尾动作组：退回 + 暂存并排（两个动作都属于「工作区的那一半」） */
+.dgp-row-actions { display: flex; flex: none; align-items: center; gap: 2px; }
+.dgp-row-wrap > .dgp-row-actions { margin-right: 6px; }
+/* 退回是破坏性动作：悬停用错误色，和暂存的普通高亮区分开 */
+.dgp-row-action[data-dgp-action="discard"]:hover:not(:disabled) { color: var(--dsw-alias-state-error-primary); }
+
+/* 退回确认：就地展开一行（与分支删除的确认同一套做法），不弹模态 */
+.dgp-row-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 8px 6px;
+  padding: 6px 8px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dgp-row-confirm-text { color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.5; }
+.dgp-row-confirm-actions { display: flex; gap: 6px; }
 
 /* 状态字母 M/A/D/R/C/T/U/? */
 /* 状态字母：只上色、不铺底（一排彩色小方块太碎） */

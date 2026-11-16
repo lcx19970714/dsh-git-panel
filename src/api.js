@@ -126,6 +126,11 @@ export function stageFile(payload, options) {
   return call('index/stage', payload, options)
 }
 
+/** 退回单个文件的改动（未跟踪文件会被删除）。「退回成什么」由宿主按索引状态判定。 */
+export function discardFile(payload, options) {
+  return call('index/discard', payload, options)
+}
+
 /** 整组暂存 / 取消暂存（scope 为 stage-unstaged / stage-untracked / unstage）。 */
 export function stageGroup(payload, options) {
   return call('index/stage-group', payload, options)

@@ -431,7 +431,7 @@ test('ChangesList：空工作区 / 加载中 / 报错', () => {
   assert(textOf(renderComponent(ChangesList, { ...base, status: null, loading: false, selectedPath: null })).includes('status.noRoots'), '没有 status 时给空态')
 })
 
-test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行没有', () => {
+test('ChangesList：行尾按钮按分组给出「退回 + 暂存」/「取消暂存」，冲突行没有', () => {
   const { ChangesList } = loadModule('./components/ChangesList.js')
   const staged = []
   // 每个分组一个根级文件：目录默认折叠，放进子目录就看不到行尾按钮
@@ -451,6 +451,7 @@ test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行
     onSelect: () => {}, filter: '', onFilterChange: () => {}, collapsedGroups: {}, onToggleGroup: () => {},
     pendingPath: 'work.js',
     onStage: (path, action) => staged.push({ path, action }),
+    onDiscard: () => {},
     onStageGroup: () => {},
     t: tKey
   })
@@ -459,16 +460,18 @@ test('ChangesList：行尾按钮按分组给出暂存 / 取消暂存，冲突行
     const group = collect(tree, (node) => node.$$host === true && node.props['data-dgp-group'] === key)[0]
     return collect(group, (node) => node.$$host === true && node.type === 'button' && node.props['data-dgp-action'] !== undefined)
   }
+  const kindsOf = (nodes) => nodes.map((node) => node.props['data-dgp-action'])
   const stagedButtons = byGroup('staged')
   const unstagedButtons = byGroup('unstaged')
   const untrackedButtons = byGroup('untracked')
-  assert(stagedButtons.length > 0, '已暂存组应有行尾按钮')
-  assert(unstagedButtons.length > 0, '未暂存组应有行尾按钮')
-  assert(untrackedButtons.length > 0, '未跟踪组应有行尾按钮')
-  eq(stagedButtons.every((node) => node.props['data-dgp-action'] === 'unstage'), true, '已暂存行应是取消暂存')
-  eq(unstagedButtons.every((node) => node.props['data-dgp-action'] === 'stage'), true, '未暂存行应是暂存')
-  eq(untrackedButtons.every((node) => node.props['data-dgp-action'] === 'stage'), true, '未跟踪行应是暂存')
-  eq(byGroup('conflicted').length, 0, '冲突行不应有暂存按钮')
+  // 未暂存 / 未跟踪的那一行有两个动作：退回（↶）与暂存（+）；已暂存那一行只有取消暂存
+  eq(kindsOf(stagedButtons), ['unstage'], '已暂存行只有取消暂存')
+  eq(kindsOf(unstagedButtons), ['discard', 'stage'], '未暂存行：退回 + 暂存')
+  eq(kindsOf(untrackedButtons), ['discard', 'stage'], '未跟踪行：退回（= 删除）+ 暂存')
+  eq(byGroup('conflicted').length, 0, '冲突行不应有按钮（退回会抹掉冲突标记）')
+  // 退回的种类由「这个文件有没有 HEAD 版本」决定，不是由分组决定
+  eq(unstagedButtons[0].props['data-dgp-discard-kind'], 'revert', '已跟踪的退回 = 工作区回到索引')
+  eq(untrackedButtons[0].props['data-dgp-discard-kind'], 'delete', '未跟踪的退回 = 删除文件')
   eq(actions.length, stagedButtons.length + unstagedButtons.length + untrackedButtons.length, '按钮数应等于三个可操作分组之和')
   const groupAction = (key) => {
     const group = collect(tree, (node) => node.$$host === true && node.props['data-dgp-group'] === key)[0]

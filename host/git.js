@@ -1211,9 +1211,37 @@ export async function stageGroup(repoRoot, scope, options = {}) {
   return { scope }
 }
 
+/**
+ * 退回单个文件的改动（VS Code 变更列表行尾的 ↶）。
+ *
+ * 「退回」对两种文件是两件不同的事，判据是**这个路径在不在索引里**，不是客户端说的分组
+ * （客户端的行是快照，可能已经过期）：
+ *   在索引里（已跟踪）  → `git restore --worktree -- <path>`：工作区回到索引。
+ *                        文件既有已暂存又有未暂存改动时，只退未暂存的那一半 —— 与 VS Code 一致。
+ *   不在索引里（未跟踪）→ 删除这个文件：它没有 HEAD 版本可回，退回就是让它不存在。
+ *
+ * 索引查询用 `ls-files --error-unmatch`：退出码 1 = 不在索引里，其它非零才是失败。
+ */
+export async function discardFile(repoRoot, relPath, options = {}) {
+  const pathspec = assertRepoPath(relPath)
+  const { signal } = options
+  const tracked = await runGit(repoRoot, ['ls-files', '--error-unmatch', '--', pathspec], {
+    signal,
+    allowFailure: true
+  })
+  if (tracked.code === 0) {
+    await runGit(repoRoot, ['restore', '--worktree', '--', pathspec], { signal })
+    return { path: pathspec, action: 'discard', kind: 'reverted' }
+  }
+  if (tracked.code !== 1) {
+    throw new GitError('git-failed', tracked.stderr || '无法读取索引状态', { code: tracked.code })
+  }
+  await unlink(resolveInside(repoRoot, pathspec))
+  return { path: pathspec, action: 'discard', kind: 'deleted' }
+}
+
 /** 提交说明的长度上限：超过就不是一条提交说明了。 */
 const COMMIT_MESSAGE_MAX = 5000
-
 /** 索引里有没有已暂存的改动（`git diff --cached --quiet`：有差异时退出码 1）。 */
 async function indexHasChanges(repoRoot, signal) {
   const result = await runGit(repoRoot, ['diff', '--cached', '--quiet'], { signal, allowFailure: true })

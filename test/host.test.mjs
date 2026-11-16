@@ -1980,8 +1980,58 @@ test('index/stage：未暂存点加号进入已暂存，已暂存点减号回到
   assert.equal(noteBack.unstaged, true, '取消暂存应回到未暂存，工作区内容保留')
 })
 
-test('index/stage：非法路径与非法动作直接拒绝，不改索引', async () => {
-  const dir = makeRepo(path.join(tempDir('dgp-stage-guard-'), 'repo'))
+test('index/discard：已跟踪文件的未暂存改动退回索引，工作区回到提交里的内容', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-discard-'), 'repo'))
+  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
+
+  const reverted = await callOk('index/discard', { rootPath: dir, path: 'hello.txt' })
+  assert.deepEqual(reverted, { path: 'hello.txt', action: 'discard', kind: 'reverted' })
+  assert.equal(readFileSync(path.join(dir, 'hello.txt'), 'utf8'), 'hello\n', '工作区应回到索引里的内容')
+  const status = await callOk('status', { rootPath: dir })
+  assert.equal(status.files.length, 0, '退回后不应再有任何改动')
+})
+
+test('index/discard：既有已暂存又有未暂存时只退工作区那一半，索引不动', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-discard-half-'), 'repo'))
+  writeFileSync(path.join(dir, 'hello.txt'), 'staged\n')
+  await callOk('index/stage', { rootPath: dir, path: 'hello.txt', action: 'stage' })
+  writeFileSync(path.join(dir, 'hello.txt'), 'worktree\n')
+
+  const before = await callOk('status', { rootPath: dir })
+  const mixed = before.files.find((file) => file.path === 'hello.txt')
+  assert.equal(mixed.staged, true, '前提：已暂存')
+  assert.equal(mixed.unstaged, true, '前提：工作区也有改动')
+
+  await callOk('index/discard', { rootPath: dir, path: 'hello.txt' })
+  assert.equal(readFileSync(path.join(dir, 'hello.txt'), 'utf8'), 'staged\n', '工作区回到索引（已暂存的内容）')
+  const after = await callOk('status', { rootPath: dir })
+  const kept = after.files.find((file) => file.path === 'hello.txt')
+  assert.equal(kept.staged, true, '已暂存的那一半必须保留')
+  assert.equal(kept.unstaged, false, '未暂存的那一半应被退回')
+})
+
+test('index/discard：未跟踪文件被删除 —— 它没有 HEAD 版本可回，退回就是让它不存在', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-discard-untracked-'), 'repo'))
+  writeFileSync(path.join(dir, 'fresh.txt'), 'new\n')
+
+  const result = await callOk('index/discard', { rootPath: dir, path: 'fresh.txt' })
+  assert.deepEqual(result, { path: 'fresh.txt', action: 'discard', kind: 'deleted' })
+  assert.equal(existsSync(path.join(dir, 'fresh.txt')), false, '未跟踪文件应从磁盘上消失')
+  const status = await callOk('status', { rootPath: dir })
+  assert.equal(status.files.length, 0, '删掉之后不应再有改动')
+})
+
+test('index/discard：非法路径与 .git 内部路径直接拒绝，不动工作区', async () => {
+  const dir = makeRepo(path.join(tempDir('dgp-discard-guard-'), 'repo'))
+  writeFileSync(path.join(dir, 'hello.txt'), 'changed\n')
+  for (const bad of ['../outside.txt', '.git/config', '/abs.txt', '-evil', 'a//b', '']) {
+    const result = await callRoute('index/discard', { rootPath: dir, path: bad })
+    assert.equal(result.ok, false, '应拒绝：' + JSON.stringify(bad) + ' → ' + JSON.stringify(result))
+  }
+  assert.equal(readFileSync(path.join(dir, 'hello.txt'), 'utf8'), 'changed\n', '被拒绝的请求不能动工作区')
+})
+
+test('index/stage：非法路径与非法动作直接拒绝，不改索引', async () => {  const dir = makeRepo(path.join(tempDir('dgp-stage-guard-'), 'repo'))
   for (const bad of ['../outside.txt', '.git/config', '/abs.txt', '-evil', 'a//b', '']) {
     const result = await callRoute('index/stage', { rootPath: dir, path: bad, action: 'stage' })
     assert.equal(result.ok, false, '应拒绝：' + JSON.stringify(bad) + ' → ' + JSON.stringify(result))

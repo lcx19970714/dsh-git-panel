@@ -25,7 +25,7 @@ import { h, useEffect, useMemo, useState } from '../platform.js'
 import { Icon, StatusLetter } from '../ui/Icon.js'
 import { useTreeCursor } from '../ui/useTreeCursor.js'
 import { dirname, formatCount } from '../util/paths.js'
-import { ancestorsFor, buildGroupRows, buildListRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } from '../util/changes.js'
+import { ancestorsFor, buildGroupRows, buildListRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf, rowDiscardKind } from '../util/changes.js'
 import { EmptyState, SkeletonRows } from './States.js'
 
 export function ChangesList(props) {
@@ -40,6 +40,7 @@ export function ChangesList(props) {
     view = 'list',
     untrackedMode = 'merge',
     onStage,
+    onDiscard,
     pendingPath = null,
     onStageGroup,
     pendingGroup = null,
@@ -50,6 +51,18 @@ export function ChangesList(props) {
   const filtering = filter.trim() !== ''
 
   const [expanded, setExpanded] = useState(() => new Set())
+  /** 退回确认：{ path, kind: 'revert'|'delete' }；同一时刻只展开一行。 */
+  const [discard, setDiscard] = useState(null)
+
+  /**
+   * 确认后执行退回：动作由 Panel 做（它负责请求与刷新），这里只收起确认。
+   * 失败原因统一进 Panel 的错误条（CONTRACT：错误只由 Panel 渲染）。
+   */
+  async function runDiscard() {
+    if (discard === null) return
+    await onDiscard(discard.path)
+    setDiscard(null)
+  }
 
   const filteredFiles = useMemo(() => filterEntries(files, filter), [files, filter])
   const groups = useMemo(() => groupChanges(filteredFiles, { untrackedMode }), [filteredFiles, untrackedMode])
@@ -130,6 +143,12 @@ export function ChangesList(props) {
     if (index >= 0) focusRow(index)
   }, [selectedPath, flatRows])
 
+  // 那一行已经从 status 里消失（退回成功 / 外部改动）：确认态不能留到同名文件再次出现。
+  useEffect(() => {
+    if (discard === null || files.some((file) => file.path === discard.path)) return
+    setDiscard(null)
+  }, [discard, files])
+
   /* ------------------------------ 渲染 ------------------------------ */
 
   function renderRow(group, row, index) {
@@ -192,12 +211,33 @@ export function ChangesList(props) {
       counts.push(h('span', { key: 'del', className: 'dgp-del' }, t('viewer.dels', { count: String(stats.dels) })))
     }
 
-    // 行尾操作只由所在分组决定：已暂存 = 取消暂存，未暂存/未跟踪 = 暂存，冲突不给按钮。
+    // 行尾操作只由所在分组决定：未暂存/未跟踪 = 退回 + 暂存，已暂存 = 取消暂存，冲突不给按钮。
+    // 「退回」是不可恢复的操作，所以它先展开一行确认（与分支删除同一套做法）。
     const action = rowActionOf(group.key)
+    const discardKind = rowDiscardKind(entry, group.key)
     const busy = pendingPath !== null && pendingPath === row.path
-    const actionButton = action === null
-      ? null
-      : h('button', {
+    const buttons = []
+    if (discardKind !== null) {
+      buttons.push(h('button', {
+        key: 'discard',
+        type: 'button',
+        className: 'dgp-row-action',
+        'data-dgp-action': 'discard',
+        'data-dgp-discard-kind': discardKind,
+        'data-busy': busy ? 'true' : undefined,
+        disabled: busy,
+        title: t(discardKind === 'delete' ? 'row.discardUntracked' : 'row.discard'),
+        'aria-label': t(discardKind === 'delete' ? 'row.discardUntracked' : 'row.discard'),
+        onClick: (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          setDiscard({ path: row.path, kind: discardKind })
+        }
+      }, h(Icon, { name: 'discard', size: 14 })))
+    }
+    if (action !== null) {
+      buttons.push(h('button', {
+        key: action,
         type: 'button',
         className: 'dgp-row-action',
         'data-dgp-action': action,
@@ -210,7 +250,37 @@ export function ChangesList(props) {
           event.stopPropagation()
           onStage(row.path, action)
         }
-      }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 14 }))
+      }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 14 })))
+    }
+    const actionArea = buttons.length === 0 ? null : h('div', { className: 'dgp-row-actions' }, buttons)
+    const confirming = discard !== null && discard.path === row.path
+    const confirmArea = confirming
+      ? h('div', {
+        className: 'dgp-row-confirm',
+        'data-dgp-discard-confirm': discard.kind
+      },
+      h('div', { className: 'dgp-row-confirm-text' },
+        t(discard.kind === 'delete' ? 'discard.confirmUntracked' : 'discard.confirmRevert', { path: row.path })),
+      h('div', { className: 'dgp-row-confirm-actions' },
+        h('button', {
+          type: 'button',
+          className: 'dgp-btn',
+          'data-size': 'sm',
+          'data-variant': 'ghost',
+          'data-dgp-discard-cancel': 'true',
+          disabled: busy,
+          onClick: () => setDiscard(null)
+        }, t('action.cancel')),
+        h('button', {
+          type: 'button',
+          className: 'dgp-btn',
+          'data-size': 'sm',
+          'data-variant': 'danger',
+          'data-dgp-discard-run': discard.kind,
+          disabled: busy,
+          onClick: runDiscard
+        }, t(discard.kind === 'delete' ? 'discard.deleteFile' : 'discard.run'))))
+      : null
 
     return h('li', {
       key: 'file:' + row.path,
@@ -233,7 +303,8 @@ export function ChangesList(props) {
       h('span', { className: 'dgp-name dgp-oneline' }, row.displayName),
       parent === '' ? null : h('span', { className: 'dgp-sub dgp-oneline' }, parent),
       counts.length === 0 ? null : h('span', { className: 'dgp-meta' }, counts)),
-      actionButton))
+      actionArea),
+    confirmArea)
   }
 
   function renderGroup(group) {

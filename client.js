@@ -742,6 +742,24 @@ window.__ModuleLoader__.load({
       .dgp-row-action:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
       .dgp-row-action[data-busy='true'] { opacity: .5; cursor: default; }
       .dgp-row-action:disabled { cursor: default; }
+      /* 行尾动作组：退回 + 暂存并排（两个动作都属于「工作区的那一半」） */
+      .dgp-row-actions { display: flex; flex: none; align-items: center; gap: 2px; }
+      .dgp-row-wrap > .dgp-row-actions { margin-right: 6px; }
+      /* 退回是破坏性动作：悬停用错误色，和暂存的普通高亮区分开 */
+      .dgp-row-action[data-dgp-action="discard"]:hover:not(:disabled) { color: var(--dsw-alias-state-error-primary); }
+
+      /* 退回确认：就地展开一行（与分支删除的确认同一套做法），不弹模态 */
+      .dgp-row-confirm {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin: 2px 8px 6px;
+        padding: 6px 8px;
+        border-radius: var(--dsw-radius-xs);
+        background: var(--dsw-alias-bg-module-platform);
+      }
+      .dgp-row-confirm-text { color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.5; }
+      .dgp-row-confirm-actions { display: flex; gap: 6px; }
 
       /* 状态字母 M/A/D/R/C/T/U/? */
       /* 状态字母：只上色、不铺底（一排彩色小方块太碎） */
@@ -2325,6 +2343,12 @@ window.__ModuleLoader__.load({
         'group.count': '{count}',
         'row.stage': '暂存',
         'row.unstage': '取消暂存',
+        'row.discard': '退回这个文件的改动',
+        'row.discardUntracked': '删除这个未跟踪文件（退回）',
+        'discard.confirmRevert': '退回「{path}」的全部改动？工作区会回到暂存区，这个操作不可恢复。',
+        'discard.confirmUntracked': '「{path}」是未跟踪文件，退回会删除它。这个操作不可恢复。',
+        'discard.run': '退回改动',
+        'discard.deleteFile': '删除文件',
         'group.stageAll': '暂存全部',
         'group.unstageAll': '取消全部暂存',
 
@@ -2833,6 +2857,12 @@ window.__ModuleLoader__.load({
         'group.count': '{count}',
         'row.stage': 'Stage',
         'row.unstage': 'Unstage',
+        'row.discard': 'Discard changes in this file',
+        'row.discardUntracked': 'Delete this untracked file (discard)',
+        'discard.confirmRevert': 'Discard all changes in "{path}"? The working tree goes back to the index; this cannot be undone.',
+        'discard.confirmUntracked': '"{path}" is untracked; discarding deletes the file. This cannot be undone.',
+        'discard.run': 'Discard changes',
+        'discard.deleteFile': 'Delete file',
         'group.stageAll': 'Stage all',
         'group.unstageAll': 'Unstage all',
 
@@ -3342,6 +3372,11 @@ window.__ModuleLoader__.load({
           'M4 16h4',
           'M12 16h8',
           'M10 16a2 2 0 1 1-4 0 2 2 0 0 1 4 0z'
+        ],
+        // 退回改动：一个向左的箭头 + 一条回头的弧（与 VS Code 的 discard 同义）
+        discard: [
+          'M9 14 4 9l5-5',
+          'M4 9h9.5a6 6 0 0 1 0 12H11'
         ]
       }
 
@@ -4312,6 +4347,33 @@ window.__ModuleLoader__.load({
           setStatusError(null)
           try {
             await api.stageGroup({ rootPath: activeRepo.path, scope })
+            await refreshRepository()
+            setDiffNonce((previous) => previous + 1)
+          } catch (error) {
+            if (error.code !== 'aborted') {
+              setStatusError(api.describeError(error, tRef.current))
+            }
+          } finally {
+            stagePendingRef.current = null
+            setStagePending(null)
+          }
+        }, [activeRepo, refreshRepository])
+
+        /**
+         * 行尾 ↶：退回这个文件的改动（未跟踪文件由宿主删除）。
+         *
+         * 与「暂存」共用同一份忙碌标记：这两个动作都改索引/工作区，同一时刻只能有一个在跑，
+         * 否则第二次操作会基于上一次之前的索引状态执行。是否删除未跟踪文件由宿主按索引状态判定，
+         * 客户端只传路径（见 host/git.js 的 discardFile）—— 行是快照，不能拿它当事实。
+         */
+        const discardEntry = useCallback(async (relPath) => {
+          if (activeRepo === null) return
+          if (stagePendingRef.current !== null) return
+          stagePendingRef.current = relPath
+          setStagePending(relPath)
+          setStatusError(null)
+          try {
+            await api.discardFile({ rootPath: activeRepo.path, path: relPath })
             await refreshRepository()
             setDiffNonce((previous) => previous + 1)
           } catch (error) {
@@ -5729,6 +5791,7 @@ window.__ModuleLoader__.load({
                 collapsedGroups,
                 onToggleGroup: toggleGroup,
                 onStage: stageEntry,
+                onDiscard: discardEntry,
                 pendingPath: stagePending,
                 onStageGroup: stageGroup,
                 pendingGroup: stagePending,
@@ -6832,6 +6895,11 @@ window.__ModuleLoader__.load({
         return call('index/stage', payload, options)
       }
 
+      /** 退回单个文件的改动（未跟踪文件会被删除）。「退回成什么」由宿主按索引状态判定。 */
+      function discardFile(payload, options) {
+        return call('index/discard', payload, options)
+      }
+
       /** 整组暂存 / 取消暂存（scope 为 stage-unstaged / stage-untracked / unstage）。 */
       function stageGroup(payload, options) {
         return call('index/stage-group', payload, options)
@@ -7114,7 +7182,7 @@ window.__ModuleLoader__.load({
         return t('error.generic', { message })
       }
 
-      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullFile, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, rootStats, listBranches, remoteBranches, deleteLocalBranch, deleteRemoteBranch, trackBranch, switchBranch, createBranch, pushBranch, cleanupBranch, commitChanges, commitMessage, prPrepare, pullBranch, pluginInfo, pluginUpdate, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
+      Object.assign(exports, { call, resolveProject, readStatus, readDiff, readFile, fetchRemote, writeFile, stageFile, discardFile, stageGroup, listAccounts, addAccount, updateAccount, readAccountToken, removeAccount, listRemoteRepos, remoteDetail, remotePullCounts, remotePull, remotePullReview, remotePullTest, remotePullFile, remotePullAiReview, remotePullPrepareReview, remotePullSessionReview, remotePullCloneForReview, remotePullState, remotePullComment, remotePullPass, remotePullMerge, cloneRemoteRepo, hideRoot, unhideRoot, rootStats, listBranches, remoteBranches, deleteLocalBranch, deleteRemoteBranch, trackBranch, switchBranch, createBranch, pushBranch, cleanupBranch, commitChanges, commitMessage, prPrepare, pullBranch, pluginInfo, pluginUpdate, prLinked, prGenerate, prCreate, listModels, readSettings, writeSettings, listDirectory, addRoot, removeRoot, describeError });
 
     });
     __define("./components/RepoList.js", (exports, module) => {
@@ -8077,7 +8145,7 @@ window.__ModuleLoader__.load({
       const { Icon, StatusLetter } = __m("./ui/Icon.js");
       const { useTreeCursor } = __m("./ui/useTreeCursor.js");
       const { dirname, formatCount } = __m("./util/paths.js");
-      const { ancestorsFor, buildGroupRows, buildListRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf } = __m("./util/changes.js");
+      const { ancestorsFor, buildGroupRows, buildListRows, countFilesUnder, filterEntries, groupChanges, groupActionOf, rowActionOf, rowDiscardKind } = __m("./util/changes.js");
       const { EmptyState, SkeletonRows } = __m("./components/States.js");
 
       function ChangesList(props) {
@@ -8092,6 +8160,7 @@ window.__ModuleLoader__.load({
           view = 'list',
           untrackedMode = 'merge',
           onStage,
+          onDiscard,
           pendingPath = null,
           onStageGroup,
           pendingGroup = null,
@@ -8102,6 +8171,18 @@ window.__ModuleLoader__.load({
         const filtering = filter.trim() !== ''
 
         const [expanded, setExpanded] = useState(() => new Set())
+        /** 退回确认：{ path, kind: 'revert'|'delete' }；同一时刻只展开一行。 */
+        const [discard, setDiscard] = useState(null)
+
+        /**
+         * 确认后执行退回：动作由 Panel 做（它负责请求与刷新），这里只收起确认。
+         * 失败原因统一进 Panel 的错误条（CONTRACT：错误只由 Panel 渲染）。
+         */
+        async function runDiscard() {
+          if (discard === null) return
+          await onDiscard(discard.path)
+          setDiscard(null)
+        }
 
         const filteredFiles = useMemo(() => filterEntries(files, filter), [files, filter])
         const groups = useMemo(() => groupChanges(filteredFiles, { untrackedMode }), [filteredFiles, untrackedMode])
@@ -8182,6 +8263,12 @@ window.__ModuleLoader__.load({
           if (index >= 0) focusRow(index)
         }, [selectedPath, flatRows])
 
+        // 那一行已经从 status 里消失（退回成功 / 外部改动）：确认态不能留到同名文件再次出现。
+        useEffect(() => {
+          if (discard === null || files.some((file) => file.path === discard.path)) return
+          setDiscard(null)
+        }, [discard, files])
+
         /* ------------------------------ 渲染 ------------------------------ */
 
         function renderRow(group, row, index) {
@@ -8244,12 +8331,33 @@ window.__ModuleLoader__.load({
             counts.push(h('span', { key: 'del', className: 'dgp-del' }, t('viewer.dels', { count: String(stats.dels) })))
           }
 
-          // 行尾操作只由所在分组决定：已暂存 = 取消暂存，未暂存/未跟踪 = 暂存，冲突不给按钮。
+          // 行尾操作只由所在分组决定：未暂存/未跟踪 = 退回 + 暂存，已暂存 = 取消暂存，冲突不给按钮。
+          // 「退回」是不可恢复的操作，所以它先展开一行确认（与分支删除同一套做法）。
           const action = rowActionOf(group.key)
+          const discardKind = rowDiscardKind(entry, group.key)
           const busy = pendingPath !== null && pendingPath === row.path
-          const actionButton = action === null
-            ? null
-            : h('button', {
+          const buttons = []
+          if (discardKind !== null) {
+            buttons.push(h('button', {
+              key: 'discard',
+              type: 'button',
+              className: 'dgp-row-action',
+              'data-dgp-action': 'discard',
+              'data-dgp-discard-kind': discardKind,
+              'data-busy': busy ? 'true' : undefined,
+              disabled: busy,
+              title: t(discardKind === 'delete' ? 'row.discardUntracked' : 'row.discard'),
+              'aria-label': t(discardKind === 'delete' ? 'row.discardUntracked' : 'row.discard'),
+              onClick: (event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                setDiscard({ path: row.path, kind: discardKind })
+              }
+            }, h(Icon, { name: 'discard', size: 14 })))
+          }
+          if (action !== null) {
+            buttons.push(h('button', {
+              key: action,
               type: 'button',
               className: 'dgp-row-action',
               'data-dgp-action': action,
@@ -8262,7 +8370,37 @@ window.__ModuleLoader__.load({
                 event.stopPropagation()
                 onStage(row.path, action)
               }
-            }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 14 }))
+            }, h(Icon, { name: action === 'stage' ? 'plus' : 'minus', size: 14 })))
+          }
+          const actionArea = buttons.length === 0 ? null : h('div', { className: 'dgp-row-actions' }, buttons)
+          const confirming = discard !== null && discard.path === row.path
+          const confirmArea = confirming
+            ? h('div', {
+              className: 'dgp-row-confirm',
+              'data-dgp-discard-confirm': discard.kind
+            },
+            h('div', { className: 'dgp-row-confirm-text' },
+              t(discard.kind === 'delete' ? 'discard.confirmUntracked' : 'discard.confirmRevert', { path: row.path })),
+            h('div', { className: 'dgp-row-confirm-actions' },
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'ghost',
+                'data-dgp-discard-cancel': 'true',
+                disabled: busy,
+                onClick: () => setDiscard(null)
+              }, t('action.cancel')),
+              h('button', {
+                type: 'button',
+                className: 'dgp-btn',
+                'data-size': 'sm',
+                'data-variant': 'danger',
+                'data-dgp-discard-run': discard.kind,
+                disabled: busy,
+                onClick: runDiscard
+              }, t(discard.kind === 'delete' ? 'discard.deleteFile' : 'discard.run'))))
+            : null
 
           return h('li', {
             key: 'file:' + row.path,
@@ -8285,7 +8423,8 @@ window.__ModuleLoader__.load({
             h('span', { className: 'dgp-name dgp-oneline' }, row.displayName),
             parent === '' ? null : h('span', { className: 'dgp-sub dgp-oneline' }, parent),
             counts.length === 0 ? null : h('span', { className: 'dgp-meta' }, counts)),
-            actionButton))
+            actionArea),
+          confirmArea)
         }
 
         function renderGroup(group) {
@@ -8575,6 +8714,21 @@ window.__ModuleLoader__.load({
       }
 
       /**
+       * 这一行能不能「退回改动」，以及退回的是哪一种（VS Code 的行为）：
+       *
+       *  · 只有未暂存 / 未跟踪的行能退回 —— 能与「暂存」共存的那个位置，就是工作区的那一半；
+       *    已暂存的那一行对应的是索引，它的动作是「取消暂存」，不是退回。
+       *  · 冲突文件不给：退回会把冲突标记一起抹掉，正确做法是先解决冲突。
+       *  · 未跟踪文件退回 = **删除它**（它没有 HEAD 版本可回），确认文案必须说清这一点。
+       *
+       * 返回 `'revert'`（工作区回到索引）、`'delete'`（删除未跟踪文件）或 `null`（不提供）。
+       */
+      function rowDiscardKind(entry, groupKey) {
+        if (rowActionOf(groupKey) !== 'stage') return null
+        return entry !== null && entry !== undefined && entry.untracked === true ? 'delete' : 'revert'
+      }
+
+      /**
        * 分组头右侧的批量操作。与行尾按钮同一套规则，作用范围是**整组**，
        * 所以必须跟着分组内容走：
        *   staged    → unstage（取消暂存全部已暂存）
@@ -8818,7 +8972,7 @@ window.__ModuleLoader__.load({
         return parts.join('\u0000')
       }
 
-      Object.assign(exports, { GROUP_ORDER, groupsOfFile, groupChanges, rowActionOf, groupActionOf, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, buildListRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection, sideForEntry, statusSignature });
+      Object.assign(exports, { GROUP_ORDER, groupsOfFile, groupChanges, rowActionOf, rowDiscardKind, groupActionOf, singleFileShortcut, normalizeRelPath, childPath, matchesEntry, filterEntries, buildGroupRows, buildListRows, ancestorsFor, countFilesUnder, orderTreeEntries, reconcileSelection, sideForEntry, statusSignature });
 
     });
     __define("./components/FileTree.js", (exports, module) => {

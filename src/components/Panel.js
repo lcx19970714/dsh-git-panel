@@ -923,6 +923,33 @@ export function Panel(props) {
   }, [activeRepo, refreshRepository])
 
   /**
+   * 行尾 ↶：退回这个文件的改动（未跟踪文件由宿主删除）。
+   *
+   * 与「暂存」共用同一份忙碌标记：这两个动作都改索引/工作区，同一时刻只能有一个在跑，
+   * 否则第二次操作会基于上一次之前的索引状态执行。是否删除未跟踪文件由宿主按索引状态判定，
+   * 客户端只传路径（见 host/git.js 的 discardFile）—— 行是快照，不能拿它当事实。
+   */
+  const discardEntry = useCallback(async (relPath) => {
+    if (activeRepo === null) return
+    if (stagePendingRef.current !== null) return
+    stagePendingRef.current = relPath
+    setStagePending(relPath)
+    setStatusError(null)
+    try {
+      await api.discardFile({ rootPath: activeRepo.path, path: relPath })
+      await refreshRepository()
+      setDiffNonce((previous) => previous + 1)
+    } catch (error) {
+      if (error.code !== 'aborted') {
+        setStatusError(api.describeError(error, tRef.current))
+      }
+    } finally {
+      stagePendingRef.current = null
+      setStagePending(null)
+    }
+  }, [activeRepo, refreshRepository])
+
+  /**
    * 推送当前分支（`branch/push`）。成功就刷新仓库状态 —— 提示条由 `status.sync` 驱动，
    * 刷新后自己消失/换成别的状态；失败把原因留在提示条里，不弹窗。
    * 正在执行时用 ref 挡住重复点击（state 要等下一遍渲染才生效）。
@@ -2327,6 +2354,7 @@ export function Panel(props) {
           collapsedGroups,
           onToggleGroup: toggleGroup,
           onStage: stageEntry,
+          onDiscard: discardEntry,
           pendingPath: stagePending,
           onStageGroup: stageGroup,
           pendingGroup: stagePending,

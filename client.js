@@ -649,7 +649,6 @@ window.__ModuleLoader__.load({
         min-width: 0;
       }
       .dgp-row-wrap > .dgp-row { flex: 1 1 auto; min-width: 0; width: auto; }
-      .dgp-row-wrap > .dgp-row-action { margin-right: 6px; }
       .dgp-row {
         display: flex;
         align-items: center;
@@ -674,6 +673,28 @@ window.__ModuleLoader__.load({
       }
       .dgp-row[data-kind="dir"] { color: var(--dsw-alias-label-secondary); }
       .dgp-row[data-cursor="true"] { background: var(--dsw-alias-interactive-bg-hover); }
+      /*
+       * 变更行（有行尾动作的那些行）：高亮画在**整行容器**上，行内按钮不再自己画。
+       *
+       * 行尾动作是行按钮的兄弟节点（按钮里不能再放按钮），如果高亮还留在行按钮上，
+       * 动作就落在选中背景之外，看着像飘在行右边的两个孤立图标。
+       * 容器的悬停 / 选中 / 键盘游标三种状态都在这里画，动作与文字共享同一块背景。
+       */
+      .dgp-change-row { border-radius: var(--dsw-radius-xs); }
+      .dgp-change-row:hover,
+      .dgp-change-row:has(> .dgp-row[data-active="true"]),
+      .dgp-change-row:has(> .dgp-row[data-cursor="true"]) {
+        background: var(--dsw-alias-interactive-bg-hover);
+      }
+      .dgp-change-row > .dgp-row,
+      .dgp-change-row > .dgp-row:hover,
+      .dgp-change-row > .dgp-row[data-active="true"],
+      .dgp-change-row > .dgp-row[aria-selected="true"],
+      .dgp-change-row > .dgp-row[data-cursor="true"] {
+        background: transparent;
+      }
+      /* 动作自己的悬停片要比整行高亮更实一档，否则在已高亮的行上等于没反应 */
+      .dgp-change-row .dgp-row-action:hover { background: var(--dsw-alias-bg-layer-2); }
       .dgp-caret, .dgp-group-caret {
         display: flex;
         flex: none;
@@ -8409,7 +8430,7 @@ window.__ModuleLoader__.load({
             'aria-level': depth + 1,
             'aria-selected': isActive ? 'true' : 'false'
           },
-          h('div', { className: 'dgp-row-wrap' },
+          h('div', { className: 'dgp-row-wrap dgp-change-row' },
             h('button', {
               ...common,
               'data-kind': 'file',

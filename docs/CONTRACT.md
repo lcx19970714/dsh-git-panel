@@ -491,6 +491,10 @@ SettingsView({
 
 ### 左侧列表 / 树
 `dgp-list`、`dgp-level`（ul）、`dgp-item`（li）、`dgp-row`（button；`data-kind=dir|file`；`data-active`）、
+`dgp-row-wrap`（行容器；变更列表里还带 `dgp-change-row` —— **高亮画在它身上**，行尾动作是行按钮的兄弟节点，
+不在它上面画就只能是挂在行外的一对图标）、`dgp-row-actions`（行尾动作容器）、
+`dgp-row-confirm[data-dgp-discard-confirm=revert|delete]` + `dgp-row-confirm-text` + `dgp-row-confirm-actions`
+（`data-dgp-discard-cancel` / `data-dgp-discard-run`）、
 `dgp-caret[data-open]`、`dgp-status-letter[data-status=M|A|D|R|C|T|U|?]`、`dgp-name`、`dgp-name-dir`、
 `dgp-sub`（弱化父路径）、`dgp-meta`、`dgp-add`、`dgp-del`、
 `dgp-group`、`dgp-group-head`、`dgp-group-caret[data-open]`、`dgp-group-title`、`dgp-group-count`、

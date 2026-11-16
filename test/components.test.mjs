@@ -492,6 +492,32 @@ test('ChangesList：行尾按钮按分组给出「退回 + 暂存」/「取消�
   eq(busy.props['data-busy'], 'true', '忙状态钩子')
 })
 
+test('ChangesList：行尾动作在行容器内，与行共享同一块高亮背景', () => {
+  const { ChangesList } = loadModule('./components/ChangesList.js')
+  const flat = {
+    ...statusFixture,
+    files: [
+      { path: 'work.js', status: 'M', staged: false, unstaged: true, untracked: false, conflicted: false, adds: 1, dels: 0 }
+    ]
+  }
+  const tree = renderComponent(ChangesList, {
+    status: flat, loading: false, error: null, selectedPath: 'work.js',
+    untrackedMode: 'merge',
+    onSelect: () => {}, filter: '', collapsedGroups: {}, onToggleGroup: () => {},
+    pendingPath: null,
+    onStage: () => {}, onDiscard: () => {}, onStageGroup: () => {},
+    t: tKey
+  })
+  const wraps = collect(tree, (node) => node.$$host === true && classOf(node).split(' ').includes('dgp-change-row'))
+  eq(wraps.length, 1, '未暂存行应有一个变更行容器')
+  const wrap = wraps[0]
+  // 高亮画在这个容器上（悬停 / 选中 / 键盘游标三种状态），所以行按钮与两个动作必须在同一个容器里
+  eq(collect(wrap, (node) => node.$$host === true && node.props['data-dgp-path'] !== undefined).length, 1,
+    '行按钮在容器里')
+  eq(collect(wrap, (node) => node.$$host === true && node.props['data-dgp-action'] !== undefined).length, 2,
+    '退回与暂存两个动作也在同一个容器里')
+})
+
 test('输入框自动高度：夹在最小与最大之间，往上取整避免最后一行被截', () => {
   const { clampHeight } = loadModule('./ui/useAutoGrow.js')
   const { COMMIT_INPUT_MIN_HEIGHT, COMMIT_INPUT_MAX_HEIGHT } = loadModule('./components/CommitBox.js')

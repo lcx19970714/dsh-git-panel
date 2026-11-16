@@ -289,7 +289,7 @@ export function ChangesList(props) {
       'aria-level': depth + 1,
       'aria-selected': isActive ? 'true' : 'false'
     },
-    h('div', { className: 'dgp-row-wrap' },
+    h('div', { className: 'dgp-row-wrap dgp-change-row' },
       h('button', {
         ...common,
         'data-kind': 'file',

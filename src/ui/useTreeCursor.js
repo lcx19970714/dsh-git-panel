@@ -11,9 +11,9 @@
  *    所以不需要 contains 判断 —— 只有「Enter 由容器自己处理还是交给行 button」
  *    需要区分 target 是不是容器。
  *  - 行节点由组件通过 ref 收集进 `rowRefs`，索引与扁平行数组一致。
- *  - 游标是**渲染期收敛**的（见 `cursor`）：对外给出的 `cursor` 永远是本遍渲染里
- *    真实存在的行号，或 -1（还没选行 / 没有行）。调用方（含滚动 effect）不需要
- *    再判空 —— 判空就是把「下标可以先失效、晚点再修正」这个错误模型留在代码里。
+ *  - rows 只包含渲染可聚焦按钮的行，加载/错误/空目录等提示不参与导航。
+ *  - 游标在渲染期收敛到当前行号，或 -1（还没选行 / 没有行）。
+ *    DOM 引用仍遵循挂载/卸载生命周期，滚动前需检查元素是否存在。
  */
 import { useEffect, useRef, useState } from '../platform.js'
 
@@ -44,8 +44,8 @@ export function useTreeCursor(options) {
    * 而「把游标改回合法值」如果放在 effect 里，状态要到下一遍渲染才生效 ——
    * 同一提交里的滚动 effect 读到的仍是旧下标，那个下标的行可能刚被卸载
    * （React 卸载行时把 ref 回调传成 `null`），`null.scrollIntoView` 就是那次崩溃。
-   * 在渲染期收敛就不存在「旧下标」这个中间状态：渲染画出的行都在 0..rows.length-1，
-   * 它们的 ref 也在本提交挂好了，所以下面滚动时读到的一定是真实元素。
+   * 渲染期收敛消除旧下标；调用方还必须保证 rows 与绑定 ref 的按钮一一对应。
+   * 下标有效不等于 DOM 已挂载，因此滚动副作用单独检查引用生命周期。
    */
   const cursor = Math.min(stored, rows.length - 1)
   const rowRefs = useRef([])
@@ -55,6 +55,7 @@ export function useTreeCursor(options) {
   useEffect(() => {
     if (cursor < 0) return
     const element = rowRefs.current[cursor]
+    if (element === null || element === undefined) return
     element.scrollIntoView({ block: 'nearest' })
     if (wantFocusRef.current === true) {
       wantFocusRef.current = false

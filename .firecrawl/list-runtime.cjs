@@ -1,0 +1,1 @@
+const fs = require('node:fs'); const path = require('node:path'); const base = path.resolve(process.env.DSH_INSTALL_DIR, '..'); for (const pkg of ['dsh-client-ui-workspace','dsh-client-ui-layout']) { const dir=path.join(base,pkg,'src/client'); console.log(pkg,fs.readdirSync(dir).slice(0,100)); }

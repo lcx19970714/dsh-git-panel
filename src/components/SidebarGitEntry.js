@@ -2,12 +2,8 @@
  * src/components/SidebarGitEntry.js —— DSH 左侧栏底部的「代码坞」入口
  *
  * 挂在 `sidebar.footer.action`（root 作用域，位置在设置按钮旁边；侧栏收起时是 56px 图标条）。
- * 点一下 = 给「当前挂载的会话」打开右侧栏的 Git 页签：
- *   ctx.sidebarRight.openTab('git')
- * 这里不传 sessionId：openTab 自己解析当前挂载的会话面（require()）。
- *
- * 没有会话面时 openTab 会抛错 —— 与标题栏入口共用 `../ui/useOpenPanel.js`：
- * 失败时按钮标红并给出原因，5 秒后自动复位，不静默、也不假装打开成功。
+ * 点一下通过 ctx.layout.selectPanel('dsh-git-panel') 打开独立主页面。
+ * 不要求存在会话，工作区由主页面选择。入口失败时显示提示并可再次点击。
  */
 import { h } from '../platform.js'
 import { useOpenPanel } from '../ui/useOpenPanel.js'

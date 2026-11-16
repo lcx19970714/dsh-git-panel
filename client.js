@@ -1,6 +1,6 @@
 /* eslint-disable */
 /* 由 build/build-client.mjs 从 src/ 生成，请勿手工编辑。 */
-/* 模块: 42 个 */
+/* 模块: 44 个 */
 window.__ModuleLoader__.load({
   id: "dsh-git-panel",
   factory: (require) => {
@@ -38,8 +38,8 @@ window.__ModuleLoader__.load({
        *   3. tab 类型  —— 会话右侧栏：id = 'dsh-git-panel'，kind = 'git'，带 guide 引导项
        *   4. tab body  —— 右侧栏 tab 内容，key 必须等于 tab 类型的 id
        *
-       * 为什么只挂在会话右侧栏：Git 变动与「当前会话所在项目」强绑定，右侧栏是 session
-       * 作用域，面板能直接拿到当前会话的 sessionId，从而按会话的 cwd 解析项目与仓库。
+       * 两个入口共用 Panel：会话右侧栏以 sessionId 解析目录；代码坞主页面独立选择工作区，
+       * 直接传工作区 cwd，不要求打开会话。
        *
        * 参考实现：dsh-client-ui-sidebar-browser（tab 类型 + guide + body 槽）。
        */
@@ -49,6 +49,7 @@ window.__ModuleLoader__.load({
       const { GitPanelSurface } = __m("./components/GitPanelSurface.js");
       const { GitHeaderAction } = __m("./components/HeaderAction.js");
       const { SidebarGitEntry } = __m("./components/SidebarGitEntry.js");
+      const { GitDockSurface } = __m("./components/GitDockSurface.js");
 
       const PLUGIN_ID = 'dsh-git-panel'
       const TAB_KIND = 'git'
@@ -85,7 +86,7 @@ window.__ModuleLoader__.load({
       const name = PLUGIN_ID
 
       /** 这些服务由宿主 bundle 提供，缺一个就不激活 —— 明确地「要么全有、要么不跑」。 */
-      const inject = ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight', 'uiWorkspace']
+      const inject = ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight', 'uiWorkspace', 'layout']
 
       function apply(ctx) {
         try {
@@ -120,7 +121,7 @@ window.__ModuleLoader__.load({
 
         /* ------------------- 左侧栏入口（常驻「代码坞」按钮） ------------------- */
         // 位置：左侧栏底部、设置按钮旁边（root 作用域，侧栏收起时只剩图标）。
-        // 点击打开「当前挂载会话」的 Git 页签；openTab 不传 sessionId，由 sidebarRight 自己解析。
+        // 点击打开独立主页面，不依赖会话；当前会话只用于确定初始工作区。
         ctx.effect(() => ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
           name: 'sidebar.footer.action',
           id: 'git-dock',
@@ -128,9 +129,16 @@ window.__ModuleLoader__.load({
           locale: NS,
           label: () => t('entry.title'),
           inject: () => ({
-            openPanel: () => ctx.sidebarRight.openTab(TAB_KIND)
+            openPanel: () => ctx.layout.selectPanel(PLUGIN_ID)
           })
         }, SidebarGitEntry)), PLUGIN_ID + ': sidebar footer entry')
+
+        /* ------------------------ 独立代码坞主页面 ------------------------ */
+        ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
+          name: 'main',
+          key: PLUGIN_ID,
+          locale: NS
+        }, GitDockSurface)), PLUGIN_ID + ': dock main page')
 
         /* ------------------- 会话右侧栏 tab 类型（面板本体） ------------------- */
         // Git 变动与「当前会话所在项目」强绑定，所以只挂在 session 作用域的右侧栏：
@@ -239,6 +247,21 @@ window.__ModuleLoader__.load({
       .dgp-root *, .dgp-root *::before, .dgp-root *::after { box-sizing: border-box; }
       .dgp-oneline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dgp-ico { display: block; flex: none; }
+
+      /* 独立主页面沿用面板控件和主题，只增加工作区导航。 */
+      .dgp-dock-root { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-family); }
+      .dgp-dock-header { display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 20px; border-bottom: .5px solid var(--dsw-alias-border-primary); }
+      html[data-platform='darwin'] .dgp-dock-header { padding-top: calc(16px + var(--dsh-frame-top-clearance, 0px)); }
+      .dgp-dock-title { margin: 0; font-size: 18px; font-weight: 600; }
+      .dgp-dock-workspace { display: flex; flex: 1 1 280px; align-items: center; gap: 8px; min-width: 0; }
+      .dgp-dock-label { flex: none; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+      .dgp-dock-select { flex: 1; min-width: 0; max-width: 720px; height: 32px; padding: 0 8px; border: .5px solid var(--dsw-alias-border-primary); border-radius: var(--dsw-radius-xs); color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-module-platform); font: inherit; font-size: 12px; }
+      .dgp-dock-back { flex: none; height: 32px; padding: 0 10px; border: 0; border-radius: var(--dsw-radius-xs); color: var(--dsw-alias-label-secondary); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+      .dgp-dock-back:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+      .dgp-dock-select:focus-visible, .dgp-dock-back:focus-visible { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 2px; }
+      .dgp-dock-select:disabled { opacity: .5; cursor: wait; }
+      .dgp-dock-notice { flex: none; padding: 8px 20px; font-size: 12px; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+      .dgp-dock-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
 
       /* ===================== 2. 顶栏（36px，无分隔线） ===================== */
       .dgp-toolbar {
@@ -2059,8 +2082,17 @@ window.__ModuleLoader__.load({
         'update.noRemote': '这个仓库没有配置远端',
         'update.checkedAt': '检测于 {time}',
         'entry.title': '代码坞',
-        'entry.hint': '打开当前会话的代码坞：变更、提交与 Pull Request',
-        'entry.failed': '先打开一个会话，再从代码坞打开面板',
+        'entry.hint': '打开代码坞主页面：变更、文件与远端仓库',
+        'entry.failed': '代码坞打开失败，请重新点击',
+        'dock.title': '代码坞',
+        'dock.workspace': '工作区',
+        'dock.noSelection': '选择工作区',
+        'dock.backToSession': '返回会话',
+        'dock.loading': '正在加载工作区…',
+        'dock.loadFailed': '工作区加载失败',
+        'dock.emptyTitle': '选择一个工作区',
+        'dock.emptyDescription': '在上方选择工作区以查看变更和文件，也可以先浏览远端仓库。',
+        'dock.noWorkspaces': '暂无工作区，请先在左侧导航中添加工作区。',
         'tab.title': '变更',
         'header.label': '变更',
         'header.title': '打开 Git 变更面板（当前会话所在项目）',
@@ -2573,8 +2605,17 @@ window.__ModuleLoader__.load({
         'update.noRemote': 'This repository has no remote configured',
         'update.checkedAt': 'Checked at {time}',
         'entry.title': 'Code Dock',
-        'entry.hint': 'Open the Code Dock for this conversation: changes, commits and pull requests',
-        'entry.failed': 'Open a conversation first, then open the Code Dock',
+        'entry.hint': 'Open Code Dock: changes, files and remote repositories',
+        'entry.failed': 'Could not open Code Dock. Click to retry.',
+        'dock.title': 'Code Dock',
+        'dock.workspace': 'Workspace',
+        'dock.noSelection': 'Choose a workspace',
+        'dock.backToSession': 'Back to conversation',
+        'dock.loading': 'Loading workspaces…',
+        'dock.loadFailed': 'Could not load workspaces',
+        'dock.emptyTitle': 'Choose a workspace',
+        'dock.emptyDescription': 'Choose a workspace above to view changes and files, or browse remote repositories first.',
+        'dock.noWorkspaces': 'No workspaces yet. Add one from the left navigation.',
         'tab.title': 'Changes',
         'header.label': 'Changes',
         'header.title': "Open Git changes for this session's project",
@@ -3550,6 +3591,8 @@ window.__ModuleLoader__.load({
         /** loadAccounts 定义在 openSettings 之后，这里留一个最新引用供打开设置时调用。 */
 
         const sessionId = props.sessionId
+        const cwd = props.cwd
+        const hasProjectSource = typeof cwd === 'string' || typeof sessionId === 'string'
 
         /**
          * 首屏快照的键。
@@ -3558,7 +3601,7 @@ window.__ModuleLoader__.load({
          * 项目根按会话分键（不同会话可能是不同项目），status 按仓库路径分键
          * （同一仓库被多个会话打开时共用一份快照）。
          */
-        const projectKey = 'project:' + String(sessionId)
+        const projectKey = typeof cwd === 'string' ? 'project:cwd:' + cwd : 'project:' + String(sessionId)
         const statusKeyOf = (rootPath) => 'status:' + rootPath
         const selectionKeyOf = (rootPath) => 'changes-selection:' + rootPath
         const fileSelectionKeyOf = (rootPath) => 'file-selection:' + rootPath
@@ -3610,7 +3653,7 @@ window.__ModuleLoader__.load({
         // 挂载时先吃上次的快照：有就零延迟出画面，没有才骨架屏
         const [project, setProject] = useState(() => readSnapshot(projectKey) ?? NO_ROOTS)
         const [activeRootId, setActiveRootId] = useState(null)
-        const [rootsLoading, setRootsLoading] = useState(() => readSnapshot(projectKey) === undefined)
+        const [rootsLoading, setRootsLoading] = useState(() => hasProjectSource && readSnapshot(projectKey) === undefined)
         const [rootsError, setRootsError] = useState(null)
 
         const roots = project.roots
@@ -3840,11 +3883,17 @@ window.__ModuleLoader__.load({
 
         /* ============================ 解析项目根 ============================ */
         const resolveProject = useCallback(async (signal) => {
+          if (!hasProjectSource) {
+            setProject(NO_ROOTS)
+            setRootsLoading(false)
+            setRootsError(null)
+            return
+          }
           // 有快照时这是「后台重新验证」：不把画面切回骨架屏
           if (readSnapshot(projectKey) === undefined) setRootsLoading(true)
           setRootsError(null)
           try {
-            const value = await api.resolveProject({ sessionId }, { signal })
+            const value = await api.resolveProject(typeof cwd === 'string' ? { cwd } : { sessionId }, { signal })
             if (signal !== undefined && signal.aborted) return
             const next = { projectRoot: value.projectRoot, roots: value.roots, warnings: value.warnings }
             writeSnapshot(projectKey, next)
@@ -3863,7 +3912,7 @@ window.__ModuleLoader__.load({
           } finally {
             if (!(signal !== undefined && signal.aborted)) setRootsLoading(false)
           }
-        }, [sessionId, projectKey])
+        }, [sessionId, cwd, hasProjectSource, projectKey])
 
         useEffect(() => {
 
@@ -5248,10 +5297,10 @@ window.__ModuleLoader__.load({
           }
         }, [loadPullDetail, loadRemoteDetail, closePull, clearRemoteBranches, loadPullCounts])
 
-        /** 选中账号：记到当前工作区（切到别的工作区再回来仍是它）。账号 chip 只在面板内容渲染后才会出现，那时 projectRoot 一定有值。 */
+        /** 选中账号按工作区记忆；未选工作区的代码坞使用独立的全局浏览账号记忆。 */
         const selectRemoteAccount = useCallback((accountId) => {
           setRemoteAccountId(accountId)
-          saveRemoteAccount(projectRef.current.projectRoot, accountId)
+          saveRemoteAccount(projectRef.current.projectRoot ?? 'dock:no-workspace', accountId)
         }, [])
 
         /** 选中仓库：右侧立刻进入加载态再拉数据。 */
@@ -5313,11 +5362,11 @@ window.__ModuleLoader__.load({
          * 记忆只在用户点选时写（见 selectRemoteAccount），这里只读。
          */
         useEffect(() => {
-          if (project.projectRoot === null || accounts.length === 0) return
+          if (accounts.length === 0) return
           setRemoteAccountId((previous) => {
             // 账号 id 一定是非空字符串，所以这里不用先判断 previous/remembered 是不是 null
             if (accounts.some((account) => account.id === previous)) return previous
-            const remembered = readRemoteAccount(project.projectRoot)
+            const remembered = readRemoteAccount(project.projectRoot ?? 'dock:no-workspace')
             if (accounts.some((account) => account.id === remembered)) return remembered
             return accounts[0].id
           })
@@ -6074,7 +6123,11 @@ window.__ModuleLoader__.load({
           rightPane))
 
         let content
-        if (rootsLoading && roots.length === 0) {
+        if (mode === MODE.remote) {
+          content = body
+        } else if (!hasProjectSource && props.emptyWorkspace !== undefined) {
+          content = h(EmptyState, { icon: 'folder', ...props.emptyWorkspace })
+        } else if (rootsLoading && roots.length === 0) {
           content = h(LoadingState, { label: t('status.discovering'), t })
         } else if (rootsError !== null && roots.length === 0) {
           content = h(EmptyState, {
@@ -8550,9 +8603,9 @@ window.__ModuleLoader__.load({
        *    所以不需要 contains 判断 —— 只有「Enter 由容器自己处理还是交给行 button」
        *    需要区分 target 是不是容器。
        *  - 行节点由组件通过 ref 收集进 `rowRefs`，索引与扁平行数组一致。
-       *  - 游标是**渲染期收敛**的（见 `cursor`）：对外给出的 `cursor` 永远是本遍渲染里
-       *    真实存在的行号，或 -1（还没选行 / 没有行）。调用方（含滚动 effect）不需要
-       *    再判空 —— 判空就是把「下标可以先失效、晚点再修正」这个错误模型留在代码里。
+       *  - rows 只包含渲染可聚焦按钮的行，加载/错误/空目录等提示不参与导航。
+       *  - 游标在渲染期收敛到当前行号，或 -1（还没选行 / 没有行）。
+       *    DOM 引用仍遵循挂载/卸载生命周期，滚动前需检查元素是否存在。
        */
       const { useEffect, useRef, useState } = __m("./platform.js");
 
@@ -8583,8 +8636,8 @@ window.__ModuleLoader__.load({
          * 而「把游标改回合法值」如果放在 effect 里，状态要到下一遍渲染才生效 ——
          * 同一提交里的滚动 effect 读到的仍是旧下标，那个下标的行可能刚被卸载
          * （React 卸载行时把 ref 回调传成 `null`），`null.scrollIntoView` 就是那次崩溃。
-         * 在渲染期收敛就不存在「旧下标」这个中间状态：渲染画出的行都在 0..rows.length-1，
-         * 它们的 ref 也在本提交挂好了，所以下面滚动时读到的一定是真实元素。
+         * 渲染期收敛消除旧下标；调用方还必须保证 rows 与绑定 ref 的按钮一一对应。
+         * 下标有效不等于 DOM 已挂载，因此滚动副作用单独检查引用生命周期。
          */
         const cursor = Math.min(stored, rows.length - 1)
         const rowRefs = useRef([])
@@ -8594,6 +8647,7 @@ window.__ModuleLoader__.load({
         useEffect(() => {
           if (cursor < 0) return
           const element = rowRefs.current[cursor]
+          if (element === null || element === undefined) return
           element.scrollIntoView({ block: 'nearest' })
           if (wantFocusRef.current === true) {
             wantFocusRef.current = false
@@ -9221,8 +9275,11 @@ window.__ModuleLoader__.load({
           else if (row.other !== true) onSelectFile(row.path)
         }
 
+        // 提示行仅用于展示，没有可聚焦按钮；导航和 ref 必须共用过滤后的下标。
+        const cursorRows = useMemo(() => rows.filter((row) => row.kind !== 'note'), [rows])
+        const cursorIndexes = useMemo(() => new Map(cursorRows.map((row, index) => [row, index])), [cursorRows])
         const cursorState = useTreeCursor({
-          rows,
+          rows: cursorRows,
           isDir: (row) => row.kind === 'dir',
           isOpen: (row) => expanded.has(row.path),
           onToggle: (row) => toggleDir(row.path),
@@ -9233,13 +9290,13 @@ window.__ModuleLoader__.load({
         // 外部选中项变化 → 键盘游标跟随。
         useEffect(() => {
           if (selectedPath === null) return
-          const index = rows.findIndex((row) => row.kind === 'file' && row.path === selectedPath)
+          const index = cursorRows.findIndex((row) => row.kind === 'file' && row.path === selectedPath)
           if (index >= 0) focusRow(index)
-        }, [selectedPath, rows])
+        }, [selectedPath, cursorRows])
 
         /* ------------------------------ 渲染 ------------------------------ */
 
-        function renderRow(row, index) {
+        function renderRow(row) {
           const depth = row.depth
 
           if (row.kind === 'note') {
@@ -9253,6 +9310,7 @@ window.__ModuleLoader__.load({
               }, row.text))
           }
 
+          const index = cursorIndexes.get(row)
           const isCursor = cursor === index
           if (row.kind === 'dir') {
             const open = expanded.has(row.path)
@@ -9359,7 +9417,7 @@ window.__ModuleLoader__.load({
 
         return container([
           filterNote === null ? null : h(InlineNote, { key: 'filter-note', tone: 'info' }, filterNote),
-          h('ul', { key: 'level', className: 'dgp-level', role: 'none' }, rows.map((row, index) => renderRow(row, index)))
+          h('ul', { key: 'level', className: 'dgp-level', role: 'none' }, rows.map((row) => renderRow(row)))
         ])
       }
 
@@ -13916,12 +13974,8 @@ window.__ModuleLoader__.load({
        * src/components/SidebarGitEntry.js —— DSH 左侧栏底部的「代码坞」入口
        *
        * 挂在 `sidebar.footer.action`（root 作用域，位置在设置按钮旁边；侧栏收起时是 56px 图标条）。
-       * 点一下 = 给「当前挂载的会话」打开右侧栏的 Git 页签：
-       *   ctx.sidebarRight.openTab('git')
-       * 这里不传 sessionId：openTab 自己解析当前挂载的会话面（require()）。
-       *
-       * 没有会话面时 openTab 会抛错 —— 与标题栏入口共用 `../ui/useOpenPanel.js`：
-       * 失败时按钮标红并给出原因，5 秒后自动复位，不静默、也不假装打开成功。
+       * 点一下通过 ctx.layout.selectPanel('dsh-git-panel') 打开独立主页面。
+       * 不要求存在会话，工作区由主页面选择。入口失败时显示提示并可再次点击。
        */
       const { h } = __m("./platform.js");
       const { useOpenPanel } = __m("./ui/useOpenPanel.js");
@@ -13985,6 +14039,159 @@ window.__ModuleLoader__.load({
       }
 
       Object.assign(exports, { SidebarGitEntry });
+
+    });
+    __define("./components/GitDockSurface.js", (exports, module) => {
+      /** Session-independent main-panel shell for the Git dock. */
+      const { h, useEffect, useRef, useState, getPluginContext } = __m("./platform.js");
+      const { DOCK_WORKSPACE_STORAGE_KEY, initialDockWorkspaceId, mainViewSessionId } = __m("./dock-workspace.js");
+      const { Panel } = __m("./components/Panel.js");
+      const { PanelRenderBoundary } = __m("./components/GitPanelSurface.js");
+
+      const workspaceSnapshot = (snapshot) => snapshot
+      const selectedMainSession = (state) => mainViewSessionId(state)
+
+      function readRememberedWorkspace() {
+        try {
+          const value = localStorage.getItem(DOCK_WORKSPACE_STORAGE_KEY)
+          return typeof value === 'string' && value !== '' ? value : null
+        } catch {
+          return null
+        }
+      }
+
+      function rememberWorkspace(workspaceId) {
+        try {
+          if (workspaceId === null) localStorage.removeItem(DOCK_WORKSPACE_STORAGE_KEY)
+          else localStorage.setItem(DOCK_WORKSPACE_STORAGE_KEY, workspaceId)
+        } catch {
+          // A blocked browser preference store must not disable workspace navigation.
+        }
+      }
+
+      function workspaceLabel(workspace) {
+        const title = typeof workspace.title === 'string' ? workspace.title.trim() : ''
+        return title === '' ? workspace.path : title + ' — ' + workspace.path
+      }
+
+      function errorMessage(error) {
+        if (error === null || error === undefined) return ''
+        if (typeof error.message === 'string') return error.message
+        return String(error)
+      }
+
+      /**
+       * Main root slot props supply useWorkspaces(selector), useSessions(selector), and t.
+       * No sessionId is forwarded: the selected workspace path is the Panel's only binding.
+       */
+      function GitDockSurface(props) {
+        const { useWorkspaces, useSessions, t } = props
+        const snapshot = useWorkspaces(workspaceSnapshot)
+        const currentSessionId = useSessions(selectedMainSession)
+        const rememberedRef = useRef(undefined)
+        if (rememberedRef.current === undefined) rememberedRef.current = readRememberedWorkspace()
+
+        // One visit owns this selection. A delayed initial Session may supply the default;
+        // a manual choice always wins, and later Session changes never replace it.
+        const [selection, setSelection] = useState({ initialized: false, workspaceId: null })
+        const manualSelectionRef = useRef(false)
+        const initialSessionRef = useRef(null)
+        const items = snapshot.items
+        const pending = snapshot.phase === 'pending'
+        const failed = snapshot.error !== null && snapshot.error !== undefined
+
+        useEffect(() => {
+          if (manualSelectionRef.current || pending || failed) return
+          // 工作区快照可能先于会话恢复到达；首次有效 mainView 稍后到达时仍应优先采用。
+          if (selection.initialized && (currentSessionId === null || initialSessionRef.current !== null)) return
+          const workspaceId = initialDockWorkspaceId(items, currentSessionId, rememberedRef.current)
+          if (currentSessionId !== null && items.some((item) => item.sessionIds.includes(currentSessionId))) {
+            initialSessionRef.current = currentSessionId
+          }
+          setSelection({ initialized: true, workspaceId })
+          rememberWorkspace(workspaceId)
+        }, [selection.initialized, pending, failed, items, currentSessionId])
+
+        const workspace = items.find((item) => item.workspaceId === selection.workspaceId) ?? null
+        const cwd = workspace === null ? null : workspace.path
+        const value = workspace === null ? '' : workspace.workspaceId
+        const ctx = getPluginContext()
+
+        function changeWorkspace(event) {
+          manualSelectionRef.current = true
+          const id = event.currentTarget.value
+          const next = items.find((item) => item.workspaceId === id)
+          const workspaceId = next === undefined ? null : next.workspaceId
+          setSelection({ initialized: true, workspaceId })
+          rememberWorkspace(workspaceId)
+        }
+
+        const emptyWorkspace = {
+          title: t('dock.emptyTitle'),
+          description: t('dock.emptyDescription')
+        }
+        const notice = pending
+          ? t('dock.loading')
+          : failed
+            ? [t('dock.loadFailed'), errorMessage(snapshot.error)].filter(Boolean).join('：')
+            : items.length === 0 ? t('dock.noWorkspaces') : null
+
+        return h('section', { className: 'dgp-dock-root', 'data-dgp-dock-workspace': value },
+          h('header', { className: 'dgp-dock-header' },
+            h('h1', { className: 'dgp-dock-title' }, t('dock.title')),
+            h('label', { className: 'dgp-dock-workspace' },
+              h('span', { className: 'dgp-dock-label' }, t('dock.workspace')),
+              h('select', {
+                className: 'dgp-dock-select',
+                value,
+                disabled: pending || failed,
+                title: workspace === null ? t('dock.noSelection') : workspaceLabel(workspace),
+                onChange: changeWorkspace
+              },
+              h('option', { value: '' }, t('dock.noSelection')),
+              items.map((item) => h('option', { key: item.workspaceId, value: item.workspaceId }, workspaceLabel(item))))),
+            h('button', {
+              type: 'button',
+              className: 'dgp-dock-back',
+              onClick: () => ctx.layout.selectPanel(null)
+            }, t('dock.backToSession'))),
+          notice === null ? null : h('div', {
+            className: 'dgp-dock-notice',
+            role: failed ? 'alert' : 'status',
+            'data-tone': failed ? 'error' : 'info'
+          }, notice),
+          h('div', { className: 'dgp-dock-body' },
+            h(PanelRenderBoundary, { key: value, t },
+              h(Panel, { key: value, cwd, emptyWorkspace, t }))))
+      }
+
+      Object.assign(exports, { GitDockSurface });
+
+    });
+    __define("./dock-workspace.js", (exports, module) => {
+      /** Pure workspace selection rules for the session-independent Git dock. */
+      const DOCK_WORKSPACE_STORAGE_KEY = 'dsh-git-panel:dock-workspace:v1'
+
+      /** The main view retains its active session, even while a main panel covers it. */
+      function mainViewSessionId(state) {
+        const sessions = state?.byId
+        if (sessions === null || typeof sessions !== 'object') return null
+        for (const session of Object.values(sessions)) {
+          if (session?.retainedBy?.mainView > 0 && typeof session.id === 'string') return session.id
+        }
+        return null
+      }
+
+      /** Never infer the first workspace: absence of a match means an explicit empty selection. */
+      function initialDockWorkspaceId(items, sessionId, rememberedId) {
+        if (sessionId !== null) {
+          const current = items.find((workspace) => workspace.sessionIds.includes(sessionId))
+          if (current !== undefined) return current.workspaceId
+        }
+        return items.some((workspace) => workspace.workspaceId === rememberedId) ? rememberedId : null
+      }
+
+      Object.assign(exports, { DOCK_WORKSPACE_STORAGE_KEY, mainViewSessionId, initialDockWorkspaceId });
 
     });
     var api = __m("./index.js");

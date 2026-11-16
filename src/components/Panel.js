@@ -92,6 +92,8 @@ export function Panel(props) {
   /** loadAccounts 定义在 openSettings 之后，这里留一个最新引用供打开设置时调用。 */
 
   const sessionId = props.sessionId
+  const cwd = props.cwd
+  const hasProjectSource = typeof cwd === 'string' || typeof sessionId === 'string'
 
   /**
    * 首屏快照的键。
@@ -100,7 +102,7 @@ export function Panel(props) {
    * 项目根按会话分键（不同会话可能是不同项目），status 按仓库路径分键
    * （同一仓库被多个会话打开时共用一份快照）。
    */
-  const projectKey = 'project:' + String(sessionId)
+  const projectKey = typeof cwd === 'string' ? 'project:cwd:' + cwd : 'project:' + String(sessionId)
   const statusKeyOf = (rootPath) => 'status:' + rootPath
   const selectionKeyOf = (rootPath) => 'changes-selection:' + rootPath
   const fileSelectionKeyOf = (rootPath) => 'file-selection:' + rootPath
@@ -152,7 +154,7 @@ export function Panel(props) {
   // 挂载时先吃上次的快照：有就零延迟出画面，没有才骨架屏
   const [project, setProject] = useState(() => readSnapshot(projectKey) ?? NO_ROOTS)
   const [activeRootId, setActiveRootId] = useState(null)
-  const [rootsLoading, setRootsLoading] = useState(() => readSnapshot(projectKey) === undefined)
+  const [rootsLoading, setRootsLoading] = useState(() => hasProjectSource && readSnapshot(projectKey) === undefined)
   const [rootsError, setRootsError] = useState(null)
 
   const roots = project.roots
@@ -382,11 +384,17 @@ export function Panel(props) {
 
   /* ============================ 解析项目根 ============================ */
   const resolveProject = useCallback(async (signal) => {
+    if (!hasProjectSource) {
+      setProject(NO_ROOTS)
+      setRootsLoading(false)
+      setRootsError(null)
+      return
+    }
     // 有快照时这是「后台重新验证」：不把画面切回骨架屏
     if (readSnapshot(projectKey) === undefined) setRootsLoading(true)
     setRootsError(null)
     try {
-      const value = await api.resolveProject({ sessionId }, { signal })
+      const value = await api.resolveProject(typeof cwd === 'string' ? { cwd } : { sessionId }, { signal })
       if (signal !== undefined && signal.aborted) return
       const next = { projectRoot: value.projectRoot, roots: value.roots, warnings: value.warnings }
       writeSnapshot(projectKey, next)
@@ -405,7 +413,7 @@ export function Panel(props) {
     } finally {
       if (!(signal !== undefined && signal.aborted)) setRootsLoading(false)
     }
-  }, [sessionId, projectKey])
+  }, [sessionId, cwd, hasProjectSource, projectKey])
 
   useEffect(() => {
 
@@ -1790,10 +1798,10 @@ export function Panel(props) {
     }
   }, [loadPullDetail, loadRemoteDetail, closePull, clearRemoteBranches, loadPullCounts])
 
-  /** 选中账号：记到当前工作区（切到别的工作区再回来仍是它）。账号 chip 只在面板内容渲染后才会出现，那时 projectRoot 一定有值。 */
+  /** 选中账号按工作区记忆；未选工作区的代码坞使用独立的全局浏览账号记忆。 */
   const selectRemoteAccount = useCallback((accountId) => {
     setRemoteAccountId(accountId)
-    saveRemoteAccount(projectRef.current.projectRoot, accountId)
+    saveRemoteAccount(projectRef.current.projectRoot ?? 'dock:no-workspace', accountId)
   }, [])
 
   /** 选中仓库：右侧立刻进入加载态再拉数据。 */
@@ -1855,11 +1863,11 @@ export function Panel(props) {
    * 记忆只在用户点选时写（见 selectRemoteAccount），这里只读。
    */
   useEffect(() => {
-    if (project.projectRoot === null || accounts.length === 0) return
+    if (accounts.length === 0) return
     setRemoteAccountId((previous) => {
       // 账号 id 一定是非空字符串，所以这里不用先判断 previous/remembered 是不是 null
       if (accounts.some((account) => account.id === previous)) return previous
-      const remembered = readRemoteAccount(project.projectRoot)
+      const remembered = readRemoteAccount(project.projectRoot ?? 'dock:no-workspace')
       if (accounts.some((account) => account.id === remembered)) return remembered
       return accounts[0].id
     })
@@ -2616,7 +2624,11 @@ export function Panel(props) {
     rightPane))
 
   let content
-  if (rootsLoading && roots.length === 0) {
+  if (mode === MODE.remote) {
+    content = body
+  } else if (!hasProjectSource && props.emptyWorkspace !== undefined) {
+    content = h(EmptyState, { icon: 'folder', ...props.emptyWorkspace })
+  } else if (rootsLoading && roots.length === 0) {
     content = h(LoadingState, { label: t('status.discovering'), t })
   } else if (rootsError !== null && roots.length === 0) {
     content = h(EmptyState, {

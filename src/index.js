@@ -7,8 +7,8 @@
  *   3. tab 类型  —— 会话右侧栏：id = 'dsh-git-panel'，kind = 'git'，带 guide 引导项
  *   4. tab body  —— 右侧栏 tab 内容，key 必须等于 tab 类型的 id
  *
- * 为什么只挂在会话右侧栏：Git 变动与「当前会话所在项目」强绑定，右侧栏是 session
- * 作用域，面板能直接拿到当前会话的 sessionId，从而按会话的 cwd 解析项目与仓库。
+ * 两个入口共用 Panel：会话右侧栏以 sessionId 解析目录；代码坞主页面独立选择工作区，
+ * 直接传工作区 cwd，不要求打开会话。
  *
  * 参考实现：dsh-client-ui-sidebar-browser（tab 类型 + guide + body 槽）。
  */
@@ -18,6 +18,7 @@ import { NS, zh, en } from './i18n.js'
 import { GitPanelSurface } from './components/GitPanelSurface.js'
 import { GitHeaderAction } from './components/HeaderAction.js'
 import { SidebarGitEntry } from './components/SidebarGitEntry.js'
+import { GitDockSurface } from './components/GitDockSurface.js'
 
 const PLUGIN_ID = 'dsh-git-panel'
 const TAB_KIND = 'git'
@@ -54,7 +55,7 @@ function GuideArtworkGit() {
 export const name = PLUGIN_ID
 
 /** 这些服务由宿主 bundle 提供，缺一个就不激活 —— 明确地「要么全有、要么不跑」。 */
-export const inject = ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight', 'uiWorkspace']
+export const inject = ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight', 'uiWorkspace', 'layout']
 
 export function apply(ctx) {
   try {
@@ -89,7 +90,7 @@ function applyRegistrations(ctx) {
 
   /* ------------------- 左侧栏入口（常驻「代码坞」按钮） ------------------- */
   // 位置：左侧栏底部、设置按钮旁边（root 作用域，侧栏收起时只剩图标）。
-  // 点击打开「当前挂载会话」的 Git 页签；openTab 不传 sessionId，由 sidebarRight 自己解析。
+  // 点击打开独立主页面，不依赖会话；当前会话只用于确定初始工作区。
   ctx.effect(() => ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
     name: 'sidebar.footer.action',
     id: 'git-dock',
@@ -97,9 +98,16 @@ function applyRegistrations(ctx) {
     locale: NS,
     label: () => t('entry.title'),
     inject: () => ({
-      openPanel: () => ctx.sidebarRight.openTab(TAB_KIND)
+      openPanel: () => ctx.layout.selectPanel(PLUGIN_ID)
     })
   }, SidebarGitEntry)), PLUGIN_ID + ': sidebar footer entry')
+
+  /* ------------------------ 独立代码坞主页面 ------------------------ */
+  ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main',
+    key: PLUGIN_ID,
+    locale: NS
+  }, GitDockSurface)), PLUGIN_ID + ': dock main page')
 
   /* ------------------- 会话右侧栏 tab 类型（面板本体） ------------------- */
   // Git 变动与「当前会话所在项目」强绑定，所以只挂在 session 作用域的右侧栏：

@@ -222,8 +222,11 @@ export function FileTree(props) {
     else if (row.other !== true) onSelectFile(row.path)
   }
 
+  // 提示行仅用于展示，没有可聚焦按钮；导航和 ref 必须共用过滤后的下标。
+  const cursorRows = useMemo(() => rows.filter((row) => row.kind !== 'note'), [rows])
+  const cursorIndexes = useMemo(() => new Map(cursorRows.map((row, index) => [row, index])), [cursorRows])
   const cursorState = useTreeCursor({
-    rows,
+    rows: cursorRows,
     isDir: (row) => row.kind === 'dir',
     isOpen: (row) => expanded.has(row.path),
     onToggle: (row) => toggleDir(row.path),
@@ -234,13 +237,13 @@ export function FileTree(props) {
   // 外部选中项变化 → 键盘游标跟随。
   useEffect(() => {
     if (selectedPath === null) return
-    const index = rows.findIndex((row) => row.kind === 'file' && row.path === selectedPath)
+    const index = cursorRows.findIndex((row) => row.kind === 'file' && row.path === selectedPath)
     if (index >= 0) focusRow(index)
-  }, [selectedPath, rows])
+  }, [selectedPath, cursorRows])
 
   /* ------------------------------ 渲染 ------------------------------ */
 
-  function renderRow(row, index) {
+  function renderRow(row) {
     const depth = row.depth
 
     if (row.kind === 'note') {
@@ -254,6 +257,7 @@ export function FileTree(props) {
         }, row.text))
     }
 
+    const index = cursorIndexes.get(row)
     const isCursor = cursor === index
     if (row.kind === 'dir') {
       const open = expanded.has(row.path)
@@ -360,6 +364,6 @@ export function FileTree(props) {
 
   return container([
     filterNote === null ? null : h(InlineNote, { key: 'filter-note', tone: 'info' }, filterNote),
-    h('ul', { key: 'level', className: 'dgp-level', role: 'none' }, rows.map((row, index) => renderRow(row, index)))
+    h('ul', { key: 'level', className: 'dgp-level', role: 'none' }, rows.map((row) => renderRow(row)))
   ])
 }

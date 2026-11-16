@@ -1,0 +1,1 @@
+const fs=require('node:fs'),path=require('node:path'); const base=path.resolve(process.env.DSH_INSTALL_DIR,'..'); for(const p of ['dsh-api-workspace-controller','dsh-api-session-controller']) {const root=path.join(base,p); console.log(p,fs.readdirSync(root)); if(fs.existsSync(path.join(root,'src'))) console.log('src',fs.readdirSync(path.join(root,'src')));}

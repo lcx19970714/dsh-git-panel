@@ -32,6 +32,21 @@ export const CSS = `
 .dgp-oneline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dgp-ico { display: block; flex: none; }
 
+/* 独立主页面沿用面板控件和主题，只增加工作区导航。 */
+.dgp-dock-root { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-family); }
+.dgp-dock-header { display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 20px; border-bottom: .5px solid var(--dsw-alias-border-primary); }
+html[data-platform='darwin'] .dgp-dock-header { padding-top: calc(16px + var(--dsh-frame-top-clearance, 0px)); }
+.dgp-dock-title { margin: 0; font-size: 18px; font-weight: 600; }
+.dgp-dock-workspace { display: flex; flex: 1 1 280px; align-items: center; gap: 8px; min-width: 0; }
+.dgp-dock-label { flex: none; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.dgp-dock-select { flex: 1; min-width: 0; max-width: 720px; height: 32px; padding: 0 8px; border: .5px solid var(--dsw-alias-border-primary); border-radius: var(--dsw-radius-xs); color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-module-platform); font: inherit; font-size: 12px; }
+.dgp-dock-back { flex: none; height: 32px; padding: 0 10px; border: 0; border-radius: var(--dsw-radius-xs); color: var(--dsw-alias-label-secondary); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.dgp-dock-back:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dgp-dock-select:focus-visible, .dgp-dock-back:focus-visible { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 2px; }
+.dgp-dock-select:disabled { opacity: .5; cursor: wait; }
+.dgp-dock-notice { flex: none; padding: 8px 20px; font-size: 12px; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.dgp-dock-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+
 /* ===================== 2. 顶栏（36px，无分隔线） ===================== */
 .dgp-toolbar {
   display: flex;

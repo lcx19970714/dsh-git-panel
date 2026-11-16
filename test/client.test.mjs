@@ -390,7 +390,7 @@ test('导出 name / apply / inject', () => {
   eq(exportsObject.name, 'dsh-git-panel', 'name')
   eq(typeof exportsObject.apply, 'function', 'apply 是函数')
   assert(Array.isArray(exportsObject.inject), 'inject 是数组')
-  eq(exportsObject.inject, ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight', 'uiWorkspace'], 'inject 清单')
+  eq(exportsObject.inject, ['slots', 'locale', 'connection', 'sidebarRightTabs', 'sidebarRight', 'uiWorkspace', 'layout'], 'inject 清单')
 })
 
 test('执行 apply(ctx) 不抛错', () => {
@@ -509,9 +509,9 @@ test('渲染 tab body：组件树能出来', () => {
 
 
 
-test('只注册会话侧栏入口：不再注册 main / sidebar.panellist / 快捷键', () => {
+test('主页面与会话侧栏同时注册，不增加会话视图或快捷键', () => {
   const names = registrations.slots.map((slot) => slot.registration.name)
-  eq(names.includes('main'), false, '不应再注册 main 面板')
+  eq(names.includes('main'), true, '应注册代码坞 main 面板')
   eq(names.includes('sidebar.panellist'), false, '不应再注册左侧导航区条目')
   eq(names.includes('conversation.view'), false, '不应再注册顶部会话视图')
   eq(registrations.shortcuts.length, 0, '快捷键已移除（focus 不能开新 tab）')
@@ -551,7 +551,7 @@ test('样式表定义了标题栏按钮的类', () => {
   const styles = fakeDocument.appended.filter((node) => node.tagName === 'STYLE')
   assert(styles[0].textContent.includes('.dgp-headerbtn'), '缺少 .dgp-headerbtn 样式')
 })
-test('左侧栏入口：注册到 sidebar.footer.action，点击打开当前会话的 git 页签', () => {
+test('左侧栏入口：注册到 sidebar.footer.action，点击打开独立代码坞主页面', () => {
   const entry = registrations.slots.find((slot) => slot.registration.name === 'sidebar.footer.action')
   assert(entry !== undefined, '应注册 sidebar.footer.action')
   eq(entry.registration.id, 'git-dock', '入口 id')
@@ -578,9 +578,9 @@ test('左侧栏入口：注册到 sidebar.footer.action，点击打开当前会�
   eq(typeof wide.props.onClick, 'function', '按钮要有 onClick')
   const before = registrations.openedTabs.length
   injected.openPanel()
-  eq(registrations.openedTabs.length, before + 1, '点击应打开一次页签')
-  const opened = registrations.openedTabs[registrations.openedTabs.length - 1]
-  eq(opened, { kind: 'git', options: undefined }, '不带 sessionId：由 sidebarRight 解析当前会话')
+  eq(registrations.openedTabs.length, before, '代码坞不能再打开会话侧栏')
+  eq(registrations.panels.at(-1), 'dsh-git-panel', '点击应选择独立主页面')
+  assert(registrations.slots.some((slot) => slot.registration.name === 'main' && slot.registration.key === 'dsh-git-panel'), '代码坞主页面应已注册')
 
   // 图标条（56px）：只有图标，没有文案
   const rail = fakeReact.render(fakeReact.createElement(entry.component, {

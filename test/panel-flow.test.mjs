@@ -97,6 +97,7 @@ function createReconciler() {
   let cursor = 0
   let effectQueue = []
   let refQueue = []
+  let committedRefs = []
   let frameSeq = 0
   const frames = []
 
@@ -364,6 +365,13 @@ function createReconciler() {
   function runRefs() {
     const queue = refQueue
     refQueue = []
+    // React 在 mutation 阶段先解除旧 ref，再在 layout 阶段挂载新 ref。
+    // 不解除会让已卸载的行留下假节点，掩盖 null.scrollIntoView。
+    for (const entry of committedRefs) {
+      if (typeof entry.ref === 'function') entry.ref(null)
+      else entry.ref.current = null
+    }
+    committedRefs = queue
     for (const entry of queue) {
       try {
         if (typeof entry.ref === 'function') entry.ref(entry.node)
@@ -978,7 +986,7 @@ async function setup(config) {
   const ctx = createFakeCtx(registrations, router)
   api.apply(ctx)
 
-  const slot = registrations.slots.find((entry) => entry.registration.name === 'sidebar.right.pane.tab')
+  const slot = registrations.slots.find((entry) => entry.registration.name === (config.dock ? 'main' : 'sidebar.right.pane.tab'))
   assert(slot !== undefined, 'apply() 没有注册 sidebar.right.pane.tab')
   assert(typeof api.__modules === 'function', '产物缺少 __modules 测试钩子')
   const loadModule = (id) => api.__modules(id)
@@ -1006,7 +1014,8 @@ const t = (key, params) => {
   const props = {
     sessionId: 'session-1',
     t,
-    useSessions: (selector) => selector({ byId: { 'session-1': { cwd } } }),
+    useSessions: (selector) => selector(config.sessions ?? { byId: { 'session-1': { cwd } } }),
+    useWorkspaces: (selector) => selector(config.workspaces ?? { items: [], phase: 'ready', state: 'idle', error: null }),
     useTabInfo: () => ({ tab: { id: 't', kind: 'git', signal: { aborted: false }, actions: {} } }),
     renderSlot: () => null
   }
@@ -4995,6 +5004,118 @@ test('用例 2b：MM 文件从「已暂存」组点选 → staged:true', async (
 /* ================================================================== */
 /* 用例 3：文件模式                                                    */
 /* ================================================================== */
+
+test('代码坞没有工作区：保留三个页签，变更与文件提示选择且不解析会话', async () => {
+  await withPanel({ dock: true, routes: {
+    'accounts/list': () => sayOk({ accounts: [{ id: 'github:alice', provider: 'github', login: 'alice' }], providers: [] }),
+    'remote/repos': () => sayOk({ repos: [], hasMore: false })
+  } }, async (panel) => {
+    await panel.flush()
+    assert(panel.text().includes('选择一个工作区'), '未选择时应给出选择提示')
+    eq(panel.router.count('project/resolve'), 0, '无工作区不应尝试解析空会话')
+    eq(panel.class('dgp-seg-btn').length, 3, '三个tab始终保留')
+    const { initialDockWorkspaceId } = panel.loadModule('./dock-workspace.js')
+    const items = [{ workspaceId: 'a', sessionIds: ['s'] }, { workspaceId: 'b', sessionIds: [] }]
+    eq(initialDockWorkspaceId(items, 's', 'b'), 'a', '当前工作区优先于记忆')
+    eq(initialDockWorkspaceId(items, null, 'b'), 'b', '无当前工作区时恢复上次选择')
+    eq(initialDockWorkspaceId(items, null, 'deleted'), null, '已删除的工作区不能恢复')
+    eq(initialDockWorkspaceId(items, null, null), null, '首次不自动选第一项')
+    click(panel.class('dgp-seg-btn')[1])
+    await panel.flush()
+    assert(panel.text().includes('选择一个工作区'), '文件tab同样需要工作区')
+    click(panel.class('dgp-seg-btn')[2])
+    await panel.flush()
+    assert(!panel.text().includes('选择一个工作区'), '远端tab不被本地工作区空态阻挡')
+    eq(panel.router.all('remote/repos').at(-1)?.payload.accountId, 'github:alice', '无工作区也应选中账号并加载远端仓库')
+  })
+})
+
+test('代码坞恢复时会话晚于工作区到达，仍采用当前工作区', async () => {
+  const sessions = { byId: {} }
+  const workspaces = { items: [{ workspaceId: 'a', title: 'A', path: 'C:/work/a', sessionIds: ['s1'] }], phase: 'ready', state: 'idle', error: null }
+  await withPanel({ dock: true, sessions, workspaces, routes: {
+    'project/resolve': (payload) => sayOk({ projectRoot: payload.cwd, roots: [], warnings: [] })
+  } }, async (panel) => {
+    await panel.flush()
+    eq(panel.router.count('project/resolve'), 0, '会话未恢复且没有记忆时不自动选第一项')
+    sessions.byId.s1 = { id: 's1', retainedBy: { mainView: 1 } }
+    click(panel.class('dgp-seg-btn')[1])
+    await panel.flush()
+    eq(panel.router.all('project/resolve').at(-1)?.payload, { cwd: 'C:/work/a' }, '晚到的初始会话应决定默认工作区')
+  })
+})
+
+test('代码坞优先当前工作区，手动切换按路径重新解析', async () => {
+  const items = [
+    { workspaceId: 'a', title: 'A', path: 'C:/work/a', sessionIds: ['s1'] },
+    { workspaceId: 'b', title: 'B', path: 'C:/work/b', sessionIds: [] }
+  ]
+  await withPanel({
+    dock: true,
+    sessions: { byId: { s1: { id: 's1', retainedBy: { mainView: 1 } } } },
+    workspaces: { items, phase: 'ready', state: 'idle', error: null },
+    routes: {
+      'project/resolve': (payload) => sayOk({ projectRoot: payload.cwd, roots: [], warnings: [] })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    eq(panel.router.all('project/resolve').at(-1).payload, { cwd: 'C:/work/a' }, '当前工作区应优先')
+    const select = panel.one((node) => isHost(node) && node.type === 'select' && hasClass(node, 'dgp-dock-select'))
+    select.props.onChange({ currentTarget: { value: 'b' } })
+    await panel.flush()
+    eq(panel.router.all('project/resolve').at(-1).payload, { cwd: 'C:/work/b' }, '手选工作区应按其路径加载')
+  })
+})
+
+test('文件树刷新到空目录：卸载选中行后不访问空 ref', async () => {
+  let loads = 0
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'tree/list': () => sayOk({
+        entries: ++loads === 1 ? [{ name: 'app.js', type: 'file' }] : [],
+        truncated: false
+      }),
+      'file/read': () => sayOk(fileText())
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(findOne(panel.tree, (node) => isHost(node) && hasClass(node, 'dgp-seg-btn') && textOf(node) === '文件'))
+    await panel.flush()
+    click(panel.fileRow('app.js'))
+    await panel.flush()
+    await refreshViaMenu(panel)
+    eq(byAttr(panel.tree, 'data-dgp-row', 'file').length, 0, '空目录不应保留文件行')
+    eq(byAttr(panel.tree, 'data-cursor', 'true').length, 0, '提示行不应占用键盘游标')
+  })
+})
+
+test('文件树方向键跳过空目录提示和截断提示', async () => {
+  await withPanel({
+    routes: {
+      'project/resolve': () => resolveOk([ROOT], PROJECT),
+      status: () => sayOk(statusThree()),
+      'tree/list': (payload) => sayOk({
+        entries: payload.path === '' ? [{ name: 'src', type: 'dir' }, { name: 'app.js', type: 'file' }] : [],
+        truncated: payload.path === ''
+      })
+    }
+  }, async (panel) => {
+    await panel.flush()
+    click(findOne(panel.tree, (node) => isHost(node) && hasClass(node, 'dgp-seg-btn') && textOf(node) === '文件'))
+    await panel.flush()
+    click(byAttr(panel.tree, 'data-dgp-row', 'dir')[0])
+    await panel.flush()
+    const list = () => byAttr(panel.tree, 'data-dgp-list', 'files')[0]
+    keydown(list(), 'ArrowDown')
+    await panel.flush()
+    eq(attr(byAttr(panel.tree, 'data-cursor', 'true')[0], 'data-dgp-path'), 'app.js', '方向键应跳过空目录提示')
+    keydown(list(), 'ArrowDown')
+    await panel.flush()
+    eq(attr(byAttr(panel.tree, 'data-cursor', 'true')[0], 'data-dgp-path'), 'app.js', '末行之后的截断提示不能获得游标')
+  })
+})
 
 test('用例 3：文件模式 → tree/list → file/read', async () => {
   const status = statusThree()
